@@ -237,7 +237,7 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "django-ninja" },
     { name = "django-ninja-jwt" },
-    { name = "dotenv" },
+    { name = "environs" },
 ]
 
 [package.metadata]
@@ -247,18 +247,20 @@ requires-dist = [
     { name = "django-cors-headers", specifier = ">=4.9.0" },
     { name = "django-ninja", specifier = ">=1.4.3" },
     { name = "django-ninja-jwt", specifier = ">=5.3.9" },
-    { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "environs", specifier = ">=14.3.0" },
 ]
 
 [[package]]
-name = "dotenv"
-version = "0.9.9"
+name = "environs"
+version = "14.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "marshmallow" },
     { name = "python-dotenv" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/7f/7c/db59db76a70254aa0f9de2b509379b09ab89b2c1fa309acb8daf02e06ec2/environs-14.3.0.tar.gz", hash = "sha256:20672d92db325ce8114872b1989104eb84f083486325b5a44bcddff56472a384", size = 34209, upload-time = "2025-08-01T15:56:54.39Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892, upload-time = "2025-02-19T22:15:01.647Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/e3/98d8567eb438c7856a4dcedd97a8a7c6707120a5ada6f7d84ace44fd8591/environs-14.3.0-py3-none-any.whl", hash = "sha256:91e4c4ea964be277855cdd83a588f6375f10fad9fa452660ecb9f503c230f26a", size = 16355, upload-time = "2025-08-01T15:56:52.897Z" },
 ]
 
 [[package]]
@@ -268,6 +270,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b5/f6/3a74e4b983b92eebb77b2f27ee526aa7eaf0e62a5913847d59361b4bae5f/injector-0.22.0.tar.gz", hash = "sha256:79b2d4a0874c75d3aa735f11c5b32b89d9542711ca07071161882c5e9cc15ed6", size = 86166, upload-time = "2024-07-07T23:02:23.275Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/37/37fee65c78ae3f9675e6190bfd12304e5d8d99564f0ec91716bf2bfbbb5f/injector-0.22.0-py2.py3-none-any.whl", hash = "sha256:74379ccef3b893bc7d0b7d504c255b5160c5a55e97dc7bdcc73cb33cc7dce3a1", size = 20461, upload-time = "2024-07-07T23:02:21.103Z" },
+]
+
+[[package]]
+name = "marshmallow"
+version = "4.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/ff/8f092fe402ef12aa71b7f4ceba0c557ce4d5876a9cf421e01a67b7210560/marshmallow-4.0.1.tar.gz", hash = "sha256:e1d860bd262737cb2d34e1541b84cb52c32c72c9474e3fe6f30f137ef8b0d97f", size = 220453, upload-time = "2025-08-28T15:01:37.044Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/18/297efc62b3539b9cd379fc49be3740a02e4c8a43e486f50322cfe0b9568a/marshmallow-4.0.1-py3-none-any.whl", hash = "sha256:72f14ef346f81269dbddee891bac547dda1501e9e08b6a809756ea3dbb7936a1", size = 48414, upload-time = "2025-08-28T15:01:35.221Z" },
 ]
 
 [[package]]

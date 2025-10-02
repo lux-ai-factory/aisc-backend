@@ -9,14 +9,11 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-
 from pathlib import Path
-import os
-
 from corsheaders.defaults import default_headers
-from dotenv import load_dotenv
+from environs import env
 
-load_dotenv()
+env.read_env()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -26,14 +23,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+SECRET_KEY = env("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = ["localhost", "backend", "127.0.0.1"]
-
-CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:5500"]
+DEBUG = env.bool("DEBUG", False)
 
 # Application definition
 
@@ -52,7 +45,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.headless',
     'ninja_jwt',
-    'ninja_extra',
+    #'ninja_extra',
 
     # Local
     'my_application'
@@ -99,12 +92,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),
-        "NAME": os.getenv("DB_NAME", BASE_DIR / "db.db"),
-        "USER": os.getenv("DB_USER", ""),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", ""),
-        "PORT": os.getenv("DB_PORT", ""),
+        "ENGINE": env("DB_ENGINE", "django.db.backends.sqlite3"),
+        "NAME": env("DB_NAME", BASE_DIR / "db.db"),
+        "USER": env("DB_USER", ""),
+        "PASSWORD": env("DB_PASSWORD", ""),
+        "HOST": env("DB_HOST", ""),
+        "PORT": env("DB_PORT", ""),
     }
 }
 
@@ -151,9 +144,12 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 # --- CORS for your separate frontend(s) ---
+
+# Only for dev
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5500"]
 
+# Only for dev if testing the backend through a htmx page
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "hx-request",
     "hx-target",
@@ -184,6 +180,7 @@ HEADLESS_FRONTEND_URLS = {
 HEADLESS_SERVE_SPECIFICATION = True
 HEADLESS_SPECIFICATION_TEMPLATE_NAME = "headless/spec/swagger_cdn.html"
 
+# custom token strategy class to additionally return JWT on allauth login
 HEADLESS_TOKEN_STRATEGY = "config.jwt.SessionAndJWTStrategy"
 
 # Dev email: print verification/reset emails to console
