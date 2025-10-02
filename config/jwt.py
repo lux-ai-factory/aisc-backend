@@ -1,24 +1,22 @@
-from typing import Dict, Type
+"""
+Extend allauth SessionTokenStrategy to return JWT generated using Ninja JWT
 
-from django.contrib.auth.models import User
-from ninja import Schema
-from ninja_jwt.schema import TokenObtainInputSchemaBase
+Code is only executed when using the allauth 'app' client endpoints
+'browser' client endpoints rely on django session cookies for auth
+"""
+
+from typing import Optional, Dict, Any
+from allauth.headless.tokens.sessions import SessionTokenStrategy
 from ninja_jwt.tokens import RefreshToken
-from ninja_jwt.exceptions import AuthenticationFailed
+from django.http import HttpRequest
+from my_application.routers.token import TokenPairOut
 
-class TokenPairOut(Schema):
-    refresh: str
-    access: str
 
-class VerifiedEmailTokenObtainSchema(TokenObtainInputSchemaBase):
-    @classmethod
-    def get_response_schema(cls) -> Type[Schema]:
-        return TokenPairOut
+class SessionAndJWTStrategy(SessionTokenStrategy):
+    def create_access_token_payload(self, request: HttpRequest) -> Optional[Dict[str, Any]]:
+        user = request.user
+        if not user or not user.is_authenticated:
+            return None
 
-    @classmethod
-    def get_token(cls, user: User) -> Dict:
-        # Require at least one verified email (django-allauth)
-        if not user.emailaddress_set.filter(verified=True).exists():
-            raise AuthenticationFailed("Email not verified.")
-        refresh = RefreshToken.for_user(user)
-        return {"refresh": str(refresh), "access": str(refresh.access_token)}
+        refresh_token = RefreshToken.for_user(user)
+        return TokenPairOut(refresh_token=str(refresh_token), access_token=str(refresh_token.access_token)).__dict__

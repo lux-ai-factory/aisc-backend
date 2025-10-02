@@ -11,8 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-from datetime import timedelta
 import os
+
+from corsheaders.defaults import default_headers
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,13 +26,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-1n(d0zj_!i-odx+b2v&1j#@#$kptmffniw*cloa2u*kp1lw&-p")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = ["localhost", "backend", "127.0.0.1"]
 
+CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:5500"]
 
 # Application definition
 
@@ -50,13 +55,14 @@ INSTALLED_APPS = [
     'ninja_extra',
 
     # Local
-    'projects'
+    'my_application'
 ]
 
 SITE_ID = 1
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
+
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -65,7 +71,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
-    # Add the account middleware:
     'allauth.account.middleware.AccountMiddleware',
 ]
 
@@ -146,7 +151,17 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 # --- CORS for your separate frontend(s) ---
-CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5500"]
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "hx-request",
+    "hx-target",
+    "hx-current-url",
+    "hx-trigger",
+    "hx-prompt",
+    "hx-boosted",
+]
 
 
 # Default primary key field type
@@ -169,15 +184,14 @@ HEADLESS_FRONTEND_URLS = {
 HEADLESS_SERVE_SPECIFICATION = True
 HEADLESS_SPECIFICATION_TEMPLATE_NAME = "headless/spec/swagger_cdn.html"
 
+HEADLESS_TOKEN_STRATEGY = "config.jwt.SessionAndJWTStrategy"
+
 # Dev email: print verification/reset emails to console
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 
 # --- Ninja JWT ---
 NINJA_JWT = {
-    "ACCESS_TOKEN_LIFETIME": 30 * 60,      # seconds
-    "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    # We’ll override the obtain schema to enforce verified email:
-    "TOKEN_OBTAIN_PAIR_INPUT_SCHEMA": "config.jwt.VerifiedEmailTokenObtainSchema",
+    "ACCESS_TOKEN_LIFETIME": 30 * 60,
+    "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600
 }

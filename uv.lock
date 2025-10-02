@@ -144,16 +144,16 @@ wheels = [
 
 [[package]]
 name = "django"
-version = "5.2.6"
+version = "5.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asgiref" },
     { name = "sqlparse" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/8c/2a21594337250a171d45dda926caa96309d5136becd1f48017247f9cdea0/django-5.2.6.tar.gz", hash = "sha256:da5e00372763193d73cecbf71084a3848458cecf4cee36b9a1e8d318d114a87b", size = 10858861, upload-time = "2025-09-03T13:04:03.23Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/96/bd84e2bb997994de8bcda47ae4560991084e86536541d7214393880f01a8/django-5.2.7.tar.gz", hash = "sha256:e0f6f12e2551b1716a95a63a1366ca91bbcd7be059862c1b18f989b1da356cdd", size = 10865812, upload-time = "2025-10-01T14:22:12.081Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/af/6593f6d21404e842007b40fdeb81e73c20b6649b82d020bb0801b270174c/django-5.2.6-py3-none-any.whl", hash = "sha256:60549579b1174a304b77e24a93d8d9fafe6b6c03ac16311f3e25918ea5a20058", size = 8303111, upload-time = "2025-09-03T13:03:47.808Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/ef/81f3372b5dd35d8d354321155d1a38894b2b766f576d0abffac4d8ae78d9/django-5.2.7-py3-none-any.whl", hash = "sha256:59a13a6515f787dec9d97a0438cd2efac78c8aca1c80025244b0fe507fe0754b", size = 8307145, upload-time = "2025-10-01T14:22:49.476Z" },
 ]
 
 [[package]]
@@ -215,16 +215,16 @@ wheels = [
 
 [[package]]
 name = "django-ninja-jwt"
-version = "5.3.7"
+version = "5.3.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
     { name = "django-ninja-extra" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/c2/8b69a702d39b9da234c0f306ed10441ef7216a64a4ba822018e983f430df/django_ninja_jwt-5.3.7.tar.gz", hash = "sha256:faf09f6b00ebfd53786cda92dc8eb0bf6c39b72ee079aeb744bdb70dc5c59031", size = 39783, upload-time = "2025-04-05T09:00:14.118Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/b3/91cd6809f50cea498b8d2d290ee32018f0cf6447327326abc2e53b7403b8/django_ninja_jwt-5.3.9.tar.gz", hash = "sha256:595c061742ce3e701d5172374107d318e1dd339f8647024e21e30e73e0283e57", size = 39886, upload-time = "2025-09-30T10:53:52.118Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/d8/176990e02fe2471a1e02919abfc39c5637f2f471e60d3ce9ee5c07614477/django_ninja_jwt-5.3.7-py3-none-any.whl", hash = "sha256:90db9508e49e0e43de933a5adb3640ba9ea24589d6f77146b2e72861528e105f", size = 88635, upload-time = "2025-04-05T09:00:12.698Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/07/45fb81e54dd47956e3329f0c2a57037ac4c5f0737b5de5601dd1083fb041/django_ninja_jwt-5.3.9-py3-none-any.whl", hash = "sha256:3062a1e8bad0a8e511d8ae3df6cc4c1a53d72a099877c2a35a9aa34b5bb15d39", size = 88720, upload-time = "2025-09-30T10:53:50.745Z" },
 ]
 
 [[package]]
@@ -237,15 +237,28 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "django-ninja" },
     { name = "django-ninja-jwt" },
+    { name = "dotenv" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "django", specifier = ">=5.2.6" },
+    { name = "django", specifier = ">=5.2.7" },
     { name = "django-allauth", extras = ["headless-spec"], specifier = ">=65.11.2" },
     { name = "django-cors-headers", specifier = ">=4.9.0" },
     { name = "django-ninja", specifier = ">=1.4.3" },
-    { name = "django-ninja-jwt", specifier = ">=5.3.7" },
+    { name = "django-ninja-jwt", specifier = ">=5.3.9" },
+    { name = "dotenv", specifier = ">=0.9.9" },
+]
+
+[[package]]
+name = "dotenv"
+version = "0.9.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dotenv" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892, upload-time = "2025-02-19T22:15:01.647Z" },
 ]
 
 [[package]]
@@ -335,6 +348,15 @@ wheels = [
 [package.optional-dependencies]
 crypto = [
     { name = "cryptography" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/b0/4bc07ccd3572a2f9df7e6782f52b0c6c90dcbb803ac4a167702d7d0dfe1e/python_dotenv-1.1.1.tar.gz", hash = "sha256:a8a6399716257f45be6a007360200409fce5cda2661e3dec71d23dc15f6189ab", size = 41978, upload-time = "2025-06-24T04:21:07.341Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/ed/539768cf28c661b5b068d66d96a2f155c4971a5d55684a514c1a0e0dec2f/python_dotenv-1.1.1-py3-none-any.whl", hash = "sha256:31f23644fe2602f88ff55e1f5c79ba497e01224ee7737937930c448e4d0e24dc", size = 20556, upload-time = "2025-06-24T04:21:06.073Z" },
 ]
 
 [[package]]

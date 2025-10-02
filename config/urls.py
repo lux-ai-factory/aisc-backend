@@ -18,25 +18,30 @@ from django.contrib import admin
 from django.urls import path, include
 
 from ninja import NinjaAPI, Router
-from projects.api import router as projects_router
-from ninja_jwt.routers.obtain import obtain_pair_router
-from ninja_jwt.routers.verify import verify_router
 
-api = NinjaAPI(title='Testing API')
+from my_application.routers.token import router as token_router
+from my_application.routers.account import router as account_router
+from my_application.routers.item import router as item_router
+from my_application.routers.security import router as security_router
 
-api.add_router("/auth/token", obtain_pair_router, tags=["token"])
-api.add_router("/auth/token", verify_router, tags=["token"])
+api = NinjaAPI(title='Ninja API')
 
 v1_router = Router()
-v1_router.add_router("/projects/", projects_router)
-api.add_router("/v1/", v1_router)
 
+# JWT endpoints
+v1_router.add_router("/tokens/", token_router, tags=["tokens"])
+
+# Our endpoints
+v1_router.add_router("/items/", item_router, tags=["items"])
+v1_router.add_router("/accounts/", account_router, tags=["accounts"])
+v1_router.add_router("/security/", security_router, tags=["security"])
+
+api.add_router("/v1/", v1_router)
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    #path("accounts/", include("allauth.urls")),
     path("_allauth/", include("allauth.headless.urls")),
 
     path('api/', api.urls),
