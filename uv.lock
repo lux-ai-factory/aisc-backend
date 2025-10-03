@@ -143,6 +143,29 @@ wheels = [
 ]
 
 [[package]]
+name = "demo-django-project"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "django" },
+    { name = "django-allauth", extra = ["headless-spec"] },
+    { name = "django-cors-headers" },
+    { name = "django-ninja" },
+    { name = "django-ninja-jwt" },
+    { name = "environs" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "django", specifier = ">=5.2.7" },
+    { name = "django-allauth", extras = ["headless-spec"], specifier = ">=65.11.2" },
+    { name = "django-cors-headers", specifier = ">=4.9.0" },
+    { name = "django-ninja", specifier = ">=1.4.3" },
+    { name = "django-ninja-jwt", specifier = ">=5.3.9" },
+    { name = "environs", specifier = ">=14.3.0" },
+]
+
+[[package]]
 name = "django"
 version = "5.2.7"
 source = { registry = "https://pypi.org/simple" }
@@ -225,29 +248,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6f/b3/91cd6809f50cea498b8d2d290ee32018f0cf6447327326abc2e53b7403b8/django_ninja_jwt-5.3.9.tar.gz", hash = "sha256:595c061742ce3e701d5172374107d318e1dd339f8647024e21e30e73e0283e57", size = 39886, upload-time = "2025-09-30T10:53:52.118Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/07/45fb81e54dd47956e3329f0c2a57037ac4c5f0737b5de5601dd1083fb041/django_ninja_jwt-5.3.9-py3-none-any.whl", hash = "sha256:3062a1e8bad0a8e511d8ae3df6cc4c1a53d72a099877c2a35a9aa34b5bb15d39", size = 88720, upload-time = "2025-09-30T10:53:50.745Z" },
-]
-
-[[package]]
-name = "django-uv"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "django" },
-    { name = "django-allauth", extra = ["headless-spec"] },
-    { name = "django-cors-headers" },
-    { name = "django-ninja" },
-    { name = "django-ninja-jwt" },
-    { name = "environs" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "django", specifier = ">=5.2.7" },
-    { name = "django-allauth", extras = ["headless-spec"], specifier = ">=65.11.2" },
-    { name = "django-cors-headers", specifier = ">=4.9.0" },
-    { name = "django-ninja", specifier = ">=1.4.3" },
-    { name = "django-ninja-jwt", specifier = ">=5.3.9" },
-    { name = "environs", specifier = ">=14.3.0" },
 ]
 
 [[package]]
