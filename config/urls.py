@@ -19,22 +19,18 @@ from django.urls import path, include
 
 from ninja import NinjaAPI, Router
 
-from my_application.routers.token import router as token_router
-from my_application.routers.account import router as account_router
-from my_application.routers.item import router as item_router
-from my_application.routers.security import router as security_router
+from a4s_backend.routers.project import router as project_router
+from a4s_backend.routers.dataset import router as dataset_router
+from a4s_backend.routers.models import router as model_router
 
 api = NinjaAPI(title='Ninja API')
 
 v1_router = Router()
 
-# JWT endpoints
-v1_router.add_router("/tokens/", token_router, tags=["tokens"])
-
 # Our endpoints
-v1_router.add_router("/items/", item_router, tags=["items"])
-v1_router.add_router("/accounts/", account_router, tags=["accounts"])
-v1_router.add_router("/security/", security_router, tags=["security"])
+v1_router.add_router("/projects", project_router)
+v1_router.add_router("/datasets", dataset_router)
+v1_router.add_router("/models", model_router)
 
 api.add_router("/v1/", v1_router)
 

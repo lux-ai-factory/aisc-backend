@@ -45,10 +45,9 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.headless',
     'ninja_jwt',
-    #'ninja_extra',
 
     # Local
-    'my_application'
+    'a4s_backend'
 ]
 
 SITE_ID = 1
@@ -65,6 +64,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
     'allauth.account.middleware.AccountMiddleware',
+    'ninja.compatibility.files.fix_request_files_middleware'
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -147,7 +147,7 @@ STATIC_URL = 'static/'
 
 # Only for dev
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5500"]
+CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 
 # Only for dev if testing the backend through a htmx page
 CORS_ALLOW_HEADERS = list(default_headers) + [
@@ -192,3 +192,12 @@ NINJA_JWT = {
     "ACCESS_TOKEN_LIFETIME": 30 * 60,
     "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600
 }
+
+
+# S3 settings
+
+S3_URL = env("S3_URL")
+S3_USER = env("S3_USER")
+S3_PASSWORD = env("S3_PASSWORD")
+S3_DATASETS_BUCKET = env("S3_DATASETS_BUCKET")
+S3_MODELS_BUCKET = env("S3_MODELS_BUCKET")

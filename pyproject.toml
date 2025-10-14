@@ -5,10 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "boto3>=1.40.51",
     "django>=5.2.7",
-    "django-allauth[headless-spec]>=65.11.2",
+    "django-allauth[headless-spec]>=65.12.0",
     "django-cors-headers>=4.9.0",
     "django-ninja>=1.4.3",
     "django-ninja-jwt>=5.3.9",
     "environs>=14.3.0",
+    "pandas>=2.3.3",
+    "pyarrow>=21.0.0",
+    "uvicorn>=0.37.0",
 ]
