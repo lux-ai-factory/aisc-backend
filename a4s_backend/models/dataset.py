@@ -1,15 +1,12 @@
-import uuid
 from django.db import models
 
+from .evaluation import Evaluation
+from .common import HasData
 from .model import Model
 from .datashape import DataShape
 
 
-class Dataset(models.Model):
-    pid = models.UUIDField(default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=255)
-    description = models.CharField(max_length=255)
-    data = models.CharField(max_length=255)
+class Dataset(HasData):
 
     project = models.ForeignKey(
         'Project', related_name='datasets', on_delete=models.PROTECT)
@@ -19,3 +16,6 @@ class Dataset(models.Model):
 
     def get_datashape(self) -> DataShape:
         return self.datashape
+
+    def get_evaluations(self) -> list[Evaluation]:
+        return list(self.evaluations.all())

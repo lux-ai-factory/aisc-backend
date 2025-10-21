@@ -1,6 +1,7 @@
-import uuid
 from django.db import models
 
+from .evaluation import Evaluation
+from .common import Base
 from .dataset import Dataset
 from .model import Model
 
@@ -13,9 +14,7 @@ class ProjectStatus(models.TextChoices):
     Created = 'Created', 'Created'
 
 
-class Project(models.Model):
-    pid = models.UUIDField(default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=255, unique=True)
+class Project(Base):
     status = models.CharField(max_length=255, choices=ProjectStatus.choices)
     frequency = models.CharField(max_length=255)
     window_size = models.CharField(max_length=255)
@@ -33,3 +32,6 @@ class Project(models.Model):
                 dataset_models.append(model)
 
         return dataset_models
+
+    def get_evaluations(self) -> list[Evaluation]:
+        return list(self.evaluations.all())

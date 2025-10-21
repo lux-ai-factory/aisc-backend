@@ -16,3 +16,7 @@ class Evaluation(models.Model):
         'Project', related_name='evaluations', on_delete=models.PROTECT)
     config = models.ForeignKey(
         'Configuration', related_name='evaluations', null=True, blank=True, on_delete=models.SET_NULL)
+    dataset = models.ForeignKey(
+        'Dataset', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
+    model = models.ForeignKey(
+        'Model', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
