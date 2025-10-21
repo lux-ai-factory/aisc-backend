@@ -1,15 +1,15 @@
 import uuid
-from http.client import HTTPException
 
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.datashape import DataShape, DataShapeStatus
+from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.model import Model
-from a4s_backend.models.project import Project, ProjectStatus
+from a4s_backend.repositories import project_repository
+from a4s_backend.repositories.datashape_repository import save_datashape
 from a4s_backend.schemas.dataset import DatasetOutScheme, DatasetInScheme
-from a4s_backend.schemas.datashape import DataShapeOutScheme
+from a4s_backend.schemas.datashape import DataShapeOutScheme, DataShapeInScheme
 from a4s_backend.schemas.model import ModelOutScheme
 from a4s_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
 
@@ -19,73 +19,60 @@ router = Router(tags=["projects"])
 
 @router.post("", response=ProjectOutSchema)
 async def create_project(request, data: ProjectInSchema):
-    project = Project(
-        name = data.name,
-        status = ProjectStatus.Created,
-        datashape = await DataShape.objects.acreate(status=DataShapeStatus.Manual)
-    )
-    await project.asave()
-    return project
+    return await project_repository.create_project(data.name)
+
 
 @router.patch("/{pid}", response=ProjectOutSchema)
 async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
-    project = await Project.objects.aget(pid=pid)
+    project = await project_repository.get_project(pid)
 
     updated_fields = data.dict(exclude_unset=True)
 
     for attr, value in updated_fields.items():
         setattr(project, attr, value)
 
-    await project.asave()
+    await project_repository.save_project(project)
     return project
 
 
 @router.get("", response=list[ProjectOutSchema])
 async def list_projects(request):
-    projects = [p async for p in Project.objects.all()]
-    return projects
+    return await project_repository.get_projects()
 
 
 @router.get("/by-name/{name}", response=ProjectOutSchema)
 async def project_by_name(request, name):
-    project = await Project.objects.aget(name=name)
+    project = await project_repository.get_project_by_name(name)
 
     return project
 
 
 @router.get("/{pid}", response=ProjectDetailsOutSchema)
 async def project_details(request, pid: uuid.UUID):
-    project = await (
-        Project.objects
-        .select_related("datashape")
-        .prefetch_related("datashape__datasets", "datashape__datasets__models")
-        .aget(pid=pid)
-    )
+    project = await project_repository.get_project_with_related_data(pid)
 
     return project
 
 
 @router.get("/{pid}/datashape", response=DataShapeOutScheme)
 async def project_datashape(request, pid: uuid.UUID):
-    project = await (
-        Project.objects
-        .select_related("datashape")
-        .prefetch_related("datashape__datasets", "datashape__features")
-        .aget(pid=pid)
-    )
+    project = await project_repository.get_project_with_related_data(pid)
 
-    return project.datashape
+    if project.expected_datashape is None:
+        raise HttpError(404, f"Project {pid} has no expected datashape")
+
+    return project.expected_datashape
 
 
 @router.post("/{pid}/datasets", response=DatasetOutScheme)
 async def project_datasets(request, pid: uuid.UUID, data: DatasetInScheme):
-    project = await Project.objects.select_related("datashape").aget(pid=pid)
-    datashape = project.datashape
+    project = await project_repository.get_project(pid)
 
     dataset = Dataset(**data.dict())
-    dataset.datashape = datashape
-
+    dataset.project = project
     await dataset.asave()
+
+    await DataShape.objects.acreate(status=DataShapeStatus.Manual, dataset=dataset)
     return dataset
 
 
@@ -95,10 +82,10 @@ class ProjectModelsRequest(Schema):
 
 @router.post("/{pid}/models", response=ModelOutScheme)
 async def project_models(request, pid: uuid.UUID, data: ProjectModelsRequest):
-    project = await Project.objects.aget(pid=pid)
-    dataset = await Dataset.objects.aget(pid=data.dataset_pid)
+    project = await project_repository.get_project(pid=pid)
+    dataset = await Dataset.objects.select_related("project").aget(pid=data.dataset_pid)
 
-    if project.datashape.pid != dataset.datashape.pid:
+    if project.pid != dataset.project.pid:
         raise HttpError(409, "Dataset does not belong to project")
 
     model = Model(name=data.name)
@@ -107,3 +94,16 @@ async def project_models(request, pid: uuid.UUID, data: ProjectModelsRequest):
 
     await model.asave()
     return model
+
+@router.patch("/{pid}/datashape", response=DataShapeOutScheme)
+async def update_project(request, pid: uuid.UUID, data: DataShapeInScheme):
+    project = await project_repository.get_project_with_related_data(pid=pid)
+
+    datashape = project.expected_datashape
+
+    if datashape is None:
+        raise HttpError(404, f"Project {pid} has no expected datashape")
+
+    datashape = await save_datashape(datashape, data)
+
+    return datashape

@@ -12,6 +12,7 @@ dependencies = [
     "django-ninja>=1.4.3",
     "django-ninja-jwt>=5.3.9",
     "environs>=14.3.0",
+    "httpx>=0.28.1",
     "pandas>=2.3.3",
     "pyarrow>=21.0.0",
     "uvicorn>=0.37.0",

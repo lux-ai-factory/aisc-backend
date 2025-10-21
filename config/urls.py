@@ -22,6 +22,7 @@ from ninja import NinjaAPI, Router
 from a4s_backend.routers.project import router as project_router
 from a4s_backend.routers.dataset import router as dataset_router
 from a4s_backend.routers.models import router as model_router
+from a4s_backend.routers.datashape import router as datashape_router
 
 api = NinjaAPI(title='Ninja API')
 
@@ -31,6 +32,7 @@ v1_router = Router()
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/datasets", dataset_router)
 v1_router.add_router("/models", model_router)
+v1_router.add_router("/datashapes", datashape_router)
 
 api.add_router("/v1/", v1_router)
 

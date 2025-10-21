@@ -1,6 +1,8 @@
 import uuid
 from django.db import models
-from a4s_backend.models.model import Model
+
+from .model import Model
+from .datashape import DataShape
 
 
 class Dataset(models.Model):
@@ -9,8 +11,11 @@ class Dataset(models.Model):
     description = models.CharField(max_length=255)
     data = models.CharField(max_length=255)
 
-    datashape = models.ForeignKey(
-        'DataShape', related_name='datasets', on_delete=models.PROTECT)
+    project = models.ForeignKey(
+        'Project', related_name='datasets', on_delete=models.PROTECT)
 
     def get_models(self) -> list[Model]:
-        return self.models.all()
+        return list(self.models.all())
+
+    def get_datashape(self) -> DataShape:
+        return self.datashape

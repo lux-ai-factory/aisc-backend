@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 
 
@@ -9,6 +11,7 @@ class FeatureType(models.TextChoices):
 
 
 class Feature(models.Model):
+    pid = models.UUIDField(default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     description = models.CharField(max_length=255)
     feature_type = models.CharField(max_length=255, choices=FeatureType.choices)

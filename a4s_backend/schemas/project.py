@@ -17,9 +17,9 @@ class ProjectOutSchema(ModelSchema):
         fields = ["name", "frequency", "window_size", "pid"]
 
 class ProjectDetailsOutSchema(ModelSchema):
-    datasets: list[DatasetOutScheme] = Field(None, alias="datashape.get_datasets")
-    models: list[ModelOutScheme] = Field(None, alias="datashape.get_models")
+    datasets: list[DatasetOutScheme] = Field([], alias="get_datasets")
+    models: list[ModelOutScheme] = Field([], alias="get_models")
 
     class Meta:
         model = Project
-        exclude = ["id", "datashape"]
+        exclude = ["id"]
