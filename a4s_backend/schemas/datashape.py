@@ -12,7 +12,7 @@ class BlankFeatureSchema(Schema):
     pid: str = ""
 
 class DataShapeOutScheme(ModelSchema):
-    features: list[FeatureOutScheme]
+    features: list[FeatureOutScheme] = Field(default=[], alias="get_features")
     dataset: DatasetOutScheme
     dataset_pid: uuid.UUID = Field(default=None, alias="dataset.pid")
     date: FeatureOutScheme | BlankFeatureSchema = Field(default=BlankFeatureSchema(), alias="date_feature")

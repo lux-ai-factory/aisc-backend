@@ -1,11 +1,13 @@
 import uuid
 from pathlib import Path
 
+from django.http import StreamingHttpResponse
 from ninja import Router, File
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from a4s_backend.models.model import Model
+from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.file_repository import upload_file
 from a4s_backend.schemas.common import UploadFileResponse
 from a4s_backend.utils import file_utils
@@ -44,3 +46,30 @@ async def upload_model(request, model_pid: uuid.UUID, file: File[UploadedFile]):
     await model.asave()
 
     return UploadFileResponse(file_name=file.name)
+
+@router.get("/{model_pid}/data")
+async def get_model_file(request, model_pid: uuid.UUID):
+    try:
+        # check bucket exists
+        bucket_exists = file_repository.bucket_exists(S3_MODELS_BUCKET)
+        if not bucket_exists:
+            raise HttpError(500, f"Bucket {S3_MODELS_BUCKET} not found")
+
+        # Get model exists
+        model = await Model.objects.aget(pid=model_pid)
+        if not model:
+            raise HttpError(404, f"Model ({model_pid}) not found")
+
+        # Get the object from S3
+        response = file_repository.get_object(bucket_name=S3_MODELS_BUCKET, object_name=model.data)
+        file_stream = response["Body"]
+
+        content_type = response.get("ContentType", "application/octet-stream")
+
+        return StreamingHttpResponse(
+            file_stream,
+            headers={"Content-Disposition": f"attachment; filename={model.data}"},
+            content_type=content_type,
+        )
+    except Exception as e:
+        raise HttpError(500, f"Error fetching dataset file: {str(e)}")

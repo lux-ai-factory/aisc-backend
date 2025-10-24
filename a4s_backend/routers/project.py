@@ -3,11 +3,13 @@ import uuid
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from a4s_backend.models import Evaluation
 from a4s_backend.models.datashape import DataShape, DataShapeStatus
 from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.model import Model
 from a4s_backend.repositories import project_repository
 from a4s_backend.repositories.datashape_repository import save_datashape
+from a4s_backend.schemas.common import RecordPid
 from a4s_backend.schemas.dataset import DatasetOutScheme, DatasetInScheme
 from a4s_backend.schemas.datashape import DataShapeOutScheme, DataShapeInScheme
 from a4s_backend.schemas.model import ModelOutScheme
@@ -96,7 +98,7 @@ async def project_models(request, pid: uuid.UUID, data: ProjectModelsRequest):
     return model
 
 @router.patch("/{pid}/datashape", response=DataShapeOutScheme)
-async def update_project(request, pid: uuid.UUID, data: DataShapeInScheme):
+async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInScheme):
     project = await project_repository.get_project_with_related_data(pid=pid)
 
     datashape = project.expected_datashape
@@ -107,3 +109,16 @@ async def update_project(request, pid: uuid.UUID, data: DataShapeInScheme):
     datashape = await save_datashape(datashape, data)
 
     return datashape
+
+@router.get("/{pid}/evaluations", response=list[RecordPid])
+async def project_evaluations(request, pid: uuid.UUID, status: str):
+    project = await project_repository.get_project(pid)
+
+    if project is None:
+        raise HttpError(404, f"Project {pid} not found")
+
+    evaluations = [e async for e in Evaluation.objects.filter(status=status, project=project).all()]
+
+    response = [RecordPid(pid=e.pid) for e in evaluations]
+
+    return response

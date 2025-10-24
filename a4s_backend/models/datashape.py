@@ -26,4 +26,5 @@ class DataShape(models.Model):
         'Feature', related_name='target_feature', null=True, blank=True, on_delete=models.SET_NULL)
 
     def get_features(self) -> list[Feature]:
-        return list(self.features.all())
+        exclude_ids = {f.id for f in [self.date_feature, self.target_feature] if f}
+        return [f for f in self.features.all() if f.id not in exclude_ids]
