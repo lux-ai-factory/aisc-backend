@@ -28,3 +28,6 @@ class DataShape(models.Model):
     def get_features(self) -> list[Feature]:
         exclude_ids = {f.id for f in [self.date_feature, self.target_feature] if f}
         return [f for f in self.features.all() if f.id not in exclude_ids]
+
+    def __str__(self):
+        return f'{self.pid}, Dataset name: {self.dataset.name}'

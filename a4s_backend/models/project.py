@@ -35,3 +35,6 @@ class Project(Base):
 
     def get_evaluations(self) -> list[Evaluation]:
         return list(self.evaluations.all())
+
+    def __str__(self):
+        return f'{self.name}, status: {self.status}'

@@ -16,4 +16,5 @@ dependencies = [
     "pandas>=2.3.3",
     "pyarrow>=21.0.0",
     "uvicorn>=0.37.0",
+    "whitenoise>=6.11.0",
 ]

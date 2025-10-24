@@ -21,3 +21,6 @@ class Feature(Base):
 
     def get_measurements(self) -> list[Measurement]:
         return self.measurements.all()
+
+    def __str__(self):
+        return f'{self.name} ({self.feature_type})'

@@ -16,3 +16,6 @@ class Measurement(Base):
         'Metric', related_name='measurements', on_delete=models.CASCADE)
     feature = models.ForeignKey(
         'Feature', related_name='measurements', null=True, blank=True, on_delete=models.SET_NULL)
+
+    def __str__(self):
+        return f'{self.name}'

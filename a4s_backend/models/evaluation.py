@@ -27,3 +27,6 @@ class Evaluation(models.Model):
 
     def get_observations(self) -> list[Observation]:
         return self.observations.all()
+
+    def __str__(self):
+        return f'{self.pid} ({self.status})'

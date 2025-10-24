@@ -49,7 +49,12 @@ uv run python manage.py migrate
 uv run python manage.py createsuperuser
 ```
 
-### 5. Running tests
+### 5. Collect static files
+```
+uv run python manage.py collectstatic  
+```
+
+### 6. Running tests
 ```
 uv run python manage.py test
 ```

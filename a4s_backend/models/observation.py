@@ -14,3 +14,6 @@ class Observation(Base):
 
     def get_measurements(self) -> list[Measurement]:
         return self.measurements.all()
+
+    def __str__(self):
+        return f'{self.observer} ({self.whenObserved})'
