@@ -35,12 +35,3 @@ async def update_status(request, datashape_pid: uuid.UUID, status: str):
     await datashape.asave()
 
     return datashape.status
-
-
-@router.get("", response=list[DataShapeOutScheme])
-async def get_datashapes(request):
-    datashapes = [d async for d in DataShape.objects
-    .select_related("dataset")
-    .prefetch_related("features")
-    .all()]
-    return datashapes
