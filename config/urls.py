@@ -24,8 +24,10 @@ from a4s_backend.routers.dataset import router as dataset_router
 from a4s_backend.routers.models import router as model_router
 from a4s_backend.routers.datashape import router as datashape_router
 from a4s_backend.routers.evaluation import router as evaluation_router
+from a4s_backend.utils.exceptions import register_exception_handlers
 
 api = NinjaAPI(title='Ninja API')
+register_exception_handlers(api)
 
 v1_router = Router()
 

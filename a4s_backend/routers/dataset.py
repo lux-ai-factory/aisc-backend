@@ -10,8 +10,9 @@ from django.http import StreamingHttpResponse
 from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.datashape import DataShapeStatus, DataShape
 from a4s_backend.repositories import file_repository
-from a4s_backend.repositories.datashape_repository import save_datashape
-
+from a4s_backend.repositories.dataset_repository import DatasetRepository
+from a4s_backend.repositories.datashape_repository import DataShapeRepository
+from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.common import UploadFileResponse
 from a4s_backend.schemas.datashape import DataShapeOutScheme, DataShapeInScheme
 from a4s_backend.services.a4s_eval import autodiscover_datashape
@@ -23,15 +24,21 @@ from config.settings import S3_DATASETS_BUCKET
 
 router = Router(tags=["dataset"])
 
+dataset_repository = DatasetRepository()
+datashape_repository = DataShapeRepository()
+project_repository = ProjectRepository()
+
 
 @router.put("/{dataset_pid}/data", response=UploadFileResponse)
-async def upload_dataset(request, dataset_pid: uuid.UUID, file: File[UploadedFile]):
+async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[UploadedFile]):
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
-    dataset: Dataset = await Dataset.objects.select_related("datashape").aget(pid=dataset_pid)
-    if not dataset:
-        raise HttpError(404, f"Dataset ({dataset_pid}) not found")
+    dataset = await dataset_repository.get(dataset_pid, True)
+
+    datashape = dataset.get_datashape()
+    if datashape is None:
+        raise HttpError(404, f"Datashape for dataset ({dataset_pid}) not found")
 
     # Check if file is CSV and convert to parquet if needed
     if Path(file.name).suffix.lower() == ".csv":
@@ -45,10 +52,6 @@ async def upload_dataset(request, dataset_pid: uuid.UUID, file: File[UploadedFil
     if not result:
         raise HttpError(500, "Failed to upload file")
 
-    datashape = dataset.get_datashape()
-    if datashape is None:
-        raise HttpError(404, f"Datashape for dataset ({dataset_pid}) not found")
-
     # Call evaluation engine to autodiscover datashape
     autodiscover_datashape_response = await autodiscover_datashape(datashape.pid)
     if not autodiscover_datashape_response:
@@ -56,10 +59,11 @@ async def upload_dataset(request, dataset_pid: uuid.UUID, file: File[UploadedFil
 
     datashape.status = DataShapeStatus.Requested
     dataset.data = file.name
-    await dataset.asave()
-    await datashape.asave()
+    await dataset_repository.save(dataset)
+    await datashape_repository.save(datashape)
 
     return UploadFileResponse(file_name=file.name)
+
 
 @router.get("/{dataset_pid}/data")
 async def get_dataset_file(request, dataset_pid: uuid.UUID):
@@ -70,9 +74,7 @@ async def get_dataset_file(request, dataset_pid: uuid.UUID):
             raise HttpError(500, f"Bucket {S3_DATASETS_BUCKET} not found")
 
         # Get dataset exists
-        dataset = await Dataset.objects.aget(pid=dataset_pid)
-        if not dataset:
-            raise HttpError(404, f"Dataset ({dataset_pid}) not found")
+        dataset = await dataset_repository.get(dataset_pid)
 
         # Get the object from S3
         response = file_repository.get_object(bucket_name=S3_DATASETS_BUCKET, object_name=dataset.data)
@@ -88,39 +90,24 @@ async def get_dataset_file(request, dataset_pid: uuid.UUID):
 
 @router.get("/{dataset_pid}/datashape", response=DataShapeOutScheme)
 async def get_dataset_datashape(request, dataset_pid: uuid.UUID):
-    dataset = await (
-        Dataset.objects
-        .select_related("datashape", "project")
-        .prefetch_related("datashape__features")
-        .aget(pid=dataset_pid)
-    )
-
-    if not dataset:
-        raise HttpError(404, f"Dataset ({dataset_pid}) not found")
+    dataset = await dataset_repository.get(dataset_pid, True)
 
     datashape = dataset.get_datashape()
     project = dataset.project
     project.expected_datashape = datashape
-    await project.asave()
+
+    await project_repository.save(project)
 
     return datashape
 
-@router.patch("/{dataset_pid}/datashape", response=DataShapeOutScheme)
-async def update_project(request, dataset_pid: uuid.UUID, data: DataShapeInScheme):
-    dataset = await (
-        Dataset.objects
-        .select_related("datashape")
-        .prefetch_related("datashape__features")
-        .aget(pid=dataset_pid)
-    )
 
-    if not dataset:
-        raise HttpError(404, f"Dataset ({dataset_pid}) not found")
+@router.patch("/{dataset_pid}/datashape", response=DataShapeOutScheme)
+async def update_dataset_datashape(request, dataset_pid: uuid.UUID, data: DataShapeInScheme):
+    dataset: Dataset = await dataset_repository.get(dataset_pid, True)
 
     datashape: DataShape = dataset.get_datashape()
 
     if datashape is None:
         raise HttpError(404, f"Datashape for dataset ({dataset_pid}) not found")
 
-    datashape = await save_datashape(datashape, data)
-    return datashape
+    return await datashape_repository.patch(datashape, data)

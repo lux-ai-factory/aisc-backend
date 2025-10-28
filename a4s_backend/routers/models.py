@@ -8,6 +8,7 @@ from ninja.files import UploadedFile
 
 from a4s_backend.models.model import Model
 from a4s_backend.repositories import file_repository
+from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.file_repository import upload_file
 from a4s_backend.schemas.common import UploadFileResponse
 from a4s_backend.utils import file_utils
@@ -17,15 +18,15 @@ from config.settings import S3_MODELS_BUCKET
 
 router = Router(tags=["model"])
 
+model_repository = BaseRepository(model=Model)
+
 
 @router.put("/{model_pid}/data", response=UploadFileResponse)
-async def upload_model(request, model_pid: uuid.UUID, file: File[UploadedFile]):
+async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFile]):
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
-    model: Model = await Model.objects.aget(pid=model_pid)
-    if not model:
-        raise HttpError(404, f"Model ({model_pid}) not found")
+    model = await model_repository.get(model_pid)
 
     # Check if file is CSV and convert to parquet if needed
     if Path(file.name).suffix.lower() == ".csv":
@@ -43,9 +44,10 @@ async def upload_model(request, model_pid: uuid.UUID, file: File[UploadedFile]):
         raise HttpError(500, "Failed to upload file")
 
     model.data = file.name
-    await model.asave()
+    await model_repository.save(model)
 
     return UploadFileResponse(file_name=file.name)
+
 
 @router.get("/{model_pid}/data")
 async def get_model_file(request, model_pid: uuid.UUID):
@@ -55,10 +57,7 @@ async def get_model_file(request, model_pid: uuid.UUID):
         if not bucket_exists:
             raise HttpError(500, f"Bucket {S3_MODELS_BUCKET} not found")
 
-        # Get model exists
-        model = await Model.objects.aget(pid=model_pid)
-        if not model:
-            raise HttpError(404, f"Model ({model_pid}) not found")
+        model = await model_repository.get(model_pid)
 
         # Get the object from S3
         response = file_repository.get_object(bucket_name=S3_MODELS_BUCKET, object_name=model.data)
