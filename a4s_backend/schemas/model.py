@@ -1,18 +1,18 @@
 from ninja import ModelSchema
 
 from a4s_backend.models.model import Model
-from a4s_backend.schemas.dataset import DatasetOutScheme, DatasetPidOutScheme
+from a4s_backend.schemas.dataset import DatasetOutSchema, DatasetPidOutSchema
 
 
-class ModelPidOutScheme(ModelSchema):
-    dataset: DatasetPidOutScheme
+class ModelPidOutSchema(ModelSchema):
+    dataset: DatasetPidOutSchema
 
     class Meta:
         model = Model
         fields = ["pid"]
 
-class ModelOutScheme(ModelSchema):
-    dataset: DatasetOutScheme
+class ModelOutSchema(ModelSchema):
+    dataset: DatasetOutSchema
 
     class Meta:
         model = Model

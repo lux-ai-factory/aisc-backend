@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
 
-from ninja import Router, File
+from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
@@ -13,8 +13,7 @@ from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.datashape_repository import DataShapeRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
-from a4s_backend.schemas.common import UploadFileResponse
-from a4s_backend.schemas.datashape import DataShapeOutScheme, DataShapeInScheme
+from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
 from a4s_backend.services.a4s_eval import autodiscover_datashape
 
 from a4s_backend.utils import file_utils
@@ -29,7 +28,11 @@ datashape_repository = DataShapeRepository()
 project_repository = ProjectRepository()
 
 
-@router.put("/{dataset_pid}/data", response=UploadFileResponse)
+class UploadDatasetFileResponse(Schema):
+    file_name: str
+    datashape_pid: uuid.UUID
+
+@router.put("/{dataset_pid}/data", response=UploadDatasetFileResponse)
 async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[UploadedFile]):
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
@@ -62,7 +65,7 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
     await dataset_repository.save(dataset)
     await datashape_repository.save(datashape)
 
-    return UploadFileResponse(file_name=file.name)
+    return UploadDatasetFileResponse(file_name=file.name, datashape_pid=datashape.pid)
 
 
 @router.get("/{dataset_pid}/data")
@@ -88,7 +91,7 @@ async def get_dataset_file(request, dataset_pid: uuid.UUID):
         raise HttpError(500, f"Error fetching dataset file: {str(e)}")
 
 
-@router.get("/{dataset_pid}/datashape", response=DataShapeOutScheme)
+@router.get("/{dataset_pid}/datashape", response=DataShapeOutSchema)
 async def get_dataset_datashape(request, dataset_pid: uuid.UUID):
     dataset = await dataset_repository.get(dataset_pid, True)
 
@@ -101,8 +104,8 @@ async def get_dataset_datashape(request, dataset_pid: uuid.UUID):
     return datashape
 
 
-@router.patch("/{dataset_pid}/datashape", response=DataShapeOutScheme)
-async def update_dataset_datashape(request, dataset_pid: uuid.UUID, data: DataShapeInScheme):
+@router.patch("/{dataset_pid}/datashape", response=DataShapeOutSchema)
+async def update_dataset_datashape(request, dataset_pid: uuid.UUID, data: DataShapeInSchema):
     dataset: Dataset = await dataset_repository.get(dataset_pid, True)
 
     datashape: DataShape = dataset.get_datashape()

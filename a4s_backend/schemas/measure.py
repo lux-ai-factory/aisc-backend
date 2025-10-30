@@ -3,7 +3,7 @@ import uuid
 from ninja import ModelSchema, Field
 
 from a4s_backend.models import Measurement
-from a4s_backend.schemas.feature import FeatureOutScheme
+from a4s_backend.schemas.feature import FeatureOutSchema
 
 
 class MeasureInSchema(ModelSchema):
@@ -16,7 +16,7 @@ class MeasureInSchema(ModelSchema):
 
 
 class MeasureOutSchema(ModelSchema):
-    feature: FeatureOutScheme | None
+    feature: FeatureOutSchema | None
 
     class Meta:
         model = Measurement

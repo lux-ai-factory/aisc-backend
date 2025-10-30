@@ -3,8 +3,8 @@ import uuid
 from ninja import ModelSchema, Field
 
 from a4s_backend.models import Evaluation
-from a4s_backend.schemas.dataset import DatasetPidOutScheme
-from a4s_backend.schemas.model import ModelPidOutScheme
+from a4s_backend.schemas.dataset import DatasetPidOutSchema
+from a4s_backend.schemas.model import ModelPidOutSchema
 from a4s_backend.schemas.project import ProjectOutSchema
 
 
@@ -16,8 +16,8 @@ class EvaluationOutSchema(ModelSchema):
 
 class EvaluationDetailOutSchema(ModelSchema):
     project: ProjectOutSchema
-    dataset: DatasetPidOutScheme
-    model: ModelPidOutScheme
+    dataset: DatasetPidOutSchema
+    model: ModelPidOutSchema
 
     class Meta:
         model = Evaluation

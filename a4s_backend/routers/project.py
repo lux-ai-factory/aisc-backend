@@ -3,7 +3,7 @@ import uuid
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from a4s_backend.models import EvaluationStatus
+from a4s_backend.models import EvaluationStatus, Dataset
 from a4s_backend.models.datashape import DataShape, DataShapeStatus
 from a4s_backend.models.model import Model
 from a4s_backend.repositories.base_repository import BaseRepository
@@ -12,13 +12,13 @@ from a4s_backend.repositories.datashape_repository import DataShapeRepository
 from a4s_backend.repositories.evaluation_repository import EvaluationRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.common import RecordPid
-from a4s_backend.schemas.dataset import DatasetOutScheme, DatasetInScheme
-from a4s_backend.schemas.datashape import DataShapeOutScheme, DataShapeInScheme
-from a4s_backend.schemas.model import ModelOutScheme
+from a4s_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
+from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
+from a4s_backend.schemas.model import ModelOutSchema
 from a4s_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
 
 
-router = Router(tags=["projects"])
+router = Router(tags=["project"])
 
 project_repository = ProjectRepository()
 dataset_repository = DatasetRepository()
@@ -53,7 +53,7 @@ async def get_project_details(request, pid: uuid.UUID):
     return await project_repository.get(pid, True)
 
 
-@router.get("/{pid}/datashape", response=DataShapeOutScheme)
+@router.get("/{pid}/datashape", response=DataShapeOutSchema)
 async def get_project_datashape(request, pid: uuid.UUID):
     project = await project_repository.get(pid, True)
 
@@ -63,25 +63,23 @@ async def get_project_datashape(request, pid: uuid.UUID):
     return project.expected_datashape
 
 
-@router.post("/{pid}/datasets", response=DatasetOutScheme)
-async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInScheme):
+@router.post("/{pid}/datasets", response=DatasetOutSchema)
+async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema):
     project = await project_repository.get(pid)
 
-    dataset = await dataset_repository.create(data)
-    dataset.project = project
-    await dataset_repository.save(dataset)
+    dataset = await dataset_repository.save(Dataset(**data.model_dump(), project=project))
 
     await datashape_repository.save(DataShape(status=DataShapeStatus.Manual, dataset=dataset))
 
     return dataset
 
 
-class ProjectModelsRequest(Schema):
+class CreateProjectModelRequest(Schema):
     name: str
     dataset_pid: uuid.UUID
 
-@router.post("/{pid}/models", response=ModelOutScheme)
-async def create_project_model(request, pid: uuid.UUID, data: ProjectModelsRequest):
+@router.post("/{pid}/models", response=ModelOutSchema)
+async def create_project_model(request, pid: uuid.UUID, data: CreateProjectModelRequest):
     project = await project_repository.get(pid)
     dataset = await dataset_repository.get(data.dataset_pid, True)
 
@@ -92,8 +90,8 @@ async def create_project_model(request, pid: uuid.UUID, data: ProjectModelsReque
     return await model_repository.save(model)
 
 
-@router.patch("/{pid}/datashape", response=DataShapeOutScheme)
-async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInScheme):
+@router.patch("/{pid}/datashape", response=DataShapeOutSchema)
+async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInSchema):
     project = await project_repository.get(pid, True)
 
     if project.expected_datashape is None:

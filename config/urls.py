@@ -17,16 +17,17 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
-from ninja import NinjaAPI, Router
+from ninja import Router
 
 from a4s_backend.routers.project import router as project_router
 from a4s_backend.routers.dataset import router as dataset_router
 from a4s_backend.routers.models import router as model_router
 from a4s_backend.routers.datashape import router as datashape_router
 from a4s_backend.routers.evaluation import router as evaluation_router
+from a4s_backend.utils.api import LoggingNinjaAPI
 from a4s_backend.utils.exceptions import register_exception_handlers
 
-api = NinjaAPI(title='Ninja API')
+api = LoggingNinjaAPI(title='Ninja API')
 register_exception_handlers(api)
 
 v1_router = Router()

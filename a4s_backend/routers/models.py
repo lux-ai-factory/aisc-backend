@@ -2,7 +2,7 @@ import uuid
 from pathlib import Path
 
 from django.http import StreamingHttpResponse
-from ninja import Router, File
+from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
@@ -10,7 +10,6 @@ from a4s_backend.models.model import Model
 from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.file_repository import upload_file
-from a4s_backend.schemas.common import UploadFileResponse
 from a4s_backend.utils import file_utils
 
 from config.settings import S3_MODELS_BUCKET
@@ -21,7 +20,10 @@ router = Router(tags=["model"])
 model_repository = BaseRepository(model=Model)
 
 
-@router.put("/{model_pid}/data", response=UploadFileResponse)
+class UploadModelFileResponse(Schema):
+    file_name: str
+
+@router.put("/{model_pid}/data", response=UploadModelFileResponse)
 async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFile]):
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
@@ -46,7 +48,7 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
     model.data = file.name
     await model_repository.save(model)
 
-    return UploadFileResponse(file_name=file.name)
+    return UploadModelFileResponse(file_name=file.name)
 
 
 @router.get("/{model_pid}/data")

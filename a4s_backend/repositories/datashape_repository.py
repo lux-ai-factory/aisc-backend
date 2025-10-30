@@ -3,13 +3,13 @@ import uuid
 
 from a4s_backend.models import DataShape, Feature
 from a4s_backend.repositories.base_repository import BaseRepository
-from a4s_backend.schemas.datashape import DataShapeInScheme
-from a4s_backend.schemas.feature import FeatureInScheme
+from a4s_backend.schemas.datashape import DataShapeInSchema
+from a4s_backend.schemas.feature import FeatureInSchema
 
 feature_repository = BaseRepository(model=Feature)
 
 
-async def feature_in_schema_to_feature(feature_schema: FeatureInScheme | None, datashape: DataShape) -> Feature | None:
+async def feature_in_schema_to_feature(feature_schema: FeatureInSchema | None, datashape: DataShape) -> Feature | None:
     if feature_schema is None:
         return None
 
@@ -32,7 +32,7 @@ class DataShapeRepository(BaseRepository[DataShape]):
     def __init__(self):
         super().__init__(DataShape)
 
-    async def patch(self, datashape: DataShape, data: DataShapeInScheme) -> DataShape:
+    async def patch(self, datashape: DataShape, data: DataShapeInSchema) -> DataShape:
         # remove the old features linked to this datashape
         await datashape.features.all().adelete()
 
@@ -46,7 +46,8 @@ class DataShapeRepository(BaseRepository[DataShape]):
         datashape.target_feature = target
         datashape.date_feature = date
 
-        return await self.save(datashape)
+        await self.save(datashape)
+        return await self.get(datashape.pid, True)
 
 
     async def get_with_related(self, pid: uuid.UUID) -> DataShape:

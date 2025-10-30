@@ -198,6 +198,7 @@ NINJA_JWT = {
     "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600
 }
 
+APP_NAME = env("APP_NAME")
 
 # S3 settings
 

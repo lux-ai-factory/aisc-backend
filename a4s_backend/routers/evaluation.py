@@ -1,6 +1,7 @@
 import datetime
 import uuid
 
+from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router, Schema
 
 from a4s_backend.models.feature import Feature
@@ -12,20 +13,21 @@ from a4s_backend.models.model import Model
 from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.evaluation_repository import EvaluationRepository
+from a4s_backend.repositories.measurement_repository import MeasurementRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, EvaluationByStatusResponseSchema, \
     EvaluationOutSchema
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
 from a4s_backend.services import a4s_eval
 
-router = Router(tags=["evaluations"])
+router = Router(tags=["evaluation"])
 
 evaluation_repository = EvaluationRepository()
 project_repository = ProjectRepository()
 dataset_repository = DatasetRepository()
 model_repository = BaseRepository(model=Model)
 observation_repository = BaseRepository(model=Observation)
-measurement_repository = BaseRepository(model=Measurement)
+measurement_repository = MeasurementRepository()
 metric_repository = BaseRepository(model=Metric)
 feature_repository = BaseRepository(model=Feature)
 
@@ -95,14 +97,15 @@ async def create_evaluation_measures(request, evaluation_pid: uuid.UUID, data: l
             measure_in_schema.description = ""
 
             # Get or create Metric from Measure name
-            metric = await metric_repository.get_one(name=measure_in_schema.name)
-            if not metric:
+            try:
+                metric = await metric_repository.get_one(name=measure_in_schema.name)
+            except ObjectDoesNotExist:
                 metric = await metric_repository.save(Metric(name=measure_in_schema.name))
 
             # Save Measure associated to Observation
             measure_in_schema.observation = observation
             measure_in_schema.metric = metric
-            await metric_repository.create(**measure_in_schema.dict(exclude={'feature_pid'}))
+            await measurement_repository.create(measure_in_schema.model_dump(exclude={'feature_pid'}))
 
     return Schema()
 

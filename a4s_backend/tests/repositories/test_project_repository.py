@@ -7,7 +7,7 @@ from a4s_backend.repositories.project_repository import ProjectRepository
 project_repository = ProjectRepository()
 
 
-class ProjectTestCase(TransactionTestCase):
+class ProjectRepositoryTestCase(TransactionTestCase):
 
     async def test_create_project(self):
         project = await project_repository.create(name="test")

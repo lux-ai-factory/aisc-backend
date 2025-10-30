@@ -3,13 +3,13 @@ from ninja import ModelSchema
 from a4s_backend.models import Feature
 
 
-class FeatureOutScheme(ModelSchema):
+class FeatureOutSchema(ModelSchema):
 
     class Meta:
         model = Feature
         exclude = ["datashape"]
 
-class FeatureInScheme(ModelSchema):
+class FeatureInSchema(ModelSchema):
     class Meta:
         model = Feature
         exclude = ["datashape"]

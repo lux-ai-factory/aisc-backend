@@ -44,7 +44,7 @@ class BaseRepository(Generic[T]):
 
 
     async def filter_with_related(self, **filters: Any) -> list[T]:
-        raise NotImplementedError("filter_wilter_related() not implemented")
+        raise NotImplementedError("filter_with_related() not implemented")
 
 
     async def get_all(self) -> list[T]:
@@ -60,8 +60,10 @@ class BaseRepository(Generic[T]):
 
 
     async def create(self, data: Any) -> T:
-        instance = self.model(**data.dict())
-        return instance.asave()
+        if not isinstance(data, dict):
+            data = data.model_dump()
+        instance = self.model(**data)
+        return await instance.asave()
 
 
     async def delete(self, instance: T) -> None:

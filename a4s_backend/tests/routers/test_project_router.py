@@ -8,7 +8,7 @@ from a4s_backend.schemas.project import ProjectInSchema, ProjectOutSchema
 project_repository = ProjectRepository()
 client = TestAsyncClient(project_router)
 
-class ProjectRouterCase(TestCase):
+class ProjectRouterTestCase(TestCase):
 
     async def test_get_projects(self):
         await project_repository.create("test")
@@ -21,8 +21,6 @@ class ProjectRouterCase(TestCase):
     async def test_create_project(self):
         data = ProjectInSchema()
         data.name = "test"
-        data.frequency = ""
-        data.window_size = ""
 
         response = await client.post('', json=data.dict())
         self.assertEqual(200, response.status_code)
@@ -31,5 +29,3 @@ class ProjectRouterCase(TestCase):
         project = ProjectOutSchema.model_validate(response.data)
         self.assertIsNotNone(project.pid)
         self.assertEqual(project.name, data.name)
-        self.assertEqual(project.frequency, data.frequency)
-        self.assertEqual(project.window_size, data.window_size)
