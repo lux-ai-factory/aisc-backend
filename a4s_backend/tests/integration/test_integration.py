@@ -6,13 +6,15 @@ from django.test import TestCase
 from ninja.testing import TestAsyncClient
 from unittest.mock import patch, MagicMock, AsyncMock
 
-from a4s_backend.models import  DataShapeStatus
+from a4s_backend.models import DataShapeStatus, FeatureType
 from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.routers.project import router as project_router, CreateProjectModelRequest
-from a4s_backend.routers.dataset import router as dataset_router
+from a4s_backend.routers.dataset import router as dataset_router, UploadDatasetFileResponse
 from a4s_backend.routers.datashape import router as datashape_router
+from a4s_backend.routers.model import router as model_router, UploadModelFileResponse
 from a4s_backend.schemas.dataset import DatasetInSchema, DatasetOutSchema, DataShapeOutSchema
 from a4s_backend.schemas.datashape import DataShapeInSchema
+from a4s_backend.schemas.feature import FeatureInSchema
 from a4s_backend.schemas.model import ModelOutSchema
 from a4s_backend.schemas.project import ProjectInSchema, ProjectOutSchema
 from a4s_backend.tests.utils import create_feature_in_schema_list
@@ -22,6 +24,7 @@ project_repository = ProjectRepository()
 project_client = TestAsyncClient(project_router)
 dataset_client = TestAsyncClient(dataset_router)
 datashape_client = TestAsyncClient(datashape_router)
+model_client = TestAsyncClient(model_router)
 
 
 class IntegrationTestCase(TestCase):
@@ -86,7 +89,7 @@ class IntegrationTestCase(TestCase):
         # Mock the file_upload and eval auto_discover calls
         # Upload file for training data and trigger eval feature auto discovery
         # (a4s-web ) PUT    /api/v1/datasets/{dataset.pid}/data                 -   Response body   : {"file_name": "2c90e470-1fe2-458a-9a2f-a93e2a3bef80.parquet"}
-        datashape_pid = None
+
         with (
             patch("a4s_backend.routers.dataset.file_repository.upload_file", new_callable=MagicMock) as mock_upload_response,
             patch("a4s_backend.routers.dataset.autodiscover_datashape", new_callable=AsyncMock) as eval_response,
@@ -105,13 +108,13 @@ class IntegrationTestCase(TestCase):
                 FILES={"file": file},
             )
             self.assertEqual(200, response.status_code)
-            datashape_pid = response.data.get('datashape_pid')
-            self.assertIsNotNone(datashape_pid)
+            upload_dataset_file_response = UploadDatasetFileResponse.model_construct(**response.data)
+            self.assertIsNotNone(upload_dataset_file_response.datashape_pid)
 
 
         # Get datashape
         # (a4s-eval) GET    /api/v1/datashapes/{datashape_pid}                    -   Response body   : {"features": [], "dataset": {"pid": "9ad203ca-ed5a-4254-9d58-c1620262dc26", "name": "training dataset", "data": "2c90e470-1fe2-458a-9a2f-a93e2a3bef80.parquet"}, "dataset_pid": "9ad203ca-ed5a-4254-9d58-c1620262dc26", "date": {"name": "", "pid": ""}, "target": {"name": "", "pid": ""}, "id": 1, "pid": "0c2514cf-fba6-42e8-bf8e-c9be88807f5e", "status": "Manual", "date_feature": null, "target_feature": null}
-        response = await datashape_client.get(f'/{datashape_pid}')
+        response = await datashape_client.get(f'/{upload_dataset_file_response.datashape_pid}')
         self.assertEqual(200, response.status_code)
         datashape = DataShapeOutSchema.model_construct(**response.data)
         self.assertIsNotNone(datashape.pid)
@@ -129,6 +132,56 @@ class IntegrationTestCase(TestCase):
 
         # Update status of datashape
         # (a4s-eval) PATCH  /api/v1/datashapes/{dataset.pid}/status?status=Auto -   Response body   : "Auto"
-        response = await datashape_client.patch(f'/{uuid.UUID(datashape.pid)}/status?status={DataShapeStatus.Auto}')
+        response = await datashape_client.patch(f'/{datashape.pid}/status?status={DataShapeStatus.Auto}')
         self.assertEqual(200, response.status_code)
         self.assertEqual(DataShapeStatus.Auto, response.data)
+
+
+        # Upload model data file
+        with (
+            patch("a4s_backend.routers.model.file_repository.upload_file", new_callable=MagicMock) as mock_upload_response,
+        ):
+            mock_upload_response.return_value = True
+
+            file = SimpleUploadedFile(
+                "model.onnx",
+                b"ONNX",
+                content_type="tapplication/octet-stream",
+            )
+
+            response = await model_client.put(
+                f'/{model.pid}/data',
+                FILES={"file": file},
+            )
+            self.assertEqual(200, response.status_code)
+            upload_model_file_response = UploadModelFileResponse.model_construct(**response.data)
+            self.assertIsNotNone(upload_model_file_response.file_name)
+
+
+        # Clicking import features gets dataset datashape and also assigns it as the expected_datashape to the project
+        response = await dataset_client.get(f'/{training_dataset.pid}/datashape')
+        self.assertEqual(200, response.status_code)
+        datashape = DataShapeOutSchema.model_construct(**response.data)
+        self.assertIsNotNone(datashape.pid)
+
+
+        # Patch features and set date and target features
+        # 127.0.0.1:62416 (a4s-web) PATCH /api/v1/projects/1907310a-31b9-4c1a-b168-27dd87a0eeb3/datashape http/1.1 200	-	Request body: {"features":[{"name":"annual_inc","min_value":9600,"max_value":327000,"feature_type":"Float"},{"name":"application_type","min_value":0,"max_value":0,"feature_type":"Integer"},{"name":"dti","min_value":0.11,"max_value":29.52,"feature_type":"Float"},{"name":"emp_length","min_value":0,"max_value":10,"feature_type":"Integer"},{"name":"fico_score","min_value":662,"max_value":817,"feature_type":"Float"},{"name":"home_ownership","min_value":0,"max_value":2,"feature_type":"Integer"},{"name":"initial_list_status","min_value":1,"max_value":1,"feature_type":"Integer"},{"name":"installment","min_value":34.5,"max_value":1318.45,"feature_type":"Float"},{"name":"int_rate","min_value":6.03,"max_value":24.2,"feature_type":"Float"},{"name":"loan_amnt","min_value":1000,"max_value":35000,"feature_type":"Float"},{"name":"month_of_year","min_value":2,"max_value":3,"feature_type":"Integer"},{"name":"month_since_earliest_cr_line","min_value":36,"max_value":476,"feature_type":"Integer"},{"name":"mort_acc","min_value":0,"max_value":19,"feature_type":"Integer"},{"name":"open_acc","min_value":2,"max_value":38,"feature_type":"Integer"},{"name":"pub_rec","min_value":0,"max_value":1,"feature_type":"Float"},{"name":"pub_rec_bankruptcies","min_value":0,"max_value":1,"feature_type":"Integer"},{"name":"purpose","min_value":0,"max_value":12,"feature_type":"Integer"},{"name":"ratio_loan_amnt_annual_inc","min_value":0.0211640211640211,"max_value":0.5,"feature_type":"Float"},{"name":"ratio_open_acc_total_acc","min_value":0.0909090909090909,"max_value":1,"feature_type":"Float"},{"name":"ratio_pub_rec_bankruptcies_month_since_earliest_cr_line","min_value":0,"max_value":0.0098039215686274,"feature_type":"Float"},{"name":"ratio_pub_rec_bankruptcies_pub_rec","min_value":-1,"max_value":1,"feature_type":"Float"},{"name":"ratio_pub_rec_month_since_earliest_cr_line","min_value":0,"max_value":0.0098039215686274,"feature_type":"Float"},{"name":"revol_bal","min_value":0,"max_value":82989,"feature_type":"Float"},{"name":"revol_util","min_value":0,"max_value":97.9,"feature_type":"Float"},{"name":"sub_grade","min_value":0,"max_value":30,"feature_type":"Integer"},{"name":"term","min_value":36,"max_value":60,"feature_type":"Integer"},{"name":"total_acc","min_value":4,"max_value":63,"feature_type":"Integer"},{"name":"verification_status","min_value":0,"max_value":2,"feature_type":"Integer"}],"date":{"name":"issue_d","min_value":0,"max_value":0,"feature_type":"Date"},"target":{"name":"charged_off","min_value":0,"max_value":1,"feature_type":"Integer"}}	-	Response body: {"features": [{"id": 181, "pid": "4a8c77e1-7ce4-44a4-a306-72a2077cb6b3", "name": "annual_inc", "description": "", "feature_type": "Float", "min_value": 9600.0, "max_value": 327000.0}, {"id": 182, "pid": "f7819f90-1203-46b8-818c-ea1c91596f42", "name": "application_type", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 0.0}, {"id": 183, "pid": "a6079959-8afe-4427-8bb5-ff8f62d4d249", "name": "dti", "description": "", "feature_type": "Float", "min_value": 0.11, "max_value": 29.52}, {"id": 184, "pid": "7bfc0569-7193-4839-9976-aac827cd8fb1", "name": "emp_length", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 10.0}, {"id": 185, "pid": "56429881-8819-46e0-b3e8-d6cfec6181f8", "name": "fico_score", "description": "", "feature_type": "Float", "min_value": 662.0, "max_value": 817.0}, {"id": 186, "pid": "765075aa-20e3-4df3-b6ca-5472500764b8", "name": "home_ownership", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 2.0}, {"id": 187, "pid": "1fa5f214-b9a5-4196-bd94-7f3b07511807", "name": "initial_list_status", "description": "", "feature_type": "Integer", "min_value": 1.0, "max_value": 1.0}, {"id": 188, "pid": "48825e08-8757-40cf-8ffc-fb817bdfb467", "name": "installment", "description": "", "feature_type": "Float", "min_value": 34.5, "max_value": 1318.45}, {"id": 189, "pid": "e6151906-cfae-4445-abf1-fd8c74d4c4cf", "name": "int_rate", "description": "", "feature_type": "Float", "min_value": 6.03, "max_value": 24.2}, {"id": 190, "pid": "96d765b2-f7b5-4f2e-8072-0ff1c4c00e73", "name": "loan_amnt", "description": "", "feature_type": "Float", "min_value": 1000.0, "max_value": 35000.0}, {"id": 191, "pid": "fca2312c-c347-44f6-a580-678934858f77", "name": "month_of_year", "description": "", "feature_type": "Integer", "min_value": 2.0, "max_value": 3.0}, {"id": 192, "pid": "68847cb6-2d73-4d48-8d99-82d70bd5393d", "name": "month_since_earliest_cr_line", "description": "", "feature_type": "Integer", "min_value": 36.0, "max_value": 476.0}, {"id": 193, "pid": "609ad521-c8e2-48bf-a571-68dcbfd209f0", "name": "mort_acc", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 19.0}, {"id": 194, "pid": "828642bc-6203-4d0b-be27-cd51a4124b79", "name": "open_acc", "description": "", "feature_type": "Integer", "min_value": 2.0, "max_value": 38.0}, {"id": 195, "pid": "3de963aa-3be7-4ab3-b163-c5f2200b8cf1", "name": "pub_rec", "description": "", "feature_type": "Float", "min_value": 0.0, "max_value": 1.0}, {"id": 196, "pid": "b6d71021-9c53-4900-ae44-1c3c9d03acbe", "name": "pub_rec_bankruptcies", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 1.0}, {"id": 197, "pid": "fa7c1afe-fd55-4fba-842d-067234d5fb3c", "name": "purpose", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 12.0}, {"id": 198, "pid": "38195d08-5b92-413e-88fd-42577cd16985", "name": "ratio_loan_amnt_annual_inc", "description": "", "feature_type": "Float", "min_value": 0.0211640211640211, "max_value": 0.5}, {"id": 199, "pid": "883f2bd5-12f0-4011-a0e6-0cfd0ef61097", "name": "ratio_open_acc_total_acc", "description": "", "feature_type": "Float", "min_value": 0.0909090909090909, "max_value": 1.0}, {"id": 200, "pid": "e5f146de-8f6a-4703-8bff-7f01609a6ae5", "name": "ratio_pub_rec_bankruptcies_month_since_earliest_cr_line", "description": "", "feature_type": "Float", "min_value": 0.0, "max_value": 0.0098039215686274}, {"id": 201, "pid": "822c04df-1f06-4ca9-9901-1a4da5b2e5bd", "name": "ratio_pub_rec_bankruptcies_pub_rec", "description": "", "feature_type": "Float", "min_value": -1.0, "max_value": 1.0}, {"id": 202, "pid": "3b527ac5-d320-4cd9-93c4-7a4e2cf52ba5", "name": "ratio_pub_rec_month_since_earliest_cr_line", "description": "", "feature_type": "Float", "min_value": 0.0, "max_value": 0.0098039215686274}, {"id": 203, "pid": "ddb8b827-acde-4de0-b01d-f0c0a16180d7", "name": "revol_bal", "description": "", "feature_type": "Float", "min_value": 0.0, "max_value": 82989.0}, {"id": 204, "pid": "cbc0915b-d309-43d8-900b-029e9e11f5d9", "name": "revol_util", "description": "", "feature_type": "Float", "min_value": 0.0, "max_value": 97.9}, {"id": 205, "pid": "66e0f1c8-c6a7-4c26-8beb-48a194854e32", "name": "sub_grade", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 30.0}, {"id": 206, "pid": "058b5bfa-bfde-4e2d-8e06-821633ef92f2", "name": "term", "description": "", "feature_type": "Integer", "min_value": 36.0, "max_value": 60.0}, {"id": 207, "pid": "d0cc9a3d-e777-44b9-8cdd-e86ffd28ad58", "name": "total_acc", "description": "", "feature_type": "Integer", "min_value": 4.0, "max_value": 63.0}, {"id": 208, "pid": "42f75d3b-4aee-4ec2-991c-6445b78da5fc", "name": "verification_status", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 2.0}], "dataset": {"pid": "1be41724-a4a0-423e-8ad0-a02f5e0e27e6", "name": "training", "data": "24d83a01-d2a8-4858-9c15-46a60096d85c.parquet"}, "dataset_pid": "1be41724-a4a0-423e-8ad0-a02f5e0e27e6", "date": {"id": 210, "pid": "d38b4359-398b-49c0-a266-0adc3ac1578d", "name": "issue_d", "description": "", "feature_type": "Date", "min_value": 0.0, "max_value": 0.0}, "target": {"id": 209, "pid": "1cc0405e-d040-4e64-be1e-a5328179b30c", "name": "charged_off", "description": "", "feature_type": "Integer", "min_value": 0.0, "max_value": 1.0}, "id": 3, "pid": "2e3557fd-b061-4305-8f50-0cb449cc36e8", "status": "Auto", "date_feature": 210, "target_feature": 209}
+        features_in: list[FeatureInSchema] = []
+        for f in datashape.features:
+            feature = FeatureInSchema(name=f['name'], min_value=f['min_value'], max_value=f['max_value'], feature_type=f['feature_type'])
+            features_in.append(feature)
+
+        date_feature = next(f for f in features_in if f.feature_type == FeatureType.Date)
+        target_feature = next(f for f in features_in if f.feature_type == FeatureType.Integer and f.max_value == 1)
+
+        features_in = [f for f in features_in if f not in (date_feature, target_feature)]
+
+        data = DataShapeInSchema(features=features_in, date=date_feature, target=target_feature)
+        response = await project_client.patch(f'/{project.pid}/datashape', json=data.dict())
+        self.assertEqual(200, response.status_code)
+        datashape = DataShapeOutSchema.model_construct(**response.data)
+        self.assertIsNotNone(datashape.date)
+        self.assertIsNotNone(datashape.target)
+
+

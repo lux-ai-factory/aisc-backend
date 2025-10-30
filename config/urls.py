@@ -21,13 +21,14 @@ from ninja import Router
 
 from a4s_backend.routers.project import router as project_router
 from a4s_backend.routers.dataset import router as dataset_router
-from a4s_backend.routers.models import router as model_router
+from a4s_backend.routers.model import router as model_router
 from a4s_backend.routers.datashape import router as datashape_router
 from a4s_backend.routers.evaluation import router as evaluation_router
 from a4s_backend.utils.api import LoggingNinjaAPI
 from a4s_backend.utils.exceptions import register_exception_handlers
+from config.settings import APP_NAME
 
-api = LoggingNinjaAPI(title='Ninja API')
+api = LoggingNinjaAPI(title=APP_NAME)
 register_exception_handlers(api)
 
 v1_router = Router()
