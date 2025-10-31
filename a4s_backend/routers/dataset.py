@@ -14,7 +14,8 @@ from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.datashape_repository import DataShapeRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
-from a4s_backend.services.a4s_eval import autodiscover_datashape
+from a4s_backend.services import a4s_eval
+
 
 from a4s_backend.utils import file_utils
 
@@ -56,7 +57,7 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
         raise HttpError(500, "Failed to upload file")
 
     # Call evaluation engine to autodiscover datashape
-    autodiscover_datashape_response = await autodiscover_datashape(datashape.pid)
+    autodiscover_datashape_response = await a4s_eval.autodiscover_datashape(datashape.pid)
     if not autodiscover_datashape_response:
         raise HttpError(500, f"Autodiscovery failed in a4s evaluation module")
 

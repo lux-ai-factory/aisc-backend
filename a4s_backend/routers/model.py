@@ -9,7 +9,6 @@ from ninja.files import UploadedFile
 from a4s_backend.models.model import Model
 from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.base_repository import BaseRepository
-from a4s_backend.repositories.file_repository import upload_file
 from a4s_backend.utils import file_utils
 
 from config.settings import S3_MODELS_BUCKET
@@ -40,7 +39,7 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
 
     file.name = f"{str(uuid.uuid4())}{suffix}"
 
-    result = upload_file(file, S3_MODELS_BUCKET)
+    result = file_repository.upload_file(file, S3_MODELS_BUCKET)
 
     if not result:
         raise HttpError(500, "Failed to upload file")
