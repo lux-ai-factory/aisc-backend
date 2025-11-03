@@ -1,10 +1,8 @@
-# Demo Django Project
+# A4S Backend
 
 Headless [Django](https://www.djangoproject.com/) project built with [django-allauth](https://docs.allauth.org/en/latest/) and [Django Ninja](https://django-ninja.dev/).
 
 Uses [uv](https://docs.astral.sh/uv/) for environment and dependency management.
-
-> ⚠️ **Important**: Intended as a **starting point for new projects**, not as a production-ready application.
 
 ## Features
 
