@@ -1,35 +1,17 @@
 # A4S Backend
 
-Headless [Django](https://www.djangoproject.com/) project built with [django-allauth](https://docs.allauth.org/en/latest/) and [Django Ninja](https://django-ninja.dev/).
-
-Uses [uv](https://docs.astral.sh/uv/) for environment and dependency management.
-
-## Features
-
-- **Headless Django setup** with [Django Ninja](https://django-ninja.dev/) as the API layer  
-- **User management flows** powered by [django-allauth](https://django-allauth.readthedocs.io/)  
-  - Signup, login, logout, password reset, email verification etc
-- **Dual authentication support**  
-  - Access API endpoints with **standard Django session cookies**  
-  - Or authenticate via **JWT tokens**  
-- **Example application model: `Item`**  
-  - Demonstrates some CRUD operations  
-  - Basic permission checks
-- **Auto-generated OpenAPI/Swagger docs**
-
-
 ## Prerequisites
 
 - Python 3.12 or higher
 - Git
 - uv
 
-## Getting started
+## Getting started for development
 
 ### 1. Clone repo
 ```
-git clone https://gitlab.com/uniluxembourg/snt/tto/r2s/team/sblevins/demo-django-project.git
-cd demo-django-project
+git clone https://github.com/lux-ai-factory/a4s-backend.git
+cd a4s-backend
 ```
 
 ### 2. Install dependencies
@@ -57,9 +39,7 @@ uv run python manage.py collectstatic
 uv run python manage.py test
 ```
 
-
 ## Running the app
-
 ```
 uv run python manage.py runserver
 ```
@@ -78,17 +58,28 @@ To access the OpenAPI docs run the app then go to:
 - Django Ninja endpoints
   - http://127.0.0.1:8000/api/docs
 
-## Authentication
 
-This project integrates **django-allauth (headless)** which provides two groups of endpoints:
 
-- **Browser endpoints** (`/_allauth/browser/...`):
-  - Intended for browser-based clients on same origin as backend
-  - Authenticate via standard Django session cookies
-  - Login sets a Django session cookie via response header (`Set-Cookie: sessionid=...`)
+## Docker
 
-- **App endpoints** (`/_allauth/app/...`):
-  - Intended for API/mobile clients
-  - Authenticate via JWT
-  - Login returns `access_token` and `refresh_token` in response body JSON
-  - Use custom token refresh endpoint `/api/v1/tokens/refresh` to get new access token
+To run the full application with docker compose set up your file structure as below with the 3 **a4s** repos
+- `a4s-backend`
+- `a4s-eval`
+- `a4s-webapp`
+
+```
+├── a4s-backend
+│   ├── docker-compose-infra.yml
+│   ├── docker-compose.yml
+│   ├── .env
+│   └── ...
+├── a4s-eval 
+│   └── ...  
+└── a4s-webapp 
+    └── ...
+```
+Then from within the `a4s-backend` folder run:
+
+```
+docker compose -f docker-compose-infra.yml -f docker-compose.yml up
+```

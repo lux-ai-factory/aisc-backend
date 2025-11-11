@@ -1,11 +1,11 @@
-import logging
+from logging import DEBUG
+
 from ninja import NinjaAPI
 
 from a4s_backend.utils.log_util import get_logger
-from config import settings
-from config.settings import APP_NAME
+from config.settings import APP_NAME, LOG_LEVEL
 
-logger = get_logger(APP_NAME, logging.DEBUG)
+logger = get_logger(APP_NAME, LOG_LEVEL)
 
 
 class LoggingNinjaAPI(NinjaAPI):
@@ -30,7 +30,8 @@ class LoggingNinjaAPI(NinjaAPI):
             client_type = "unknown"
 
         request_string = None
-        if settings.DEBUG and not request.FILES and request.body != b"":
+
+        if logger.get_level() == DEBUG and not request.FILES and request.body != b"":
             request_body = request.body.decode("utf-8")
             request_string = f'\t-\tRequest body: {request_body}'
 
@@ -38,7 +39,7 @@ class LoggingNinjaAPI(NinjaAPI):
         status_code = response.status_code
 
         response_string = None
-        if settings.DEBUG and hasattr(response, "content"):
+        if logger.get_level() == DEBUG and hasattr(response, "content"):
             content = response.content.decode("utf-8")
             response_string = f'\t-\tResponse body: {content}'
 

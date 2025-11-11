@@ -19,13 +19,14 @@ from django.urls import path, include
 
 from ninja import Router
 
+from a4s_backend.routers.app import router as app_router
 from a4s_backend.routers.project import router as project_router
 from a4s_backend.routers.dataset import router as dataset_router
 from a4s_backend.routers.model import router as model_router
 from a4s_backend.routers.datashape import router as datashape_router
 from a4s_backend.routers.evaluation import router as evaluation_router
-from a4s_backend.utils.api import LoggingNinjaAPI
-from a4s_backend.utils.exceptions import register_exception_handlers
+from a4s_backend.utils.logging_ninja_api import LoggingNinjaAPI
+from a4s_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
 
 api = LoggingNinjaAPI(title=APP_NAME)
@@ -33,6 +34,7 @@ register_exception_handlers(api)
 
 v1_router = Router()
 
+v1_router.add_router("/app", app_router)
 # Our endpoints
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/datasets", dataset_router)

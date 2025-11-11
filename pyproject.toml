@@ -19,6 +19,7 @@ dependencies = [
     "environs>=14.5.0",
     "httpx>=0.28.1",
     "pandas>=2.3.3",
+    "psycopg[binary]>=3.2.12",
     "pyarrow>=22.0.0",
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",

@@ -26,11 +26,24 @@ class MultiFormatAdapter(logging.LoggerAdapter):
             # log as plain text
             return str(msg), kwargs
 
+    def get_level(self):
+        return self.logger.level
 
-def get_logger(name, level: int = logging.INFO, static_fields: Dict[str, Any] = None) -> logging.Logger:
+
+def get_logger(name, level_str: str = logging.getLevelName(logging.INFO), static_fields: Dict[str, Any] = None) -> MultiFormatAdapter:
+    level = getattr(logging, level_str.upper(), logging.INFO)
     logger = logging.getLogger(name)
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
+
+        formatter = logging.Formatter(
+            "%(asctime)s: [%(levelname)-8s]: %(message)s",
+            "%Y-%m-%dT%H:%M:%S%z"
+        )
+
+        handler.setFormatter(formatter)
+
         logger.addHandler(handler)
         logger.setLevel(level)
+
     return MultiFormatAdapter(logger, static_fields)

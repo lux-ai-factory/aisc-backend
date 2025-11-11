@@ -191,6 +191,7 @@ NINJA_JWT = {
 ## .env vars
 
 APP_NAME = env("APP_NAME")
+LOG_LEVEL = env("LOG_LEVEL", "INFO")
 
 # S3 settings
 
