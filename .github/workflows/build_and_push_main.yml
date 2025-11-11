@@ -2,7 +2,7 @@ name: a4s-backend build pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 env:
   REGISTRY: ghcr.io
