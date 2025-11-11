@@ -1,7 +1,7 @@
 services:
 
   a4s-backend:
-    image: ghcr.io/lux-ai-factory/a4s-backend:v0.1.0
+    image: ghcr.io/lux-ai-factory/a4s-backend:latest
     ports:
       - "8000:8000"
     container_name: backend
