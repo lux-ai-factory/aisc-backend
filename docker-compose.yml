@@ -1,9 +1,7 @@
 services:
 
   a4s-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/lux-ai-factory/a4s-backend:v0.1.0
     ports:
       - "8000:8000"
     container_name: backend
@@ -12,11 +10,8 @@ services:
 
 
   a4s-webapp:
-    build:
-      context: ../a4s-webapp
-      dockerfile: Dockerfile.dev
+    image: ghcr.io/lux-ai-factory/a4s-webapp:django-port-integrations
     volumes:
-      - ../a4s-webapp:/app  # Mount source code for hot reload
       - a4s-webapp-node-modules:/app/node_modules
     ports:
       - "5173:5173"
@@ -28,9 +23,7 @@ services:
 
 
   a4s-eval:
-    build:
-      context: ../a4s-eval
-      dockerfile: Dockerfile
+    image: ghcr.io/lux-ai-factory/a4s-eval:django-port-integrations
     ports:
       - "8001:8001"
     container_name: eval
