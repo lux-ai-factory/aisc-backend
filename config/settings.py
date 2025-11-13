@@ -147,11 +147,20 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 ALLOWED_HOSTS = ['*']
 
-# --- CORS for your separate frontend(s) ---
+# Need to add this to make the app work behind a reverse proxy. Without it, even with CRSF and CORS properly configured, django will consider the request unsafe
+ENABLE_SSL_PROXY = env.bool("ENABLE_SSL_PROXY", default=False)
 
+if ENABLE_SSL_PROXY:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+
+# --- CORS for your separate frontend(s) ---
 # Only for dev
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
+DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
+CORS_ALLOWED_ORIGINS = env.list('A4S_BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+CRSF_TRUSTED_ORIGINS = env.list('A4S_BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+
 
 
 # Default primary key field type
