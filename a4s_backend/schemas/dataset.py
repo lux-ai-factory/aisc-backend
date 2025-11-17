@@ -15,8 +15,8 @@ class DataShapeOutSchema(ModelSchema):
     features: list[FeatureOutSchema] = Field(default=[], alias="get_features")
     dataset: DatasetOutSchema
     dataset_pid: uuid.UUID = Field(default=None, alias="dataset.pid")
-    date: FeatureOutSchema | BlankFeatureSchema = Field(default=BlankFeatureSchema(), alias="date_feature")
-    target: FeatureOutSchema | BlankFeatureSchema = Field(default=BlankFeatureSchema(), alias="target_feature")
+    date: FeatureOutSchema | None = Field(default=None, alias="date_feature")
+    target: FeatureOutSchema | None = Field(default=None, alias="target_feature")
 
     class Meta:
         model = DataShape
