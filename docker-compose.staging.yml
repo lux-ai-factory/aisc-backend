@@ -9,6 +9,8 @@ services:
       APP_API_URL: ${API_URL_EXTERNAL}
     depends_on:
       - a4s-backend
+    networks:
+      - frontend
 
   a4s-backend:
     image: ghcr.io/lux-ai-factory/a4s-backend:latest
@@ -25,7 +27,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-
+    networks:
+      - backend
     depends_on:
       postgres:
         condition: service_started
@@ -50,6 +53,8 @@ services:
       - a4s-eval-worker
       - rabbitmq
       - redis
+    networks:
+      - backend
 
   a4s-eval-worker:
     image: ghcr.io/lux-ai-factory/a4s-eval:v0.2.0
@@ -71,3 +76,5 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    networks:
+      - backend
