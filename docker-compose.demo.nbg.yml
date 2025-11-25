@@ -1,0 +1,189 @@
+services:
+  # # Frontend development container
+  a4s-webapp:
+    build:
+      context: ../a4s-webapp
+      dockerfile: Dockerfile
+    image: ghcr.io/lux-ai-factory/a4s-webapp:demo-nbg-dev
+    ports:
+      - "5173:80"  # Development server port
+    container_name: a4s-webapp
+    environment:
+      APP_API_URL: ${API_URL_EXTERNAL}
+    depends_on:
+      - a4s-backend
+
+  a4s-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/lux-ai-factory/a4s-backend:demo-nbg-dev
+    ports:
+      - "8000:8000"  # FastAPI server port
+    container_name: a4s-backend
+    environment:
+      S3_MODELS_BUCKET: ${S3_MODELS_BUCKET}
+      S3_DATASETS_BUCKET: ${S3_DATASETS_BUCKET}
+      S3_URL: ${S3_URL}
+      S3_USER: ${S3_USER}
+      S3_PASSWORD: ${S3_PASSWORD}
+      EVAL_URL: http://a4s-eval:8000
+      EVAL_PREFIX: ${EVAL_PREFIX}
+      LOG_LEVEL: "DEBUG"
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      CORS_ALLOW_ALL_ORIGINS: True
+      # if launch on server
+      A4S_BACKEND_CORS_ALLOWED_ORIGINS: "http://localhost:5173"
+      A4S_BACKEND_CSRF_TRUSTED_ORIGINS: "http://localhost:5173"
+    depends_on:
+      postgres:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+
+  # Evaluation service development container
+  a4s-eval:
+    build:
+      context: ../a4s-eval
+      dockerfile: Dockerfile
+    image: ghcr.io/lux-ai-factory/a4s-eval:demo-nbg-dev
+    ports:
+      - "8001:8000"  # Evaluation service port
+    container_name: a4s-eval
+    environment:
+      API_URL: http://a4s-backend:8000
+      REDIS_BACKEND_URL: amqp://${MQ_USERNAME}:${MQ_PASSWORD}@${MQ_HOST}:${MQ_PORT}//
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CORS_ORIGINS: "*"
+    depends_on:
+      - a4s-backend
+      - a4s-eval-worker
+      - rabbitmq
+      - redis
+
+  a4s-eval-worker:
+    build:
+      context: ../a4s-eval
+      dockerfile: Dockerfile
+    image: ghcr.io/lux-ai-factory/a4s-eval:demo-nbg-dev
+    container_name: a4s-eval-worker
+    environment:
+      API_URL: http://a4s-backend:8000
+      REDIS_BACKEND_URL: amqp://${MQ_USERNAME}:${MQ_PASSWORD}@${MQ_HOST}:${MQ_PORT}//
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CORS_ORIGINS: "*"
+    depends_on:
+      - a4s-backend
+      - rabbitmq
+      - redis
+    command: "celery -A a4s_eval.celery_worker worker --loglevel=debug"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - celery --app a4s_eval.celery_app inspect ping -d "celery@$$HOSTNAME"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+
+  # MinIO object storage service
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    ports:
+      - "9100:9000"  # S3 API port
+      - "9101:9001"  # Web console port
+    volumes:
+      - minio_data:/data  # Persistent storage
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_USER}        # MinIO root username
+      MINIO_ROOT_PASSWORD: ${S3_PASSWORD} # MinIO root password
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MinIO bucket initialization service
+  make_buckets:
+    image: quay.io/minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy  # Wait for MinIO to be ready
+    environment:
+      MINIO_ROOT_USER: ${S3_USER}        # MinIO credentials for bucket creation
+      MINIO_ROOT_PASSWORD: ${S3_PASSWORD}
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set minio http://minio:9000 ${S3_USER} ${S3_PASSWORD} &&
+      /usr/bin/mc mb --ignore-existing minio/datasets;
+      /usr/bin/mc mb --ignore-existing minio/models &&
+      exit 0;
+      "
+
+  # RabbitMQ Message queue to send the jobs
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # RabbitMQ messaging port
+      - "15672:15672" # RabbitMQ management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${MQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${MQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq  # Persistent storage
+
+  # Redis collects the results.
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data  # Persistent storage
+
+  # PostgreSQL database service
+  postgres:
+    image: postgres:14-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Persistent storage
+    restart: unless-stopped
+
+  # pgAdmin web interface for PostgreSQL
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   container_name: pgadmin
+  #   ports:
+  #     - "5050:80"
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: user-name@domain-name.com
+  #     PGADMIN_DEFAULT_PASSWORD: strong-password
+  #   depends_on:
+  #     - postgres
+  #   restart: unless-stopped
+
+volumes:
+  minio_data:  # Persistent storage for MinIO
+    driver: local
+  postgres_data:  # Persistent storage for PostgreSQL
+    driver: local
+  rabbitmq_data:  # Persistent storage for RabbitMQ
+    driver: local
+  redis_data:  # Persistent storage for Redis
+    driver: local
