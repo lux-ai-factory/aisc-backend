@@ -7,16 +7,18 @@ services:
     ports:
       - 443:8005
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy:/data
+      - /home/deployer/config/caddy:/etc/caddy/:ro
+      - /home/deployer/data/caddy:/data
     environment:
       LOG_FILE: "/data/access.log"
-      CADDY_DOMAIN: "https://localhost"
+      CADDY_DOMAIN: "https://aforstest.uni.lux"
       CADDY_PORT: "8005"
-      CADDY_ENVIRONMENT: "development"
+      CADDY_ENVIRONMENT: "staging"
     networks:
       - backend
       - frontend
+    depends_on:
+      - a4s-backend
 
   # MinIO object storage service
   minio:

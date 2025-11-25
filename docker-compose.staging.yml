@@ -1,7 +1,7 @@
 services:
   # # Frontend development container
   a4s-webapp:
-    image: ghcr.io/lux-ai-factory/a4s-webapp:v2-devproxied
+    image: ghcr.io/lux-ai-factory/a4s-webapp:v2-stagingproxied
     ports:
       - "5173:80" # Development server port
     container_name: a4s-webapp
@@ -13,7 +13,7 @@ services:
       - frontend
 
   a4s-backend:
-    image: ghcr.io/lux-ai-factory/a4s-backend:latest
+    image: ghcr.io/lux-ai-factory/a4s-backend:wip-deployment
     container_name: a4s-backend
     environment:
       S3_MODELS_BUCKET: ${S3_MODELS_BUCKET}
@@ -23,10 +23,13 @@ services:
       S3_PASSWORD: ${S3_PASSWORD}
       EVAL_URL: ${EVAL_URL}
       EVAL_PREFIX: ${EVAL_PREFIX}
-      LOG_LEVEL: "DEBUG"
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      A4S_BACKEND_CORS_ALLOWED_ORIGINS: ${A4S_BACKEND_CORS_ALLOWED_ORIGINS}
+      A4S_BACKEND_CSRF_TRUSTED_ORIGINS: ${A4S_BACKEND_CSRF_TRUSTED_ORIGINS}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      ENABLE_SSL_PROXY: true
     networks:
       - backend
     depends_on:
@@ -68,7 +71,7 @@ services:
       - a4s-backend
       - rabbitmq
       - redis
-    command: "celery -A a4s_eval.celery_worker worker --loglevel=debug"
+    command: "celery -A a4s_eval.celery_worker worker --loglevel=info"
     healthcheck:
       test:
         - "CMD-SHELL"
