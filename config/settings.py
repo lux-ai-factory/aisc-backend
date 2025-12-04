@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from corsheaders.defaults import default_headers
 from environs import env
+from django.core.management.utils import get_random_secret_key
 
 env.read_env()
 
@@ -21,9 +22,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("DJANGO_SECRET_KEY")
+# Default random key only to get the build not to fail
+SECRET_KEY = env("DJANGO_SECRET_KEY",default=get_random_secret_key())
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", False)
@@ -199,18 +200,18 @@ NINJA_JWT = {
 
 ## .env vars
 
-APP_NAME = env("APP_NAME")
+APP_NAME = env("APP_NAME","a4s-backend")
 LOG_LEVEL = env("LOG_LEVEL", "INFO")
 
 # S3 settings
-
-S3_URL = env("S3_URL")
-S3_USER = env("S3_USER")
-S3_PASSWORD = env("S3_PASSWORD")
-S3_DATASETS_BUCKET = env("S3_DATASETS_BUCKET")
-S3_MODELS_BUCKET = env("S3_MODELS_BUCKET")
+# Setting all the defaults as empty - like on database block -, configstatic will run - and consequently also the build
+S3_URL = env("S3_URL","")
+S3_USER = env("S3_USER","")
+S3_PASSWORD = env("S3_PASSWORD","")
+S3_DATASETS_BUCKET = env("S3_DATASETS_BUCKET","")
+S3_MODELS_BUCKET = env("S3_MODELS_BUCKET","")
 
 # Evaluation module settings
 
-EVAL_URL = env("EVAL_URL")
-EVAL_PREFIX = env("EVAL_PREFIX")
+EVAL_URL = env("EVAL_URL","")
+EVAL_PREFIX = env("EVAL_PREFIX","")
