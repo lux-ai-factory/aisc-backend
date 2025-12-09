@@ -6,7 +6,7 @@ from ninja import Router, Schema
 
 from a4s_backend.models.feature import Feature
 from a4s_backend.models.observation import Observation
-from a4s_backend.models.metric import Measurement, Metric
+from a4s_backend.models.metric import Metric
 
 from a4s_backend.models.evaluation import Evaluation, EvaluationStatus
 from a4s_backend.models.model import Model
@@ -18,7 +18,7 @@ from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, EvaluationByStatusResponseSchema, \
     EvaluationOutSchema
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
-from a4s_backend.services import a4s_eval
+from a4s_backend.services import celery_service
 
 router = Router(tags=["evaluation"])
 
@@ -66,7 +66,7 @@ async def create_evaluation(request, project_pid: uuid.UUID, model_pid: uuid.UUI
     )
 
     await evaluation_repository.save(evaluation)
-    await a4s_eval.trigger_evaluation_task()
+    await celery_service.run_evaluation_task(evaluation.pid)
 
     return evaluation
 

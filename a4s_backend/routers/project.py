@@ -108,3 +108,11 @@ async def get_project_evaluations(request, pid: uuid.UUID, status: EvaluationSta
 
     response = [RecordPid(pid=e.pid) for e in evaluations]
     return response
+
+@router.get("/{pid}/plugins/{plugin_name}/config", response=dict)
+async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
+    project = await project_repository.get(pid, True)
+    plugin = next((p for p in project.get_plugins() if p.name == plugin_name), None)
+    if not plugin:
+        raise HttpError(404, f"Project {pid} has no plugin {plugin_name}")
+    return plugin.config

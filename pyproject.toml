@@ -11,6 +11,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.40.64",
+    "celery[redis]>=5.6.0",
     "django>=5.2.7",
     "django-allauth[headless-spec]>=65.13.0",
     "django-cors-headers>=4.9.0",
@@ -23,4 +24,8 @@ dependencies = [
     "pyarrow>=22.0.0",
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",
+    "a4s-plugin-manager",
 ]
+
+[tool.uv.sources]
+a4s-plugin-manager = { path = "../a4s-plugin-manager", editable = true }

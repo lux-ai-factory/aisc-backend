@@ -60,10 +60,17 @@ class BaseRepository(Generic[T]):
 
 
     async def create(self, data: Any) -> T:
-        if not isinstance(data, dict):
+        if hasattr(data, 'model_dump'):
             data = data.model_dump()
-        instance = self.model(**data)
-        return await instance.asave()
+            instance = self.model(**data)
+            await instance.asave()
+        elif hasattr(data, '_meta'):
+            instance = data
+            await instance.asave()
+        else:
+            instance = self.model(**data)
+            await instance.asave()
+        return instance
 
 
     async def delete(self, instance: T) -> None:
