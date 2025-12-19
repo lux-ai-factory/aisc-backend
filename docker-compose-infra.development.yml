@@ -7,18 +7,17 @@ services:
     ports:
       - 443:8005
     volumes:
-      - /home/deployer/config/caddy:/etc/caddy/:ro
-      - /home/deployer/data/caddy:/data
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
       LOG_FILE: "/data/access.log"
-      CADDY_DOMAIN: "https://aforstest.uni.lux"
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
       CADDY_PORT: "8005"
-      CADDY_ENVIRONMENT: "staging"
+      CADDY_ENVIRONMENT: ${CADDY_ENVIRONMENT}
     networks:
       - backend
       - frontend
-    depends_on:
-      - a4s-backend
+    # depends_on:
+    #   - a4s-backend
 
   # MinIO object storage service
   minio:
@@ -61,6 +60,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
+    ports:
+      - 5672:5672
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
