@@ -94,7 +94,7 @@ async def create_evaluation_measures(request, evaluation_pid: uuid.UUID, data: l
             if measure_in_schema.feature_pid is not None:
                 feature = await feature_repository.get(measure_in_schema.feature_pid)
                 measure_in_schema.feature = feature
-            measure_in_schema.description = ""
+            measure_in_schema.description = "" if measure_in_schema.description is None else measure_in_schema.description
 
             # Get or create Metric from Measure name
             try:
