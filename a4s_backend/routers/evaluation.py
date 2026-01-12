@@ -4,6 +4,7 @@ import uuid
 from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router, Schema
 
+from a4s_backend.models import EvaluationPlugin
 from a4s_backend.models.feature import Feature
 from a4s_backend.models.observation import Observation
 from a4s_backend.models.metric import Metric
@@ -15,6 +16,7 @@ from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.evaluation_repository import EvaluationRepository
 from a4s_backend.repositories.measurement_repository import MeasurementRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
+from a4s_backend.routers.plugin import plugin_loader
 from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, EvaluationByStatusResponseSchema, \
     EvaluationOutSchema
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
@@ -30,6 +32,44 @@ observation_repository = BaseRepository(model=Observation)
 measurement_repository = MeasurementRepository()
 metric_repository = BaseRepository(model=Metric)
 feature_repository = BaseRepository(model=Feature)
+evaluation_plugin_repository = BaseRepository(model=EvaluationPlugin)
+
+
+class EvaluationPluginInSchema(Schema):
+    name: str
+    dataset_pid: uuid.UUID | None = None
+    model_pid: uuid.UUID | None = None
+
+
+class CreateEvaluationRequest(Schema):
+    project_pid: uuid.UUID
+    plugins_to_run: list[EvaluationPluginInSchema]
+
+
+@router.post("/task", response=EvaluationOutSchema)
+async def create_evaluation_task(request, data: CreateEvaluationRequest):
+    project = await project_repository.get(data.project_pid, True)
+
+    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
+    evaluation = await evaluation_repository.create(evaluation)
+
+    evaluation_plugins = []
+    for plugin_to_run in data.plugins_to_run:
+        plugin_loader.load(plugin_to_run.name)
+        plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name), None)
+        if plugin:
+            dataset = await dataset_repository.get(plugin_to_run.dataset_pid)
+            model = await model_repository.get(plugin_to_run.model_pid)
+            run_plugin = EvaluationPlugin(plugin=plugin, evaluation=evaluation, dataset=dataset, model=model)
+            run_plugin = await evaluation_plugin_repository.create(run_plugin)
+            evaluation_plugins.append(run_plugin)
+
+    evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
+
+    evaluation.task = evaluation_plugins_task.task_id
+    await evaluation_repository.save(evaluation)
+
+    return evaluation
 
 
 @router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)
@@ -44,7 +84,7 @@ async def get_evaluations_by_status(request, status: EvaluationStatus):
 
 @router.put("/{evaluation_pid}", response=str)
 async def update_evaluation_status(request, evaluation_pid: uuid.UUID, status: EvaluationStatus):
-    evaluation = await evaluation_repository.get(evaluation_pid)
+    evaluation = await evaluation_repository.get(evaluation_pid, True)
 
     evaluation.status = status
     await evaluation_repository.save(evaluation)
@@ -66,7 +106,7 @@ async def create_evaluation(request, project_pid: uuid.UUID, model_pid: uuid.UUI
     )
 
     await evaluation_repository.save(evaluation)
-    await celery_service.run_evaluation_task(evaluation.pid)
+    await celery_service.run_evaluation_task()
 
     return evaluation
 

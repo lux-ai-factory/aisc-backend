@@ -1,11 +1,12 @@
 import uuid
 from pathlib import Path
 
-from ninja import Router, File, Schema
+from ninja import Router, File, Schema, Form
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from django.http import StreamingHttpResponse
+from pydantic import BaseModel, Field
 
 from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.datashape import DataShapeStatus, DataShape
@@ -33,8 +34,11 @@ class UploadDatasetFileResponse(Schema):
     file_name: str
     datashape_pid: uuid.UUID
 
+class FileUploadMetadata(Schema):
+    csv_to_parquet: bool = Field(..., alias="csvToParquet")
+
 @router.put("/{dataset_pid}/data", response=UploadDatasetFileResponse)
-async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[UploadedFile]):
+async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[UploadedFile], data: Form[FileUploadMetadata]):
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
@@ -45,7 +49,7 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
         raise HttpError(404, f"Datashape for dataset ({dataset_pid}) not found")
 
     # Check if file is CSV and convert to parquet if needed
-    if Path(file.name).suffix.lower() == ".csv":
+    if Path(file.name).suffix.lower() == ".csv" and data.csv_to_parquet:
         file_utils.csv_to_parquet(file)
 
     suffix = Path(file.name).suffix.lower()

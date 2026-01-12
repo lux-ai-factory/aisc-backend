@@ -20,7 +20,7 @@ class ProjectOutSchema(ModelSchema):
 class ProjectDetailsOutSchema(ModelSchema):
     datasets: list[DatasetOutSchema] = Field([], alias="get_datasets")
     models: list[ModelOutSchema] = Field([], alias="get_models")
-    plugins: list[PluginOutSchema] = Field([], alias="get_plugins")
+    plugins: list[PluginOutSchema] = Field([], alias="get_enabled_plugins")
 
     class Meta:
         model = Project

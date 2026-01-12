@@ -10,6 +10,8 @@ class Dataset(HasData):
 
     project = models.ForeignKey(
         'Project', related_name='datasets', on_delete=models.PROTECT)
+    plugin = models.ForeignKey('Plugin', blank=True, null=True,
+                                related_name='datasets', on_delete=models.PROTECT)
 
     def get_models(self) -> list[Model]:
         return list(self.models.all())

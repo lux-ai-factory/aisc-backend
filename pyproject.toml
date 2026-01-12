@@ -10,7 +10,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "boto3>=1.40.64",
+    "boto3==1.42.7",
     "celery[redis]>=5.6.0",
     "django>=5.2.7",
     "django-allauth[headless-spec]>=65.13.0",
@@ -25,6 +25,12 @@ dependencies = [
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",
     "a4s-plugin-manager",
+    "jsonschema>=4.25.1",
+    "requests>=2.32.5",
+    "openai>=2.11.0",
+    "replicate>=1.0.7",
+    "ollama>=0.6.1",
+    "gpt4all>=2.8.2",
 ]
 
 [tool.uv.sources]

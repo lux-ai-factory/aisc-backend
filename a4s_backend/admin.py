@@ -56,7 +56,7 @@ class ModelAdmin(admin.ModelAdmin):
 
 @admin.register(Evaluation)
 class EvaluationAdmin(admin.ModelAdmin):
-    list_display = ["pid", "status", "project", "config", "dataset", "model", "observation_count"]
+    list_display = ["pid", "status", "project", "dataset", "model", "observation_count"]
 
     def observation_count(self, obj):
         return len(obj.get_observations())
