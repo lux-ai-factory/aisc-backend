@@ -58,8 +58,15 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
         plugin_loader.load(plugin_to_run.name)
         plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name), None)
         if plugin:
-            dataset = await dataset_repository.get(plugin_to_run.dataset_pid)
-            model = await model_repository.get(plugin_to_run.model_pid)
+
+            dataset = None
+            if plugin_to_run.dataset_pid is not None:
+                dataset = await dataset_repository.get(plugin_to_run.dataset_pid)
+
+            model = None
+            if plugin_to_run.model_pid is not None:
+                model = await model_repository.get(plugin_to_run.model_pid)
+
             run_plugin = EvaluationPlugin(plugin=plugin, evaluation=evaluation, dataset=dataset, model=model)
             run_plugin = await evaluation_plugin_repository.create(run_plugin)
             evaluation_plugins.append(run_plugin)

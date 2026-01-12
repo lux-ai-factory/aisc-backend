@@ -18,18 +18,12 @@ dependencies = [
     "django-ninja>=1.4.5",
     "django-ninja-jwt>=5.4.0",
     "environs>=14.5.0",
-    "httpx>=0.28.1",
     "pandas>=2.3.3",
     "psycopg[binary]>=3.2.12",
     "pyarrow>=22.0.0",
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",
     "jsonschema>=4.25.1",
-    "requests>=2.32.5",
-    "openai>=2.11.0",
-    "replicate>=1.0.7",
-    "ollama>=0.6.1",
-    "gpt4all>=2.8.2",
     "a4s-plugin-manager",
 ]
 
