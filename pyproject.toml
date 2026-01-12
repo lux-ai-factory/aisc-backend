@@ -34,4 +34,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-a4s-plugin-manager = { path = "../a4s-plugin-manager", editable = true }
+a4s-plugin-manager = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git" }

@@ -32,7 +32,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a4s-plugin-manager", editable = "../a4s-plugin-manager" },
+    { name = "a4s-plugin-manager", git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git" },
     { name = "boto3", specifier = "==1.42.7" },
     { name = "celery", extras = ["redis"], specifier = ">=5.6.0" },
     { name = "django", specifier = ">=5.2.7" },
@@ -58,24 +58,18 @@ requires-dist = [
 [[package]]
 name = "a4s-plugin-interface"
 version = "0.1.0"
-source = { editable = "../a4s-plugin-interface" }
+source = { git = "https://github.com/lux-ai-factory/a4s-plugin-interface.git#b33035e476c5c5e7f3881b5f1593150cb333ebd9" }
 dependencies = [
     { name = "pydantic" },
 ]
 
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.12.5" }]
-
 [[package]]
 name = "a4s-plugin-manager"
 version = "0.1.0"
-source = { editable = "../a4s-plugin-manager" }
+source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git#07344ef954f51f1722cb4e0fcf21cba21b259249" }
 dependencies = [
     { name = "a4s-plugin-interface" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "a4s-plugin-interface", editable = "../a4s-plugin-interface" }]
 
 [[package]]
 name = "amqp"
