@@ -66,7 +66,7 @@ dependencies = [
 [[package]]
 name = "a4s-plugin-manager"
 version = "0.1.0"
-source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git#07344ef954f51f1722cb4e0fcf21cba21b259249" }
+source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git#ec19527c20b4dab78d0c1d7a27dce8ea1e482d38" }
 dependencies = [
     { name = "a4s-plugin-interface" },
 ]
