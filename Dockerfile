@@ -10,6 +10,12 @@ WORKDIR /app
 # ---- Builder ----
 FROM base AS builder
 
+RUN apk add git
+
+RUN --mount=type=secret,id=git_pat \
+    export GITHUB_TOKEN=$(cat /run/secrets/git_pat) && \
+    git config --global url."https://$GITHUB_TOKEN@github.com/".insteadOf https://github.com/
+
 # Install dependencies first (caching layer)
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -30,6 +36,12 @@ WORKDIR /app
 # Copy installed virtualenv from builder
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
+
+RUN apk add git
+
+RUN --mount=type=secret,id=git_pat \
+    export GITHUB_TOKEN=$(cat /run/secrets/git_pat) && \
+    git config --global url."https://$GITHUB_TOKEN@github.com/".insteadOf https://github.com/
 
 # Copy app code only (lighter layer)
 COPY . .
