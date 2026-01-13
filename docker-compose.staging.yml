@@ -81,6 +81,7 @@ services:
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
+      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
     volumes:
       - /home/deployer/a4splugins:/app/plugins:ro
     depends_on:
