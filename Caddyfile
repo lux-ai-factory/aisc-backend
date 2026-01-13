@@ -39,6 +39,13 @@
       }
   }
 
+  # Flower 
+  handle /flower/* {
+    reverse_proxy a4s-eval-flower:5555 {
+        header_up X-Real-IP {remote_host}
+      }
+  }
+
   # Serve the JS frontend by default
   reverse_proxy  a4s-webapp:80 {
     header_up X-Real-IP {remote_host}
