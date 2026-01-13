@@ -81,6 +81,8 @@ services:
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
+    volumes:
+      - /home/deployer/a4splugins:/app/plugins:ro
     depends_on:
       - a4s-backend
       - rabbitmq
