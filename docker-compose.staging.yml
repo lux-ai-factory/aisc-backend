@@ -1,7 +1,7 @@
 services:
   # # Frontend development container
   a4s-webapp:
-    image: ghcr.io/lux-ai-factory/a4s-webapp:v2-stagingproxied
+    image: ghcr.io/lux-ai-factory/a4s-webapp:wip-plugins
     ports:
       - "5173:80" # Development server port
     container_name: a4s-webapp
@@ -13,7 +13,7 @@ services:
       - frontend
 
   a4s-backend:
-    image: ghcr.io/lux-ai-factory/a4s-backend:wip-deployment
+    image: ghcr.io/lux-ai-factory/a4s-backend:wip-plugins
     container_name: a4s-backend
     environment:
       S3_MODELS_BUCKET: ${S3_MODELS_BUCKET}
@@ -26,10 +26,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       A4S_BACKEND_CORS_ALLOWED_ORIGINS: ${A4S_BACKEND_CORS_ALLOWED_ORIGINS}
       A4S_BACKEND_CSRF_TRUSTED_ORIGINS: ${A4S_BACKEND_CSRF_TRUSTED_ORIGINS}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
       ENABLE_SSL_PROXY: true
+      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
+    volumes:
+      - /home/deployer/a4splugins:/app/plugins:ro
     networks:
       - backend
     depends_on:
@@ -42,36 +47,49 @@ services:
       rabbitmq:
         condition: service_started
 
-  # Evaluation service development container
-  a4s-eval:
-    image: ghcr.io/lux-ai-factory/a4s-eval:v0.2.0
-    container_name: a4s-eval
-    environment:
-      API_URL: ${API_URL} # Address of api-backend
-      REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
-      CORS_ORIGINS: "*"
-    depends_on:
-      - a4s-backend
-      - a4s-eval-worker
-      - rabbitmq
-      - redis
-    networks:
-      - backend
-
   a4s-eval-worker:
-    image: ghcr.io/lux-ai-factory/a4s-eval:v0.2.0
+    image: ghcr.io/lux-ai-factory/a4s-eval:wip-plugins
     container_name: a4s-eval-worker
     environment:
       API_URL: ${API_URL} # Address of api-backend
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
       CORS_ORIGINS: "*"
+    volumes:
+      - /home/deployer/a4splugins:/app/plugins:ro
     depends_on:
       - a4s-backend
       - rabbitmq
       - redis
     command: "celery -A a4s_eval.celery_worker worker --loglevel=info"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - celery --app a4s_eval.celery_app inspect ping -d "celery@$$HOSTNAME"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - backend
+
+  a4s-eval-flower:
+    image: ghcr.io/lux-ai-factory/a4s-eval:wip-plugins
+    container_name: a4s-eval-flower
+    environment:
+      API_URL: ${API_URL} # Address of api-backend
+      REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CORS_ORIGINS: "*"
+      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
+      FLOWER_URL_PREFIX: flower
+    volumes:
+      - /home/deployer/a4splugins:/app/plugins:ro
+    depends_on:
+      - a4s-backend
+      - rabbitmq
+      - redis
+    command: "celery -A a4s_eval.celery_worker flower"
     healthcheck:
       test:
         - "CMD-SHELL"
