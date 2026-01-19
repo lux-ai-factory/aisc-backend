@@ -83,3 +83,20 @@ Then from within the `a4s-backend` folder run:
 ```
 docker compose -f docker-compose-infra.yml -f docker-compose.yml up
 ```
+
+## Plugin Development
+
+To run the application to develop a plugin, set up the environment as described above.
+
+1. In GitHub create a Personal access token with the `repo` scope.
+2. Set the PAT as a terminal environment variable: 
+   - `export GIT_PAT=your_pat_here`
+3. In `env.development` set the `PLUGIN_PATH` environment variable to folder on your local machine where we will develop a plugin:
+   - `PLUGIN_PATH=your_plugin_path_here`
+4. Create a folder in the `PLUGIN_PATH` with the name of your plugin project. Follow the instructions in the [a4s-plugin-interface](https://github.com/lux-ai-factory/a4s-plugin-interface) repo to create a plugin.
+
+Run the following command from the `a4s-backend` folder:
+
+```
+ docker compose --env-file env.development -f docker-compose-infra.development.yml -f docker-compose.development.yml up
+```
