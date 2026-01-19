@@ -32,9 +32,9 @@ services:
       A4S_BACKEND_CSRF_TRUSTED_ORIGINS: ${A4S_BACKEND_CSRF_TRUSTED_ORIGINS}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
       ENABLE_SSL_PROXY: true
-      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
+      PLUGIN_PATH: ${PLUGIN_PATH}
     volumes:
-      - /home/deployer/a4splugins:/app/plugins:ro
+      - ${PLUGIN_PATH}:/app/plugins:ro
     networks:
       - backend
     depends_on:
@@ -54,10 +54,10 @@ services:
       API_URL: ${API_URL} # Address of api-backend
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
-      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
+      PLUGIN_PATH: ${PLUGIN_PATH}
       CORS_ORIGINS: "*"
     volumes:
-      - /home/deployer/a4splugins:/app/plugins:ro
+      - ${PLUGIN_PATH}:/app/plugins:ro
     depends_on:
       - a4s-backend
       - rabbitmq
@@ -81,7 +81,6 @@ services:
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
-      DEV_PLUGIN_PATH: ${DEV_PLUGIN_PATH}
       FLOWER_URL_PREFIX: flower
     volumes:
       - /home/deployer/a4splugins:/app/plugins:ro

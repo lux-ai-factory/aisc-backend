@@ -5,7 +5,7 @@ services:
     container_name: caddy
     restart: always
     ports:
-      - 443:8005
+      - "443:8005"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
@@ -29,6 +29,8 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_USER} # MinIO root username
       MINIO_ROOT_PASSWORD: ${S3_PASSWORD} # MinIO root password
+    ports:
+      - "9000:9000"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -61,7 +63,7 @@ services:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - 5672:5672
+      - "5672:5672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
@@ -76,11 +78,12 @@ services:
     container_name: redis
     restart: unless-stopped
     ports:
-      - 6379:6379
+      - "6379:6379"
     volumes:
       - redis_data:/data # Persistent storage
     networks:
       - backend
+    command: redis-server --protected-mode no
 
   # PostgreSQL database service
   postgres:
@@ -91,7 +94,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - 5432:5432
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persistent storage
     restart: unless-stopped

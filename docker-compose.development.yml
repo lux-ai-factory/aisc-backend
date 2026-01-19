@@ -36,6 +36,7 @@ services:
       ENABLE_SSL_PROXY: true
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
+      PLUGIN_PATH: ${PLUGIN_PATH}
     networks:
       - backend
     depends_on:
@@ -50,11 +51,15 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ${DEV_PLUGIN_PATH}:/app/plugins/dev
+      - ${PLUGIN_PATH}:/app/plugins
 
   #
   a4s-eval-worker:
-    build: ../a4s-eval/
+    build:
+      context: ../a4s-eval/
+      secrets:
+        - source: git_pat
+          target: git_pat
     container_name: a4s-eval-worker
     # volumes:
     #   - ./eval-logging.yaml:/app/config/logging.yaml:ro
@@ -63,6 +68,7 @@ services:
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
+      PLUGIN_PATH: ${PLUGIN_PATH}
     depends_on:
       - a4s-backend
       - rabbitmq
@@ -70,7 +76,7 @@ services:
     networks:
       - backend
     volumes:
-      - ${DEV_PLUGIN_PATH}:/app/plugins/dev
+      - ${PLUGIN_PATH}:/app/plugins
 
   a4s-eval-flower:
     build: ../a4s-eval/
@@ -83,7 +89,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
     ports:
-      - 5555:5555
+      - "5555:5555"
     depends_on:
       - a4s-backend
       - rabbitmq

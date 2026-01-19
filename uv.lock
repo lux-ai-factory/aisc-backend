@@ -26,7 +26,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a4s-plugin-manager", git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git" },
+    { name = "a4s-plugin-manager", git = "https://github.com/lux-ai-factory/a4s-plugin-manager" },
     { name = "boto3", specifier = "==1.42.7" },
     { name = "celery", extras = ["redis"], specifier = ">=5.6.0" },
     { name = "django", specifier = ">=5.2.7" },
@@ -54,7 +54,7 @@ dependencies = [
 [[package]]
 name = "a4s-plugin-manager"
 version = "0.1.0"
-source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager.git#ec19527c20b4dab78d0c1d7a27dce8ea1e482d38" }
+source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager#ec19527c20b4dab78d0c1d7a27dce8ea1e482d38" }
 dependencies = [
     { name = "a4s-plugin-interface" },
 ]

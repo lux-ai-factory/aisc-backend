@@ -10,11 +10,11 @@ from ninja import Router, Schema
 from a4s_backend.models import Plugin
 from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
-from config.settings import DEV_PLUGIN_PATH
+from config.settings import PLUGIN_PATH
 
 router = Router(tags=["plugin"])
 
-plugin_loader: Loader = Loader(DEV_PLUGIN_PATH)
+plugin_loader: Loader = Loader(PLUGIN_PATH)
 
 plugin_repository = BaseRepository(model=Plugin)
 project_repository = ProjectRepository()
