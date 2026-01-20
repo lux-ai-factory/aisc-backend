@@ -79,7 +79,11 @@ services:
       - ${PLUGIN_PATH}:/app/plugins
 
   a4s-eval-flower:
-    build: ../a4s-eval/
+    build:
+      context: ../a4s-eval/
+      secrets:
+        - source: git_pat
+          target: git_pat
     container_name: a4s-eval-flower
     # volumes:
     #   - ./eval-logging.yaml:/app/config/logging.yaml:ro

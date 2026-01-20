@@ -58,8 +58,7 @@ To access the OpenAPI docs run the app then go to:
 - Django Ninja endpoints
   - http://127.0.0.1:8000/api/docs
 
-
-
+    
 ## Docker
 
 To run the full application with docker compose set up your file structure as below with the 3 **a4s** repos
@@ -78,6 +77,7 @@ To run the full application with docker compose set up your file structure as be
 └── a4s-webapp 
     └── ...
 ```
+
 Then from within the `a4s-backend` folder run:
 
 ```
@@ -99,4 +99,10 @@ Run the following command from the `a4s-backend` folder:
 
 ```
  docker compose --env-file env.development -f docker-compose-infra.development.yml -f docker-compose.development.yml up
+```
+
+To force the `a4s-plugin-manager` dependency to update, update the `uv.lock` in `a4s-backend` and `a4s-eval` or run the compose command below:
+
+```
+docker compose --env-file env.development -f docker-compose-infra.development.yml -f docker-compose.development.yml up --build
 ```

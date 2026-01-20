@@ -24,12 +24,11 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
-# Copy project files
 COPY . .
 
-# Install project (no dev dependencies)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --upgrade-package a4s-plugin-manager \
+        --no-dev
 
 # ---- Final runtime image ----
 FROM base AS runtime
