@@ -1,5 +1,8 @@
 import uuid
 
+from ninja.errors import HttpError
+
+from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.evaluation_repository import EvaluationRepository
 from a4s_backend.repositories.measurement_repository import MeasurementRepository
 from a4s_backend.schemas.measure import MeasureOutSchema
@@ -10,7 +13,8 @@ from ninja import Router, Schema
 from a4s_backend.models import Plugin
 from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
-from config.settings import PLUGIN_PATH
+from a4s_backend.repositories import file_repository
+from config.settings import PLUGIN_PATH, S3_DATASETS_BUCKET
 
 router = Router(tags=["plugin"])
 
@@ -20,6 +24,13 @@ plugin_repository = BaseRepository(model=Plugin)
 project_repository = ProjectRepository()
 evaluation_repository = EvaluationRepository()
 measurement_repository = MeasurementRepository()
+dataset_repository = DatasetRepository()
+
+
+class ProjectPluginConfigStateResponse(Schema):
+    config: dict | None
+    schema: dict
+    uiSchema: dict
 
 
 @router.get("", response=list[str])
@@ -29,16 +40,12 @@ async def get_plugins(request):
     return plugin_names
 
 
-@router.get("{plugin_name}/config_schema", response=dict)
-async def get_plugin_config_schema(request, plugin_name: str):
+@router.get("/{plugin_name}/feature_flags", response=dict)
+async def get_plugin_evaluation_results(request, plugin_name: str):
     plugin = plugin_loader.load(plugin_name)
-    return plugin.get_config_form_schema()
+    feature_flags = plugin.feature_flags()
 
-
-@router.get("{plugin_name}/config_ui_schema", response=dict)
-async def get_plugin_config_ui_schema(request, plugin_name: str):
-    plugin = plugin_loader.load(plugin_name)
-    return plugin.get_config_form_ui_schema()
+    return feature_flags.model_dump()
 
 
 class CreatePluginRequest(Schema):
@@ -66,6 +73,24 @@ async def create_plugin(request, data: CreatePluginRequest):
     return project_plugin
 
 
+class UpdatePluginConfigRequest(Schema):
+    config: dict
+
+@router.post("/{plugin_name}/config/update", response=ProjectPluginConfigStateResponse)
+async def update_plugin_config_state(request, plugin_name: str, data: UpdatePluginConfigRequest):
+    plugin = plugin_loader.load(plugin_name)
+
+    config, schema, ui_schema = plugin.on_config_change(data.config)
+
+    response = ProjectPluginConfigStateResponse(
+        config=config,
+        schema=schema,
+        uiSchema=ui_schema
+    )
+
+    return response
+
+
 @router.delete("/{plugin_pid}", response={204: None})
 async def delete_plugin(request, plugin_pid):
     plugin = await plugin_repository.get(pid=plugin_pid)
@@ -84,3 +109,46 @@ async def get_plugin_evaluation_results(request, plugin_name: str, evaluation_uu
     measurements = await measurement_repository.filter_with_related(name__in=metrics, observation=observation)
 
     return measurements
+
+
+@router.get("/{plugin_name}/project/{project_uuid}/config/state", response=ProjectPluginConfigStateResponse)
+async def get_project_plugin_config_state(request, plugin_name: str, project_uuid: uuid.UUID):
+    project = await project_repository.get(project_uuid, True)
+
+    project_plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_name), None)
+    if not project_plugin:
+        raise HttpError(404, f"Project {project_uuid} has no plugin {plugin_name}")
+
+    plugin = plugin_loader.load(plugin_name)
+    config, schema, ui_schema = plugin.on_config_change(project_plugin.config)
+
+    response = ProjectPluginConfigStateResponse(
+        config=config,
+        schema=schema,
+        uiSchema=ui_schema
+    )
+
+    return response
+
+
+@router.get("/{plugin_name}/parse_dataset/{dataset_uuid}/config/state", response=ProjectPluginConfigStateResponse)
+async def parse_plugin_config_state_from_dataset(request, plugin_name: str, dataset_uuid: uuid.UUID):
+    dataset = await dataset_repository.get(dataset_uuid)
+
+    response = file_repository.get_object(bucket_name=S3_DATASETS_BUCKET, object_name=dataset.data)
+    file_content = response["Body"].read()
+
+    plugin = plugin_loader.load(plugin_name)
+    plugin.set_dataset_input_provider(file_content)
+
+    config = plugin.parse_config_from_dataset()
+
+    config, schema, ui_schema = plugin.on_config_change(config)
+
+    response = ProjectPluginConfigStateResponse(
+        config=config,
+        schema=schema,
+        uiSchema=ui_schema
+    )
+
+    return response
