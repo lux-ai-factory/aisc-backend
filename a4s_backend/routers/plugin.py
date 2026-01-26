@@ -1,19 +1,20 @@
 import uuid
 
+from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from a4s_plugin_manager import Loader
+
+from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.evaluation_repository import EvaluationRepository
 from a4s_backend.repositories.measurement_repository import MeasurementRepository
-from a4s_backend.schemas.measure import MeasureOutSchema
-from a4s_backend.schemas.plugin import PluginOutSchema
-from a4s_plugin_manager import Loader
-from ninja import Router, Schema
-
-from a4s_backend.models import Plugin
 from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
-from a4s_backend.repositories import file_repository
+
+from a4s_backend.models import Plugin
+from a4s_backend.schemas.measure import MeasureOutSchema
+from a4s_backend.schemas.plugin import PluginOutSchema
 from config.settings import PLUGIN_PATH, S3_DATASETS_BUCKET
 
 router = Router(tags=["plugin"])
@@ -41,9 +42,9 @@ async def get_plugins(request):
 
 
 @router.get("/{plugin_name}/feature_flags", response=dict)
-async def get_plugin_evaluation_results(request, plugin_name: str):
+async def get_plugin_feature_flags(request, plugin_name: str):
     plugin = plugin_loader.load(plugin_name)
-    feature_flags = plugin.feature_flags()
+    feature_flags = plugin.feature_flags
 
     return feature_flags.model_dump()
 
