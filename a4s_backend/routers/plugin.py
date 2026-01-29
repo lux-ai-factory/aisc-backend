@@ -4,6 +4,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from a4s_plugin_manager import Loader
+from a4s_plugin_interface import MetricVisualization
 
 from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.dataset_repository import DatasetRepository
@@ -99,17 +100,22 @@ async def delete_plugin(request, plugin_pid):
     return 204, None
 
 
-@router.get("/{plugin_name}/evaluations/{evaluation_uuid}/result", response=list[MeasureOutSchema])
+class EvaluationResultOutSchema(Schema):
+    measurements: list[MeasureOutSchema]
+    metric_visualizations: list[MetricVisualization]
+
+@router.get("/{plugin_name}/evaluations/{evaluation_uuid}/result", response=EvaluationResultOutSchema)
 async def get_plugin_evaluation_results(request, plugin_name: str, evaluation_uuid: uuid.UUID):
     plugin = plugin_loader.load(plugin_name)
     metrics = plugin.get_metrics()
+    metric_visualizations = plugin.get_metric_visualizations()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
     observation = await evaluation.observations.order_by("-whenObserved").afirst()
 
     measurements = await measurement_repository.filter_with_related(name__in=metrics, observation=observation)
 
-    return measurements
+    return EvaluationResultOutSchema(measurements=measurements, metric_visualizations=metric_visualizations)
 
 
 @router.get("/{plugin_name}/project/{project_uuid}/config/state", response=ProjectPluginConfigStateResponse)

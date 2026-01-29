@@ -7,6 +7,7 @@ name = "a4s-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "a4s-plugin-interface" },
     { name = "a4s-plugin-manager" },
     { name = "boto3" },
     { name = "celery", extra = ["redis"] },
@@ -26,6 +27,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a4s-plugin-interface", git = "https://github.com/lux-ai-factory/a4s-plugin-interface" },
     { name = "a4s-plugin-manager", git = "https://github.com/lux-ai-factory/a4s-plugin-manager" },
     { name = "boto3", specifier = "==1.42.7" },
     { name = "celery", extras = ["redis"], specifier = ">=5.6.0" },
@@ -46,7 +48,7 @@ requires-dist = [
 [[package]]
 name = "a4s-plugin-interface"
 version = "0.1.0"
-source = { git = "https://github.com/lux-ai-factory/a4s-plugin-interface.git#8353b008e0cc117b0b6d90fa5bb725fe56cf49ae" }
+source = { git = "https://github.com/lux-ai-factory/a4s-plugin-interface.git#fc5dc7319ede56cda0961f5224f6b1475ecddd5c" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -54,7 +56,7 @@ dependencies = [
 [[package]]
 name = "a4s-plugin-manager"
 version = "0.1.0"
-source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager#ec19527c20b4dab78d0c1d7a27dce8ea1e482d38" }
+source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager#55d8371cdd8ae541f40544bb27c9b760555220d5" }
 dependencies = [
     { name = "a4s-plugin-interface" },
 ]
