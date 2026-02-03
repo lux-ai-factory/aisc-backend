@@ -108,18 +108,44 @@ class EvaluationResultOutSchema(Schema):
 async def get_plugin_evaluation_results(request, plugin_name: str, evaluation_uuid: uuid.UUID):
     plugin = plugin_loader.load(plugin_name)
     metrics = plugin.get_metrics()
-    metric_visualizations = plugin.get_metric_visualizations()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
     observation = await evaluation.observations.order_by("-whenObserved").afirst()
 
-    measurements = await measurement_repository.filter_with_related(name__in=metrics, observation=observation)
+    measurements = await measurement_repository.filter_with_related(
+        name__in=metrics, observation=observation
+    )
 
-    return EvaluationResultOutSchema(measurements=measurements, metric_visualizations=metric_visualizations)
+    # NOTE: a workaround to find if a single metric has multiple datapoints
+    # TODO: update this logic, maybe on the schema of evaluation
+    is_multivalued = (
+        next(
+            (
+                True
+                for m in measurements[1:]
+                if m.name == measurements[0].name
+                and m.description == measurements[0].description
+            ),
+            False,
+        )
+        if len(measurements) > 1
+        else False
+    )
+
+    metric_visualizations = plugin.get_metric_visualizations(is_multivalued)
+
+    return EvaluationResultOutSchema(
+        measurements=measurements, metric_visualizations=metric_visualizations
+    )
 
 
-@router.get("/{plugin_name}/project/{project_uuid}/config/state", response=ProjectPluginConfigStateResponse)
-async def get_project_plugin_config_state(request, plugin_name: str, project_uuid: uuid.UUID):
+@router.get(
+    "/{plugin_name}/project/{project_uuid}/config/state",
+    response=ProjectPluginConfigStateResponse,
+)
+async def get_project_plugin_config_state(
+    request, plugin_name: str, project_uuid: uuid.UUID
+):
     project = await project_repository.get(project_uuid, True)
 
     project_plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_name), None)
