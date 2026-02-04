@@ -50,6 +50,14 @@ async def get_plugin_feature_flags(request, plugin_name: str):
     return feature_flags.model_dump()
 
 
+@router.get("/{plugin_name}/display_icon", response=str)
+async def get_plugin_display_icon(request, plugin_name: str):
+    plugin = plugin_loader.load(plugin_name)
+    display_icon = plugin.display_icon
+
+    return display_icon
+
+
 class CreatePluginRequest(Schema):
     name: str
     config: dict | None
