@@ -13,7 +13,7 @@ from a4s_backend.repositories.measurement_repository import MeasurementRepositor
 from a4s_backend.repositories.base_repository import BaseRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
 
-from a4s_backend.models import Plugin
+from a4s_backend.models import Plugin, EvaluationPlugin
 from a4s_backend.schemas.measure import MeasureOutSchema
 from a4s_backend.schemas.plugin import PluginOutSchema
 from config.settings import PLUGIN_PATH, S3_DATASETS_BUCKET
@@ -126,23 +126,12 @@ async def get_plugin_evaluation_results(
         name__in=metrics, observation=observation
     )
 
-    # NOTE: a workaround to find if a single metric has multiple datapoints
-    # TODO: update this logic, maybe on the schema of evaluation
-    is_multivalued = (
-        next(
-            (
-                True
-                for m in measurements[1:]
-                if m.name == measurements[0].name
-                and m.description == measurements[0].description
-            ),
-            False,
-        )
-        if len(measurements) > 1
-        else False
+    eval_plugin = await EvaluationPlugin.objects.select_related("plugin").aget(
+        evaluation=evaluation, plugin__name=plugin_name
     )
-
-    metric_visualizations = plugin.get_metric_visualizations(is_multivalued)
+    metric_visualizations = plugin.get_metric_visualizations(
+        eval_plugin.evaluation_config
+    )
 
     return EvaluationResultOutSchema(
         measurements=measurements, metric_visualizations=metric_visualizations
