@@ -20,4 +20,4 @@ class MeasureOutSchema(ModelSchema):
 
     class Meta:
         model = Measurement
-        fields = ["name", "score", "time", "feature"]
+        fields = ["name", "score", "time", "feature", "description"]
