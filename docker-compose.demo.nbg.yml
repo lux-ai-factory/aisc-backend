@@ -21,8 +21,6 @@ services:
       S3_URL: ${S3_URL}
       S3_USER: ${S3_USER}
       S3_PASSWORD: ${S3_PASSWORD}
-      EVAL_URL: ${EVAL_URL}
-      EVAL_PREFIX: ${EVAL_PREFIX}
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
