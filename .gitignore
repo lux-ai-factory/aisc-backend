@@ -13,3 +13,5 @@ wheels/
 
 *.db
 /staticfiles/
+
+/.run

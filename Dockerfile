@@ -10,29 +10,41 @@ WORKDIR /app
 # ---- Builder ----
 FROM base AS builder
 
+ENV UV_HTTP_TIMEOUT=300
+
+RUN apk add --no-cache git github-cli
+
+RUN --mount=type=secret,id=git_pat \
+    if [ ! -s /run/secrets/git_pat ]; then echo "Error: 'GIT_PAT' terminal variable not set"; exit 1; fi && \
+    cat /run/secrets/git_pat | tr -d '\n\r' | gh auth login --with-token && \
+    gh auth setup-git
+
 # Install dependencies first (caching layer)
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
-# Copy project files
 COPY . .
 
-# Install project (no dev dependencies)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --upgrade-package a4s-plugin-manager \
+        --no-dev
 
 # ---- Final runtime image ----
 FROM base AS runtime
 
+ENV UV_NO_SYNC=1
+
 WORKDIR /app
+
+# 1. Copy the code first
+COPY . .
 
 # Copy installed virtualenv from builder
 COPY --from=builder /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy app code only (lighter layer)
-COPY . .
+ENV VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
 
 # Collect static files (for Django admin)
 RUN uv run manage.py collectstatic --noinput

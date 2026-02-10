@@ -1,7 +1,8 @@
 import uuid
 from django.db import models
 
-from a4s_backend.models.observation import Observation
+from .observation import Observation
+from .plugin import EvaluationPlugin
 
 
 class EvaluationStatus(models.TextChoices):
@@ -18,15 +19,18 @@ class Evaluation(models.Model):
 
     project = models.ForeignKey(
         'Project', related_name='evaluations', on_delete=models.PROTECT)
-    config = models.ForeignKey(
-        'Configuration', related_name='evaluations', null=True, blank=True, on_delete=models.SET_NULL)
     dataset = models.ForeignKey(
         'Dataset', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
     model = models.ForeignKey(
         'Model', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
 
+    task = models.UUIDField(default=None, null=True, blank=True)
+
     def get_observations(self) -> list[Observation]:
-        return self.observations.all()
+        return list(self.observations.all())
+
+    def get_evaluation_plugins(self) -> list[EvaluationPlugin]:
+        return list(self.evaluation_plugins.all())
 
     def __str__(self):
         return f'{self.pid} ({self.status})'

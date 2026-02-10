@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from a4s_backend.models import Plugin
 from a4s_backend.models.datashape import DataShape
 from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.feature import Feature
@@ -55,7 +56,7 @@ class ModelAdmin(admin.ModelAdmin):
 
 @admin.register(Evaluation)
 class EvaluationAdmin(admin.ModelAdmin):
-    list_display = ["pid", "status", "project", "config", "dataset", "model", "observation_count"]
+    list_display = ["pid", "status", "project", "dataset", "model", "observation_count"]
 
     def observation_count(self, obj):
         return len(obj.get_observations())
@@ -70,3 +71,7 @@ class ObservationAdmin(admin.ModelAdmin):
 @admin.register(Measurement)
 class MeasurementAdmin(admin.ModelAdmin):
     list_display = ["name", "unit", "time", "score", "error", "uncertainty", "observation", "metric", "feature"]
+
+@admin.register(Plugin)
+class PluginAdmin(admin.ModelAdmin):
+    list_display = ["pid", "name", "config", "project"]

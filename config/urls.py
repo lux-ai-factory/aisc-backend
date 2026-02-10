@@ -25,6 +25,10 @@ from a4s_backend.routers.dataset import router as dataset_router
 from a4s_backend.routers.model import router as model_router
 from a4s_backend.routers.datashape import router as datashape_router
 from a4s_backend.routers.evaluation import router as evaluation_router
+from a4s_backend.routers.plugin import router as plugin_router
+from a4s_backend.routers.task import router as task_router
+from a4s_backend.routers.file import router as file_router
+
 from a4s_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from a4s_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
@@ -41,6 +45,9 @@ v1_router.add_router("/datasets", dataset_router)
 v1_router.add_router("/models", model_router)
 v1_router.add_router("/datashapes", datashape_router)
 v1_router.add_router("/evaluations", evaluation_router)
+v1_router.add_router("/plugins", plugin_router)
+v1_router.add_router("/tasks", task_router)
+v1_router.add_router("/files", file_router)
 
 api.add_router("/v1/", v1_router)
 
