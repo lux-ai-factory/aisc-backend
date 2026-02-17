@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from ninja import Router, Schema
 from ninja.errors import HttpError
@@ -101,10 +102,17 @@ async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInSch
 
 
 @router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
-async def get_project_evaluations(request, pid: uuid.UUID, status: EvaluationStatus):
+async def get_project_evaluations(request, pid: uuid.UUID, status: EvaluationStatus | None = None, exclude_status: EvaluationStatus | None = None):
     project = await project_repository.get(pid)
-    evaluations = await evaluation_repository.filter_with_related(status=status, project=project)
+    filter: dict[str, Any] = {"project": project}
+    exclude = None
+    if status is not None:
+        filter["status"] = status
+    if exclude_status is not None:
+        exclude = {"status": exclude_status}
+    evaluations = await evaluation_repository.filter_with_related(filter, exclude)
     return evaluations
+
 
 class ProjectPluginConfigResponse(Schema):
     name: str
