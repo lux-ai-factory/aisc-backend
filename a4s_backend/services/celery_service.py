@@ -2,44 +2,41 @@ import uuid
 
 from celery import Celery
 from celery.result import AsyncResult, GroupResult
+from celery.states import SUCCESS
 
+from a4s_plugin_interface import TaskProgress
 from config.settings import CELERY_BROKER_URL, REDIS_BACKEND_URL, CELERY_APP_NAME
 
 celery: Celery = Celery(
     CELERY_APP_NAME, broker=CELERY_BROKER_URL, backend=REDIS_BACKEND_URL
 )
 
-async def trigger_evaluation_task():
-    result = celery.send_task("a4s_eval.celery_tasks.poll_and_run_evaluation")
-    return result
-
-
-async def run_evaluation_task():
-    run_evaluation_task_result = celery.send_task("a4s_eval.celery_tasks.poll_and_run_evaluation")
-    return run_evaluation_task_result
+RUN_EVAL_TASK = "a4s_eval.celery_tasks.run_evaluation"
+RUN_PLUGIN_TASK = "a4s_eval.celery_tasks.run_plugin"
 
 
 async def run_evaluation(evaluation_uuid: uuid.UUID):
-    run_evaluation_task_result = celery.send_task("a4s_eval.celery_tasks.run_evaluation", args=[evaluation_uuid])
+    run_evaluation_task_result = celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid])
     return run_evaluation_task_result
 
 
-async def check_task_status(task_pid: uuid.UUID) -> dict:
-    res = AsyncResult(str(task_pid), app=celery)
+async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProgress]:
+    evaluation_task = AsyncResult(str(task_pid), app=celery)
 
-    if res.state == 'SUCCESS' and isinstance(res.result, dict) and 'group_id' in res.result:
-        group_id = res.result['group_id']
-        group_res = AsyncResult(group_id, app=celery)
+    # evaluation task spawns subtasks for each plugin and should complete immediately
+    if evaluation_task.state == SUCCESS and isinstance(evaluation_task.result, dict) and 'evaluation_pid' in evaluation_task.result:
 
-        return {
-            "state": "DONE" if group_res.ready() else "RUNNING",
-            "group_id": group_id
+        #args[0] is the plugin name
+        plugin_statuses = {
+            child.parent.args[0]: child.parent.info
+            for group in evaluation_task.children or []
+            for child in group.children or []
+            if child.parent.name == RUN_PLUGIN_TASK
         }
 
-    return {
-        "state": res.state,
-        "id": task_pid
-    }
+        return plugin_statuses
+
+    return {}
 
 
 async def autodiscover_datashape(datashape_pid: uuid.UUID):

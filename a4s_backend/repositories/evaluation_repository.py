@@ -45,11 +45,21 @@ class EvaluationRepository(BaseRepository[Evaluation]):
     def __init__(self):
         super().__init__(Evaluation)
 
-    async def filter_with_related(self, **filters: Any) -> list[Evaluation]:
+    async def filter_with_related(
+            self,
+            filters: dict[str, Any] | None = None,
+            exclude: dict[str, Any] | None = None
+    ) -> list[Evaluation]:
         evaluation_queryset = build_evaluation_queryset("", True)
         evaluation_queryset = evaluation_queryset.prefetch_related("observations")
 
-        return [m async for m in evaluation_queryset.filter(**filters).all()]
+        if filters:
+            evaluation_queryset = evaluation_queryset.filter(**filters)
+
+        if exclude:
+            evaluation_queryset = evaluation_queryset.exclude(**exclude)
+
+        return [m async for m in evaluation_queryset.all()]
 
     async def get_with_related(self, evaluation_pid: uuid.UUID) -> Evaluation:
         evaluation_queryset = build_evaluation_queryset("", True)

@@ -8,6 +8,6 @@ router = Router(tags=["task"])
 
 
 @router.get("{pid}/status", response=dict)
-async def get_task_status(request, pid: uuid.UUID):
-    result = await celery_service.check_task_status(pid)
+async def get_evaluation_tasks_status(request, pid: uuid.UUID):
+    result = await celery_service.get_evaluation_tasks_status(pid)
     return result
