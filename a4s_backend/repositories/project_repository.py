@@ -28,6 +28,7 @@ class ProjectRepository(BaseRepository[Project]):
             )
             .prefetch_related(
                 "datasets",
+                "enabled_plugins",
                 "datasets__models",
 
                 "expected_datashape__features",

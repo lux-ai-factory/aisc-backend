@@ -5,6 +5,7 @@ from ninja import ModelSchema, Field
 from a4s_backend.models import Evaluation
 from a4s_backend.schemas.dataset import DatasetPidOutSchema
 from a4s_backend.schemas.model import ModelPidOutSchema
+from a4s_backend.schemas.plugin import PluginOutSchema, EvaluationPluginOutSchema
 from a4s_backend.schemas.project import ProjectOutSchema
 
 
@@ -16,8 +17,9 @@ class EvaluationOutSchema(ModelSchema):
 
 class EvaluationDetailOutSchema(ModelSchema):
     project: ProjectOutSchema
-    dataset: DatasetPidOutSchema
-    model: ModelPidOutSchema
+    dataset: DatasetPidOutSchema | None
+    model: ModelPidOutSchema | None
+    evaluation_plugins: list[EvaluationPluginOutSchema] | None = Field(default=None, alias="get_evaluation_plugins")
 
     class Meta:
         model = Evaluation
@@ -28,8 +30,8 @@ class EvaluationDetailOutSchema(ModelSchema):
 class EvaluationByStatusResponseSchema(ModelSchema):
     evaluation_pid: uuid.UUID = Field(default=None, alias="pid")
     project_id: int = Field(default=None, alias="project_id")
-    model_id: int = Field(default=None, alias="model_id")
-    test_dataset_id: int = Field(default=None, alias="dataset_id")
+    model_id: int | None = Field(default=None, alias="model_id")
+    test_dataset_id: int | None = Field(default=None, alias="dataset_id")
 
     class Meta:
         model = Evaluation

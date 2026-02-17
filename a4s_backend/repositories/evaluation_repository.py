@@ -1,7 +1,43 @@
 import uuid
+from typing import Any
 
 from a4s_backend.models import Evaluation
-from a4s_backend.repositories.base_repository import BaseRepository
+from a4s_backend.repositories.base_repository import BaseRepository, T
+
+
+def build_evaluation_queryset(include: str = "", include_all: bool = False):
+    include_list = include.strip().split(",")
+
+    evaluation_queryset = Evaluation.objects
+
+    if "project" in include_list or include_all:
+        evaluation_queryset = evaluation_queryset.select_related("project")
+
+    if "model" in include_list or include_all:
+        evaluation_queryset = evaluation_queryset.select_related("model")
+        evaluation_queryset = evaluation_queryset.select_related("model__dataset")
+        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape")
+        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape__date_feature")
+        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape__target_feature")
+        evaluation_queryset = evaluation_queryset.prefetch_related("model__dataset__datashape__features")
+
+    if "dataset" in include_list or include_all:
+        evaluation_queryset = evaluation_queryset.select_related("dataset")
+        evaluation_queryset = evaluation_queryset.select_related("dataset__datashape")
+        evaluation_queryset = evaluation_queryset.select_related("dataset__datashape__date_feature")
+        evaluation_queryset = evaluation_queryset.select_related("dataset__datashape__target_feature")
+        evaluation_queryset = evaluation_queryset.prefetch_related("dataset__datashape__features")
+
+    if "datashape" in include_list or include_all:
+        evaluation_queryset = evaluation_queryset.select_related("project__expected_datashape")
+
+    if "plugin" in include_list or include_all:
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__dataset")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__model")
+
+    return evaluation_queryset
 
 
 class EvaluationRepository(BaseRepository[Evaluation]):
@@ -9,40 +45,30 @@ class EvaluationRepository(BaseRepository[Evaluation]):
     def __init__(self):
         super().__init__(Evaluation)
 
+    async def filter_with_related(
+            self,
+            filters: dict[str, Any] | None = None,
+            exclude: dict[str, Any] | None = None
+    ) -> list[Evaluation]:
+        evaluation_queryset = build_evaluation_queryset("", True)
+        evaluation_queryset = evaluation_queryset.prefetch_related("observations")
+
+        if filters:
+            evaluation_queryset = evaluation_queryset.filter(**filters)
+
+        if exclude:
+            evaluation_queryset = evaluation_queryset.exclude(**exclude)
+
+        return [m async for m in evaluation_queryset.all()]
+
     async def get_with_related(self, evaluation_pid: uuid.UUID) -> Evaluation:
-        return await (Evaluation.objects
-                            .select_related("dataset")
-                            .select_related("dataset__datashape")
-                            .select_related("dataset__datashape__date_feature")
-                            .select_related("dataset__datashape__target_feature")
-                            .prefetch_related("dataset__datashape__features")
-                            .prefetch_related("observations")
-                            .aget(pid=evaluation_pid))
+        evaluation_queryset = build_evaluation_queryset("", True)
+        evaluation_queryset = evaluation_queryset.prefetch_related("observations")
 
-    async def get_including(self, evaluation_pid: uuid.UUID, include: str) -> Evaluation:
-        include_list = include.strip().split(",")
+        return await (evaluation_queryset.aget(pid=evaluation_pid))
 
-        evaluation_objects = Evaluation.objects
+    async def get_including(self, evaluation_pid: uuid.UUID, include: str, include_all: bool = False) -> Evaluation:
+        evaluation_queryset = build_evaluation_queryset(include, include_all)
+        evaluation_queryset = evaluation_queryset.prefetch_related("observations")
 
-        if "project" in include_list:
-            evaluation_objects = evaluation_objects.select_related("project")
-
-        if "model" in include_list:
-            evaluation_objects = evaluation_objects.select_related("model")
-            evaluation_objects = evaluation_objects.select_related("model__dataset")
-            evaluation_objects = evaluation_objects.select_related("model__dataset__datashape")
-            evaluation_objects = evaluation_objects.select_related("model__dataset__datashape__date_feature")
-            evaluation_objects = evaluation_objects.select_related("model__dataset__datashape__target_feature")
-            evaluation_objects = evaluation_objects.prefetch_related("model__dataset__datashape__features")
-
-        if "dataset" in include_list:
-            evaluation_objects = evaluation_objects.select_related("dataset")
-            evaluation_objects = evaluation_objects.select_related("dataset__datashape")
-            evaluation_objects = evaluation_objects.select_related("dataset__datashape__date_feature")
-            evaluation_objects = evaluation_objects.select_related("dataset__datashape__target_feature")
-            evaluation_objects = evaluation_objects.prefetch_related("dataset__datashape__features")
-
-        if "datashape" in include_list:
-            evaluation_objects = evaluation_objects.select_related("project__expected_datashape")
-
-        return await evaluation_objects.aget(pid=evaluation_pid)
+        return await evaluation_queryset.aget(pid=evaluation_pid)

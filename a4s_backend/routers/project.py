@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from ninja import Router, Schema
 from ninja.errors import HttpError
@@ -11,9 +12,9 @@ from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.datashape_repository import DataShapeRepository
 from a4s_backend.repositories.evaluation_repository import EvaluationRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
-from a4s_backend.schemas.common import RecordPid
 from a4s_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
 from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
+from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema
 from a4s_backend.schemas.model import ModelOutSchema
 from a4s_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
 
@@ -100,11 +101,27 @@ async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInSch
     return await datashape_repository.patch(project.expected_datashape, data)
 
 
-@router.get("/{pid}/evaluations", response=list[RecordPid])
-async def get_project_evaluations(request, pid: uuid.UUID, status: EvaluationStatus):
+@router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
+async def get_project_evaluations(request, pid: uuid.UUID, status: EvaluationStatus | None = None, exclude_status: EvaluationStatus | None = None):
     project = await project_repository.get(pid)
+    filter: dict[str, Any] = {"project": project}
+    exclude = None
+    if status is not None:
+        filter["status"] = status
+    if exclude_status is not None:
+        exclude = {"status": exclude_status}
+    evaluations = await evaluation_repository.filter_with_related(filter, exclude)
+    return evaluations
 
-    evaluations = await evaluation_repository.filter(status=status, project=project)
 
-    response = [RecordPid(pid=e.pid) for e in evaluations]
-    return response
+class ProjectPluginConfigResponse(Schema):
+    name: str
+    dataset_pid: uuid.UUID
+
+@router.get("/{pid}/plugins/{plugin_name}/config", response=dict | None)
+async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
+    project = await project_repository.get(pid, True)
+    plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_name), None)
+    if not plugin:
+        raise HttpError(404, f"Project {pid} has no plugin {plugin_name}")
+    return plugin.config

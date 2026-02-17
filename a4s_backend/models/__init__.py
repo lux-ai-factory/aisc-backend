@@ -4,7 +4,7 @@ from .datashape import *
 from .feature import *
 from .model import *
 from .evaluation import *
-from .configuration import *
 from .metric import *
 from .observation import *
 from .measure import *
+from .plugin import *
