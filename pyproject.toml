@@ -26,6 +26,7 @@ dependencies = [
     "jsonschema>=4.25.1",
     "a4s-plugin-manager",
     "a4s-plugin-interface",
+    "immudb-py>=1.4.0",
 ]
 
 [tool.uv.sources]

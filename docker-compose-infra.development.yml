@@ -86,6 +86,19 @@ services:
       - backend
     command: redis-server --protected-mode no
 
+  # immudb immutable database for audit logging
+  immudb:
+    image: codenotary/immudb:latest
+    container_name: immudb
+    ports:
+      - "3322:3322"
+      - "8080:8080"
+    volumes:
+      - immudb_data:/var/lib/immudb
+    restart: unless-stopped
+    networks:
+      - backend
+
   # PostgreSQL database service
   postgres:
     image: postgres:14-alpine
@@ -107,6 +120,7 @@ volumes:
   postgres_data: # Persistent storage for PostgreSQL
   rabbitmq_data: # Persistent storage for RabbitMQ
   redis_data: # Persistent storage for Redis
+  immudb_data: # Persistent storage for immudb audit logs
 
 networks:
   backend:

@@ -39,6 +39,8 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       PLUGIN_PATH: ${PLUGIN_PATH}
+      IMMUDB_HOST: immudb
+      IMMUDB_PORT: 3322
     networks:
       - backend
     depends_on:
@@ -49,6 +51,8 @@ services:
       redis:
         condition: service_started
       rabbitmq:
+        condition: service_started
+      immudb:
         condition: service_started
     ports:
       - "8000:8000"
@@ -74,10 +78,13 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
       PLUGIN_PATH: ${PLUGIN_PATH}
+      IMMUDB_HOST: immudb
+      IMMUDB_PORT: 3322
     depends_on:
       - a4s-backend
       - rabbitmq
       - redis
+      - immudb
     networks:
       - backend
     volumes:

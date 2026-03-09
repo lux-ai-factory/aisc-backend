@@ -150,6 +150,36 @@ docker compose --env-file env.development \
 
 ---
 
+## Audit logging (immudb)
+
+The A4S stack includes tamper-proof audit logging via [immudb](https://github.com/codenotary/immudb). The **a4s-eval** worker writes cryptographically verified audit events to immudb during evaluation execution. The **a4s-backend** reads those events and serves them via API with optional cryptographic verification.
+
+### Audit API endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/v1/audit/events?evaluation_id=&event_type=&limit=&offset=` | List audit events with filters |
+| `GET /api/v1/audit/events/{event_id}/verified` | Get a single event with cryptographic tamper-proof verification |
+| `GET /api/v1/audit/evaluations/{evaluation_pid}/events` | All events for a specific evaluation |
+
+The `/verified` endpoint uses immudb's `verifiableSQLGet()` to cryptographically prove that the audit record has not been tampered with since it was written. The response includes a `verified: true/false` field.
+
+### Configuration
+
+Set the following environment variables (or add to `env.development`):
+
+```
+IMMUDB_HOST=immudb
+IMMUDB_PORT=3322
+IMMUDB_USER=immudb
+IMMUDB_PASSWORD=immudb
+IMMUDB_DATABASE=defaultdb
+```
+
+For the full technical reference, see [`a4s-eval/docs/audit-logging.md`](../a4s-eval/docs/audit-logging.md).
+
+---
+
 ## Troubleshooting checklist
 
 - Are `a4s-backend`, `a4s-eval`, and `a4s-webapp` cloned as **siblings**?

@@ -218,3 +218,10 @@ CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 
 PLUGIN_PATH = env('PLUGIN_PATH', '')
+
+# immudb audit settings
+IMMUDB_HOST = env("IMMUDB_HOST", "immudb")
+IMMUDB_PORT = env.int("IMMUDB_PORT", 3322)
+IMMUDB_USER = env("IMMUDB_USER", "immudb")
+IMMUDB_PASSWORD = env("IMMUDB_PASSWORD", "immudb")
+IMMUDB_DATABASE = env("IMMUDB_DATABASE", "defaultdb")
