@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.headless',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.openid_connect',
     'ninja_jwt',
 
     # Local
@@ -218,3 +220,38 @@ CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 
 PLUGIN_PATH = env('PLUGIN_PATH', '')
+
+# --- OIDC / Social Login ---
+OIDC_ENABLED = env.bool("OIDC_ENABLED", False)
+OIDC_PROVIDER_ID = env("OIDC_PROVIDER_ID", "keycloak")
+OIDC_PROVIDER_NAME = env("OIDC_PROVIDER_NAME", "Keycloak")
+OIDC_SERVER_URL = env("OIDC_SERVER_URL", "")
+OIDC_CLIENT_ID = env("OIDC_CLIENT_ID", "")
+OIDC_CLIENT_SECRET = env("OIDC_CLIENT_SECRET", "")
+OIDC_TOKEN_AUTH_METHOD = env("OIDC_TOKEN_AUTH_METHOD", "client_secret_post")
+
+# --- allauth socialaccount (OIDC) ---
+SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # trust IdP's email verification
+
+if OIDC_ENABLED and OIDC_SERVER_URL:
+    SOCIALACCOUNT_PROVIDERS = {
+        "openid_connect": {
+            "APPS": [
+                {
+                    "provider_id": OIDC_PROVIDER_ID,
+                    "name": OIDC_PROVIDER_NAME,
+                    "client_id": OIDC_CLIENT_ID,
+                    "secret": OIDC_CLIENT_SECRET,
+                    "settings": {
+                        "server_url": OIDC_SERVER_URL,
+                        "token_auth_method": OIDC_TOKEN_AUTH_METHOD,
+                    },
+                }
+            ],
+        }
+    }
+else:
+    SOCIALACCOUNT_PROVIDERS = {}

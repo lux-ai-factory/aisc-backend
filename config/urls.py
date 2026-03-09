@@ -57,5 +57,8 @@ urlpatterns = [
 
     path("_allauth/", include("allauth.headless.urls")),
 
+    # OIDC callback URLs (OAuth2 redirect flow from Keycloak / any OIDC provider)
+    path("accounts/", include("allauth.socialaccount.urls")),
+
     path('api/', api.urls),
 ]
