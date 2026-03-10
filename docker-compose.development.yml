@@ -13,6 +13,7 @@ services:
       - a4s-backend
     networks:
       - frontend
+      - backend
 
   a4s-backend:
     build:
