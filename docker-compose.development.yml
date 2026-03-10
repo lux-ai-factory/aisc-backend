@@ -13,6 +13,7 @@ services:
       - a4s-backend
     networks:
       - frontend
+      - backend
 
   a4s-backend:
     build:
@@ -24,6 +25,7 @@ services:
     pull_policy: never
     container_name: a4s-backend
     environment:
+      DEBUG: ${DEBUG:-False}
       S3_MODELS_BUCKET: ${S3_MODELS_BUCKET}
       S3_DATASETS_BUCKET: ${S3_DATASETS_BUCKET}
       S3_URL: ${S3_URL}
