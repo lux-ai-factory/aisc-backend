@@ -150,6 +150,82 @@ docker compose --env-file env.development \
 
 ---
 
+## Keycloak OIDC Authentication
+
+A4S uses **Keycloak** as identity provider via the **OpenID Connect (OIDC)** protocol, integrated through **django-allauth**.
+
+### How it works
+
+```
+ Browser                 Webapp (nginx)          Backend (Django)           Keycloak
+   |                         |                         |                       |
+   | 1. Click "Sign in       |                         |                       |
+   |    with Keycloak"       |                         |                       |
+   |------------------------>| 2. POST /_allauth/      |                       |
+   |                         |    .../provider/redirect |                       |
+   |                         |------------------------>| 3. Build auth URL      |
+   |                         |                         |    (with client_id,    |
+   |                         |                         |     redirect_uri,      |
+   |                         |                         |     scope=openid)      |
+   |<---------------------------------------------------------- 302 to Keycloak |
+   |                         |                         |                       |
+   | 4. User logs in on Keycloak login page            |                       |
+   |-------------------------------------------------------------->            |
+   |                         |                         |                       |
+   | 5. Keycloak redirects back with an authorization code                     |
+   |<-------------------------------------------------------------------------|
+   | GET /accounts/oidc/keycloak/login/callback/?code=xxx                      |
+   |                         |                         |                       |
+   |------------------------>| 6. Proxy to backend     |                       |
+   |                         |------------------------>| 7. Exchange code       |
+   |                         |                         |    for token  -------->|
+   |                         |                         |                       |
+   |                         |                         | 8. Receive token,      |
+   |                         |                         |    fetch user info,    |
+   |                         |                         |    create/link account |
+   |                         |                         |    create session+JWT  |
+   |<---------------------------------------------------------- 302 to webapp  |
+   |                         |                         |                       |
+   | 9. User is logged in!   |                         |                       |
+```
+
+**Key points:**
+- The **webapp (nginx)** proxies `/_allauth/*` and `/accounts/*` requests to the **backend**
+- The **backend** handles all OIDC logic via django-allauth (token exchange, user creation)
+- **Keycloak** is the external identity provider — users authenticate there, then get redirected back
+- The backend exchanges the authorization code for a token **server-to-server** (step 7) — this is why the backend must be able to reach Keycloak over the network
+
+### Configuration
+
+OIDC settings are controlled via environment variables in `env.development`:
+
+| Variable | Description |
+|----------|-------------|
+| `OIDC_ENABLED` | Enable/disable Keycloak login (`true`/`false`) |
+| `OIDC_PROVIDER_ID` | Provider identifier (default: `keycloak`) |
+| `OIDC_PROVIDER_NAME` | Display name on the login page |
+| `OIDC_SERVER_URL` | Base URL of the Keycloak realm (e.g. `http://host.docker.internal:8180/realms/a4s`) |
+| `OIDC_CLIENT_ID` | Client ID registered in Keycloak |
+| `OIDC_CLIENT_SECRET` | Client secret for the backend |
+
+The Keycloak realm is pre-configured via `keycloak/realm-export.json` (imported on startup).
+
+### Docker networking caveat
+
+In Docker, each container has its own `localhost`. When Keycloak is configured with `KC_HOSTNAME=http://localhost:8180`, it returns `localhost:8180` URLs in its OIDC discovery document. The **browser** can reach `localhost:8180` (mapped to the Keycloak container), but the **backend container** cannot — `localhost` inside the backend = the backend itself, not Keycloak.
+
+**Solution:** We use `host.docker.internal` as Keycloak's hostname, which resolves to the Docker host from within containers. This requires a one-time `/etc/hosts` entry on the host machine (see prerequisites below).
+
+### Keycloak demo users
+
+| User | Password | Notes |
+|------|----------|-------|
+| `admin` / `admin` | — | Keycloak admin console (`http://host.docker.internal:8180`) |
+| `testuser` | `password` | Pre-configured user in the `a4s` realm |
+| `admin@a4s.local` | `admin` | Django superuser (created by the demo script) |
+
+---
+
 ## Troubleshooting checklist
 
 - Are `a4s-backend`, `a4s-eval`, and `a4s-webapp` cloned as **siblings**?
