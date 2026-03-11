@@ -86,9 +86,14 @@ def _parse_row(row: tuple, columns: list[str]) -> dict[str, Any]:
     else:
         event["details"] = None
 
-    # Ensure timestamp is ISO format
-    if "timestamp" in event and isinstance(event["timestamp"], datetime):
-        event["timestamp"] = event["timestamp"].replace(tzinfo=timezone.utc)
+    # Ensure timestamps are UTC
+    for ts_field in ("timestamp", "execution_start", "execution_end"):
+        if ts_field in event and isinstance(event[ts_field], datetime):
+            event[ts_field] = event[ts_field].replace(tzinfo=timezone.utc)
+
+    # user_id: convert 0 to None
+    if event.get("user_id") == 0:
+        event["user_id"] = None
 
     event["verified"] = False
     return event
@@ -97,6 +102,7 @@ def _parse_row(row: tuple, columns: list[str]) -> dict[str, Any]:
 _COLUMNS = [
     "id", "timestamp", "event_type", "user_id", "evaluation_id", "task_id",
     "plugin_name", "status", "duration_ms", "details", "error_message",
+    "test_set", "configuration", "target_system", "execution_start", "execution_end",
 ]
 
 
@@ -124,7 +130,8 @@ def _query_audit_events_sync(
 
     query = (
         f"SELECT id, timestamp, event_type, user_id, evaluation_id, task_id, "
-        f"plugin_name, status, duration_ms, details, error_message "
+        f"plugin_name, status, duration_ms, details, error_message, "
+        f"test_set, configuration, target_system, execution_start, execution_end "
         f"FROM audit_events{where_clause} "
         f"ORDER BY id DESC "
         f"LIMIT @limit OFFSET @offset;"
@@ -185,7 +192,8 @@ def _get_verified_audit_event_sync(event_id: int) -> dict[str, Any]:
     # Also do a standard SQL query to get the full row data reliably
     query = (
         "SELECT id, timestamp, event_type, user_id, evaluation_id, task_id, "
-        "plugin_name, status, duration_ms, details, error_message "
+        "plugin_name, status, duration_ms, details, error_message, "
+        "test_set, configuration, target_system, execution_start, execution_end "
         "FROM audit_events WHERE id = @id;"
     )
     result = client.sqlQuery(query, {"id": event_id})

@@ -17,6 +17,11 @@ class AuditEventOutSchema(Schema):
     details: dict[str, Any] | None
     error_message: str
     verified: bool
+    test_set: str = ""
+    configuration: str = ""
+    target_system: str = ""
+    execution_start: datetime | None = None
+    execution_end: datetime | None = None
 
 
 class AuditEventListOutSchema(Schema):
