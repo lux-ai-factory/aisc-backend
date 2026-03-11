@@ -8,6 +8,51 @@
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Administrator — can manage users and roles via Keycloak"
+      },
+      {
+        "name": "user",
+        "description": "Standard user — can use the platform"
+      }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-a4s",
+    "composites": {
+      "realm": ["user"]
+    }
+  },
+  "clientScopes": [
+    {
+      "name": "roles",
+      "description": "Include realm roles in tokens",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
   "clients": [
     {
       "clientId": "a4s-backend",
@@ -19,12 +64,14 @@
         "http://localhost:8000/*",
         "http://127.0.0.1:8000/*",
         "http://localhost/*",
+        "https://localhost/*",
         "http://localhost:5173/*",
         "http://host.docker.internal:5173/*",
         "http://host.docker.internal:8000/*"
       ],
       "webOrigins": [
         "http://localhost:8000",
+        "https://localhost",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://host.docker.internal:5173",
@@ -37,11 +84,28 @@
       "defaultClientScopes": [
         "openid",
         "profile",
-        "email"
+        "email",
+        "roles"
       ]
     }
   ],
   "users": [
+    {
+      "username": "admin",
+      "email": "admin@a4s.local",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin", "user"]
+    },
     {
       "username": "testuser",
       "email": "testuser@a4s.local",
@@ -55,7 +119,8 @@
           "value": "password",
           "temporary": false
         }
-      ]
+      ],
+      "realmRoles": ["user"]
     }
   ]
 }

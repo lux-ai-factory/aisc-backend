@@ -1,4 +1,5 @@
 import uuid
+from django.conf import settings
 from django.db import models
 
 from .observation import Observation
@@ -25,6 +26,9 @@ class Evaluation(models.Model):
         'Model', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
 
     task = models.UUIDField(default=None, null=True, blank=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, related_name='evaluations',
+        null=True, blank=True, on_delete=models.SET_NULL)
 
     def get_observations(self) -> list[Observation]:
         return list(self.observations.all())
