@@ -11,10 +11,21 @@ logger = logging.getLogger(__name__)
 class OIDCAccountAdapter(DefaultSocialAccountAdapter):
     """Sync realm roles from the OIDC token to Django Groups on every login."""
 
+    @staticmethod
+    def _extract_roles(sociallogin):
+        """Extract roles from extra_data — handles nested userinfo/id_token."""
+        extra_data = sociallogin.account.extra_data
+        # Roles can be at top level, in userinfo, or in id_token
+        roles = extra_data.get("roles")
+        if not roles:
+            roles = extra_data.get("userinfo", {}).get("roles")
+        if not roles:
+            roles = extra_data.get("id_token", {}).get("roles")
+        return set(roles or [])
+
     def populate_user(self, request, sociallogin, data):
         user = super().populate_user(request, sociallogin, data)
-        extra_data = sociallogin.account.extra_data
-        if "admin" in set(extra_data.get("roles", [])):
+        if "admin" in self._extract_roles(sociallogin):
             user.is_staff = True
         return user
 
@@ -32,7 +43,13 @@ class OIDCAccountAdapter(DefaultSocialAccountAdapter):
     def _sync_roles(user, sociallogin):
         """Map OIDC realm roles to Django Groups and update is_staff."""
         extra_data = sociallogin.account.extra_data
-        oidc_roles = set(extra_data.get("roles", []))
+        # Roles can be at top level, in userinfo, or in id_token
+        roles = extra_data.get("roles")
+        if not roles:
+            roles = extra_data.get("userinfo", {}).get("roles")
+        if not roles:
+            roles = extra_data.get("id_token", {}).get("roles")
+        oidc_roles = set(roles or [])
 
         # Filter out Keycloak internal composite roles
         skip = {"offline_access", "uma_authorization", "default-roles-a4s"}

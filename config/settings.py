@@ -174,7 +174,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # --- allauth (headless) ---
 ACCOUNT_LOGIN_METHODS =  {'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
-ACCOUNT_EMAIL_VERIFICATION = "mandatory"   # must verify before using app
+ACCOUNT_EMAIL_VERIFICATION = "none"        # OIDC provider handles email verification
 
 HEADLESS_ONLY = True                       # disable server-rendered pages
 HEADLESS_FRONTEND_URLS = {
@@ -229,6 +229,7 @@ OIDC_SERVER_URL = env("OIDC_SERVER_URL", "")
 OIDC_CLIENT_ID = env("OIDC_CLIENT_ID", "")
 OIDC_CLIENT_SECRET = env("OIDC_CLIENT_SECRET", "")
 OIDC_TOKEN_AUTH_METHOD = env("OIDC_TOKEN_AUTH_METHOD", "client_secret_post")
+
 
 # --- allauth socialaccount (OIDC) ---
 SOCIALACCOUNT_ADAPTER = "a4s_backend.adapters.OIDCAccountAdapter"

@@ -1,5 +1,6 @@
 """Auth router — exposes /api/v1/auth/me for the frontend."""
 
+from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 
 from a4s_backend.auth import require_auth
@@ -18,7 +19,7 @@ class UserMeOut(Schema):
 @router.get("/me", response=UserMeOut, auth=[require_auth])
 async def me(request):
     user = request.user
-    roles = list(user.groups.values_list("name", flat=True))
+    roles = await sync_to_async(list)(user.groups.values_list("name", flat=True))
     return {
         "id": user.id,
         "email": user.email,
