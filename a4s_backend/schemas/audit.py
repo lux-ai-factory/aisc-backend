@@ -8,6 +8,7 @@ class AuditEventOutSchema(Schema):
     id: int
     timestamp: datetime
     event_type: str
+    user_id: int | None = None
     evaluation_id: str
     task_id: str
     plugin_name: str

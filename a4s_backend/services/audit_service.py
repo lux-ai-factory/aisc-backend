@@ -95,7 +95,7 @@ def _parse_row(row: tuple, columns: list[str]) -> dict[str, Any]:
 
 
 _COLUMNS = [
-    "id", "timestamp", "event_type", "evaluation_id", "task_id",
+    "id", "timestamp", "event_type", "user_id", "evaluation_id", "task_id",
     "plugin_name", "status", "duration_ms", "details", "error_message",
 ]
 
@@ -123,7 +123,7 @@ def _query_audit_events_sync(
     where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
 
     query = (
-        f"SELECT id, timestamp, event_type, evaluation_id, task_id, "
+        f"SELECT id, timestamp, event_type, user_id, evaluation_id, task_id, "
         f"plugin_name, status, duration_ms, details, error_message "
         f"FROM audit_events{where_clause} "
         f"ORDER BY id DESC "
@@ -184,7 +184,7 @@ def _get_verified_audit_event_sync(event_id: int) -> dict[str, Any]:
     # Build the event dict from verified data
     # Also do a standard SQL query to get the full row data reliably
     query = (
-        "SELECT id, timestamp, event_type, evaluation_id, task_id, "
+        "SELECT id, timestamp, event_type, user_id, evaluation_id, task_id, "
         "plugin_name, status, duration_ms, details, error_message "
         "FROM audit_events WHERE id = @id;"
     )
