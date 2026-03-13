@@ -32,6 +32,20 @@
       }
   }
 
+  # Reverse proxy allauth headless API (including OIDC)
+  handle /_allauth/* {
+    reverse_proxy a4s-backend:8000 {
+      header_up X-Real-IP {remote_host}
+    }
+  }
+
+  # Reverse proxy OIDC callback URLs
+  handle /accounts/* {
+    reverse_proxy a4s-backend:8000 {
+      header_up X-Real-IP {remote_host}
+    }
+  }
+
   # Should be the backend API, so forward also this path there
   handle /api/* {
     reverse_proxy a4s-backend:8000 {

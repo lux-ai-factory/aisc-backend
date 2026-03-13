@@ -21,6 +21,7 @@ from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, Evaluation
     EvaluationOutSchema
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
 from a4s_backend.services import celery_service
+from a4s_backend.auth import require_auth
 
 router = Router(tags=["evaluation"])
 
@@ -46,11 +47,12 @@ class CreateEvaluationRequest(Schema):
     plugins_to_run: list[EvaluationPluginInSchema]
 
 
-@router.post("/task", response=EvaluationOutSchema)
+@router.post("/task", response=EvaluationOutSchema, auth=[require_auth])
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
-    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
+    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project,
+                            user=request.user if request.user.is_authenticated else None)
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
@@ -99,7 +101,7 @@ async def update_evaluation_status(request, evaluation_pid: uuid.UUID, status: E
     return evaluation.status
 
 
-@router.post("", response=EvaluationOutSchema)
+@router.post("", response=EvaluationOutSchema, auth=[require_auth])
 async def create_evaluation(request, project_pid: uuid.UUID, model_pid: uuid.UUID, test_dataset_pid: uuid.UUID):
     project = await project_repository.get(project_pid)
     model = await model_repository.get(model_pid)
@@ -109,7 +111,8 @@ async def create_evaluation(request, project_pid: uuid.UUID, model_pid: uuid.UUI
         project=project,
         model=model,
         dataset=dataset,
-        status=EvaluationStatus.Pending
+        status=EvaluationStatus.Pending,
+        user=request.user if request.user.is_authenticated else None,
     )
 
     await evaluation_repository.save(evaluation)

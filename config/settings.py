@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.headless',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.openid_connect',
     'ninja_jwt',
 
     # Local
@@ -160,7 +162,7 @@ if ENABLE_SSL_PROXY:
 CORS_ALLOW_CREDENTIALS = True
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 CORS_ALLOWED_ORIGINS = env.list('A4S_BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
-CRSF_TRUSTED_ORIGINS = env.list('A4S_BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+CSRF_TRUSTED_ORIGINS = env.list('A4S_BACKEND_CSRF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
 
 
 
@@ -172,7 +174,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # --- allauth (headless) ---
 ACCOUNT_LOGIN_METHODS =  {'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
-ACCOUNT_EMAIL_VERIFICATION = "mandatory"   # must verify before using app
+ACCOUNT_EMAIL_VERIFICATION = "none"        # OIDC provider handles email verification
 
 HEADLESS_ONLY = True                       # disable server-rendered pages
 HEADLESS_FRONTEND_URLS = {
@@ -225,3 +227,40 @@ IMMUDB_PORT = env.int("IMMUDB_PORT", 3322)
 IMMUDB_USER = env("IMMUDB_USER", "immudb")
 IMMUDB_PASSWORD = env("IMMUDB_PASSWORD", "immudb")
 IMMUDB_DATABASE = env("IMMUDB_DATABASE", "defaultdb")
+
+# --- OIDC / Social Login ---
+OIDC_ENABLED = env.bool("OIDC_ENABLED", False)
+OIDC_PROVIDER_ID = env("OIDC_PROVIDER_ID", "keycloak")
+OIDC_PROVIDER_NAME = env("OIDC_PROVIDER_NAME", "Keycloak")
+OIDC_SERVER_URL = env("OIDC_SERVER_URL", "")
+OIDC_CLIENT_ID = env("OIDC_CLIENT_ID", "")
+OIDC_CLIENT_SECRET = env("OIDC_CLIENT_SECRET", "")
+OIDC_TOKEN_AUTH_METHOD = env("OIDC_TOKEN_AUTH_METHOD", "client_secret_post")
+
+
+# --- allauth socialaccount (OIDC) ---
+SOCIALACCOUNT_ADAPTER = "a4s_backend.adapters.OIDCAccountAdapter"
+SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_EMAIL_VERIFICATION = "none"  # trust IdP's email verification
+
+if OIDC_ENABLED and OIDC_SERVER_URL:
+    SOCIALACCOUNT_PROVIDERS = {
+        "openid_connect": {
+            "APPS": [
+                {
+                    "provider_id": OIDC_PROVIDER_ID,
+                    "name": OIDC_PROVIDER_NAME,
+                    "client_id": OIDC_CLIENT_ID,
+                    "secret": OIDC_CLIENT_SECRET,
+                    "settings": {
+                        "server_url": OIDC_SERVER_URL,
+                        "token_auth_method": OIDC_TOKEN_AUTH_METHOD,
+                    },
+                }
+            ],
+        }
+    }
+else:
+    SOCIALACCOUNT_PROVIDERS = {}

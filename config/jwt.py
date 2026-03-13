@@ -5,11 +5,17 @@ Code is only executed when using the allauth 'app' client endpoints
 'browser' client endpoints rely on django session cookies for auth
 """
 
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from allauth.headless.tokens.sessions import SessionTokenStrategy
 from ninja_jwt.tokens import RefreshToken
 from django.http import HttpRequest
-# from my_application.routers.token import TokenPairOut
+
+
+@dataclass
+class TokenPairOut:
+    refresh_token: str
+    access_token: str
 
 
 class SessionAndJWTStrategy(SessionTokenStrategy):
