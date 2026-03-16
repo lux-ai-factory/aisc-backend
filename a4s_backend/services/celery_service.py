@@ -1,7 +1,7 @@
 import uuid
 
 from celery import Celery
-from celery.result import AsyncResult, GroupResult
+from celery.result import AsyncResult
 from celery.states import SUCCESS
 
 from a4s_plugin_interface import TaskProgress
@@ -28,10 +28,10 @@ async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProg
 
         #args[0] is the plugin name
         plugin_statuses = {
-            child.parent.args[0]: child.parent.info
+            child.parent.info['plugin_name']: child.parent.info
             for group in evaluation_task.children or []
             for child in group.children or []
-            if child.parent.name == RUN_PLUGIN_TASK
+            if child.parent.state == "RUNNING" and isinstance(child.parent.info, dict) and 'plugin_name' in child.parent.info
         }
 
         return plugin_statuses
