@@ -17,9 +17,6 @@ services:
   a4s-backend:
     build:
       context: .
-      secrets:
-        - source: git_pat
-          target: git_pat
     image: a4s-backend:latest
     pull_policy: never
     container_name: a4s-backend
@@ -60,9 +57,6 @@ services:
     platform: linux/amd64
     build:
       context: ../a4s-eval/
-      secrets:
-        - source: git_pat
-          target: git_pat
     image: a4s-eval:latest
     pull_policy: never
     container_name: a4s-eval-worker
@@ -112,7 +106,3 @@ services:
       retries: 5
     networks:
       - backend
-
-secrets:
-  git_pat:
-    environment: GIT_PAT
