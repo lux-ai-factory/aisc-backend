@@ -104,14 +104,6 @@ git clone https://github.com/lux-ai-factory/a4s-webapp.git
 
 This workflow mounts your local plugin workspace into the backend + eval containers so both can load the same plugin code.
 
-### Provide a GitHub token (for private git deps)
-
-Create a GitHub Personal Access Token with `repo` and `read.org` scope and export it in your shell:
-
-```
-export GIT_PAT=<your_pat_here>
-```
-
 ### Configure `PLUGIN_PATH`
 
 In `env.development`, set `PLUGIN_PATH` to a directory on your machine that will contain one or more plugin projects:
