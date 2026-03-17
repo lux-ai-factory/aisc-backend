@@ -7,6 +7,7 @@ services:
     container_name: a4s-webapp
     environment:
       APP_API_URL: ${API_URL_EXTERNAL}
+      APP_SHOW_PLUGIN_VISUALIZATION: ${SHOW_PLUGIN_VISUALIZATION}
     depends_on:
       - a4s-backend
     networks:
