@@ -31,6 +31,8 @@ class ProjectRepository(BaseRepository[Project]):
                 "enabled_plugins",
                 "datasets__models",
 
+                "enabled_plugins__current_config",
+
                 "expected_datashape__features",
                 "expected_datashape__date_feature",
                 "expected_datashape__target_feature"

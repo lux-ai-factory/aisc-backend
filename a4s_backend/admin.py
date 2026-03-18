@@ -74,4 +74,4 @@ class MeasurementAdmin(admin.ModelAdmin):
 
 @admin.register(Plugin)
 class PluginAdmin(admin.ModelAdmin):
-    list_display = ["pid", "name", "config", "project"]
+    list_display = ["pid", "name", "project"]
