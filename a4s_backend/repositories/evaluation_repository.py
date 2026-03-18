@@ -34,6 +34,8 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
     if "plugin" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin__current_config")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__dataset")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__model")
 
