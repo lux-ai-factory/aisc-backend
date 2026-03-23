@@ -14,6 +14,7 @@ services:
       - a4s-backend
     networks:
       - frontend
+      - backend
 
   a4s-backend:
     build:
@@ -22,6 +23,7 @@ services:
     pull_policy: never
     container_name: a4s-backend
     environment:
+      DEBUG: ${DEBUG:-False}
       S3_MODELS_BUCKET: ${S3_MODELS_BUCKET}
       S3_DATASETS_BUCKET: ${S3_DATASETS_BUCKET}
       S3_URL: ${S3_URL}
@@ -37,6 +39,17 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
       PLUGIN_PATH: ${PLUGIN_PATH}
+      IMMUDB_HOST: immudb
+      IMMUDB_PORT: 3322
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_PROVIDER_ID: ${OIDC_PROVIDER_ID:-keycloak}
+      OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-Keycloak}
+      OIDC_SERVER_URL: ${OIDC_SERVER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_TOKEN_AUTH_METHOD: ${OIDC_TOKEN_AUTH_METHOD:-client_secret_post}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
     depends_on:
@@ -48,6 +61,10 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_started
+      immudb:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
@@ -69,41 +86,18 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
       PLUGIN_PATH: ${PLUGIN_PATH}
+      IMMUDB_HOST: immudb
+      IMMUDB_PORT: 3322
     depends_on:
       - a4s-backend
       - rabbitmq
       - redis
+      - immudb
     networks:
       - backend
     volumes:
       - ${PLUGIN_PATH}:/app/plugins
 
-  a4s-eval-flower:
-    platform: linux/amd64
-    image: a4s-eval:latest
-    pull_policy: never
-    container_name: a4s-eval-flower
-    # volumes:
-    #   - ./eval-logging.yaml:/app/config/logging.yaml:ro
-    environment:
-      API_URL: ${API_URL} # Address of api-backend
-      REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
-      CORS_ORIGINS: "*"
-    ports:
-      - "5555:5555"
-    depends_on:
-      - a4s-eval-worker
-      - a4s-backend
-      - rabbitmq
-      - redis
-    command: "celery -A a4s_eval.celery_worker flower"
-    healthcheck:
-      test:
-        - "CMD-SHELL"
-        - celery --app a4s_eval.celery_app inspect ping -d "celery@$$HOSTNAME"
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - backend
+secrets:
+  git_pat:
+    environment: GIT_PAT

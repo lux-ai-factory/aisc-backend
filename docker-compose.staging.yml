@@ -72,28 +72,3 @@ services:
     networks:
       - backend
 
-  a4s-eval-flower:
-    image: ghcr.io/lux-ai-factory/a4s-eval:wip-plugins
-    container_name: a4s-eval-flower
-    environment:
-      API_URL: ${API_URL} # Address of api-backend
-      REDIS_BACKEND_URL: ${REDIS_BACKEND_URL}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
-      CORS_ORIGINS: "*"
-      FLOWER_URL_PREFIX: flower
-    volumes:
-      - /home/deployer/a4splugins:/app/plugins:ro
-    depends_on:
-      - a4s-backend
-      - rabbitmq
-      - redis
-    command: "celery -A a4s_eval.celery_worker flower"
-    healthcheck:
-      test:
-        - "CMD-SHELL"
-        - celery --app a4s_eval.celery_app inspect ping -d "celery@$$HOSTNAME"
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - backend

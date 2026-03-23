@@ -86,6 +86,48 @@ services:
       - backend
     command: redis-server --protected-mode no
 
+  # immudb immutable database for audit logging
+  immudb:
+    image: codenotary/immudb:latest
+    container_name: immudb
+    ports:
+      - "3322:3322"
+      - "8081:8080"
+    volumes:
+      - immudb_data:/var/lib/immudb
+    restart: unless-stopped
+    networks:
+      - backend
+
+  # Keycloak OIDC identity provider
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: dev-mem
+      KC_HTTP_PORT: 8180
+      KC_HOSTNAME: http://host.docker.internal:8180
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180 && echo OK"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - backend
+
   # PostgreSQL database service
   postgres:
     image: postgres:14-alpine
@@ -107,6 +149,7 @@ volumes:
   postgres_data: # Persistent storage for PostgreSQL
   rabbitmq_data: # Persistent storage for RabbitMQ
   redis_data: # Persistent storage for Redis
+  immudb_data: # Persistent storage for immudb audit logs
 
 networks:
   backend:

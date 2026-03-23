@@ -28,6 +28,8 @@ from a4s_backend.routers.evaluation import router as evaluation_router
 from a4s_backend.routers.plugin import router as plugin_router
 from a4s_backend.routers.task import router as task_router
 from a4s_backend.routers.file import router as file_router
+from a4s_backend.routers.audit import router as audit_router
+from a4s_backend.routers.auth import router as auth_router
 
 from a4s_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from a4s_backend.utils.exception_handlers import register_exception_handlers
@@ -48,6 +50,8 @@ v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)
 v1_router.add_router("/tasks", task_router)
 v1_router.add_router("/files", file_router)
+v1_router.add_router("/audit", audit_router)
+v1_router.add_router("/auth", auth_router)
 
 api.add_router("/v1/", v1_router)
 
@@ -56,6 +60,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     path("_allauth/", include("allauth.headless.urls")),
+
+    # allauth account + socialaccount URLs (OIDC callback, etc.)
+    path("accounts/", include("allauth.urls")),
 
     path('api/', api.urls),
 ]
