@@ -154,6 +154,20 @@ docker compose --env-file env.development \
   -f docker-compose.development.yml up --build
 ```
 
+### After pulling changes or testing the Keycloak auth branch
+
+After pulling from a merge request or switching to the `feat/keycloak-audit` branch, rebuild everything:
+
+```
+docker compose --env-file env.development \
+  -f docker-compose-infra.development.yml \
+  -f docker-compose.development.yml down
+
+docker compose --env-file env.development \
+  -f docker-compose-infra.development.yml \
+  -f docker-compose.development.yml up -d --build
+```
+
 ---
 
 ## Audit logging (immudb)
