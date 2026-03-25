@@ -15,11 +15,6 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
 
     if "model" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.select_related("model")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape__date_feature")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape__target_feature")
-        evaluation_queryset = evaluation_queryset.prefetch_related("model__dataset__datashape__features")
 
     if "dataset" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.select_related("dataset")

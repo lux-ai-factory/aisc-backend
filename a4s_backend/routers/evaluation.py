@@ -21,6 +21,7 @@ from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, Evaluation
     EvaluationOutSchema
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
 from a4s_backend.services import celery_service
+from a4s_plugin_interface import InputType
 
 router = Router(tags=["evaluation"])
 
@@ -35,11 +36,13 @@ feature_repository = BaseRepository(model=Feature)
 evaluation_plugin_repository = BaseRepository(model=EvaluationPlugin)
 
 
+class EvaluationPluginInputInSchema(Schema):
+    pid: uuid.UUID
+    input_type: InputType
+
 class EvaluationPluginInSchema(Schema):
     name: str
-    dataset_pid: uuid.UUID | None = None
-    model_pid: uuid.UUID | None = None
-
+    inputs: list[EvaluationPluginInputInSchema] | None = None
 
 class CreateEvaluationRequest(Schema):
     project_pid: uuid.UUID
@@ -100,15 +103,13 @@ async def update_evaluation_status(request, evaluation_pid: uuid.UUID, status: E
 
 
 @router.post("", response=EvaluationOutSchema)
-async def create_evaluation(request, project_pid: uuid.UUID, model_pid: uuid.UUID, test_dataset_pid: uuid.UUID):
+async def create_evaluation(request, project_pid: uuid.UUID):
     project = await project_repository.get(project_pid)
     model = await model_repository.get(model_pid)
     dataset = await dataset_repository.get(test_dataset_pid)
 
     evaluation = Evaluation(
         project=project,
-        model=model,
-        dataset=dataset,
         status=EvaluationStatus.Pending
     )
 

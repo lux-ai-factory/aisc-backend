@@ -19,10 +19,6 @@ class Evaluation(models.Model):
 
     project = models.ForeignKey(
         'Project', related_name='evaluations', on_delete=models.PROTECT)
-    dataset = models.ForeignKey(
-        'Dataset', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
-    model = models.ForeignKey(
-        'Model', related_name='evaluations', null=True, blank=True, on_delete=models.PROTECT)
 
     task = models.UUIDField(default=None, null=True, blank=True)
 

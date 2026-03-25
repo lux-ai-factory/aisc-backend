@@ -5,11 +5,10 @@ from a4s_backend.models.common import HasData
 
 
 class Model(HasData):
+    project = models.ForeignKey(
+        'Project', related_name='models', on_delete=models.PROTECT)
     model_hub = models.CharField(max_length=255)
     public = models.BooleanField(default=True)
-
-    dataset = models.ForeignKey(
-        'Dataset', related_name='models', on_delete=models.PROTECT)
 
     def get_evaluations(self) -> list[Evaluation]:
         return list(self.evaluations.all())

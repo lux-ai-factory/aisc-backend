@@ -3,6 +3,7 @@ import uuid
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from a4s_plugin_interface.models.evaluation_input import InputDefinition
 from a4s_plugin_manager import Loader
 from a4s_plugin_interface import MetricVisualization
 
@@ -60,6 +61,13 @@ async def get_plugin_display_icon(request, plugin_name: str):
     display_icon = plugin.display_icon
 
     return display_icon
+
+@router.get("/{plugin_name}/input_definitions", response=list[InputDefinition])
+async def get_plugin_input_definitions(request, plugin_name: str):
+    plugin = plugin_loader.load(plugin_name)
+    input_definitions: list[InputDefinition] = plugin.input_definitions
+
+    return input_definitions
 
 
 class CreatePluginRequest(Schema):

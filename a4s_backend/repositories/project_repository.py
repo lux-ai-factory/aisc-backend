@@ -28,8 +28,8 @@ class ProjectRepository(BaseRepository[Project]):
             )
             .prefetch_related(
                 "datasets",
+                "models",
                 "enabled_plugins",
-                "datasets__models",
 
                 "enabled_plugins__current_config",
 

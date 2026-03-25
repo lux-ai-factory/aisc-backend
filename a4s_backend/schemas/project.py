@@ -9,13 +9,13 @@ from a4s_backend.schemas.plugin import PluginOutSchema
 class ProjectInSchema(ModelSchema):
     class Meta:
         model = Project
-        fields = ["name", "frequency", "window_size"]
+        fields = ["name"]
         fields_optional = "__all__"
 
 class ProjectOutSchema(ModelSchema):
     class Meta:
         model = Project
-        fields = ["name", "frequency", "window_size", "pid"]
+        fields = ["name", "pid"]
 
 class ProjectDetailsOutSchema(ModelSchema):
     datasets: list[DatasetOutSchema] = Field([], alias="get_datasets")

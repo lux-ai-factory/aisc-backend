@@ -6,7 +6,7 @@ from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from django.http import StreamingHttpResponse
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.datashape import DataShapeStatus, DataShape
@@ -55,7 +55,7 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
     suffix = Path(file.name).suffix.lower()
     file.name = f"{str(uuid.uuid4())}{suffix}"
 
-    result = file_repository.upload_file(file, S3_DATASETS_BUCKET)
+    result = file_repository.upload_file(file, dataset.storage_container)
 
     if not result:
         raise HttpError(500, "Failed to upload file")

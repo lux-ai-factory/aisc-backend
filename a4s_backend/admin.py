@@ -12,7 +12,7 @@ from a4s_backend.models.measure import Measurement
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ["name", "status", "frequency", "window_size", "expected_datashape", "expected_datashape__dataset", "dataset_count", "model_count", "evaluation_count"]
+    list_display = ["name", "status", "expected_datashape", "expected_datashape__dataset", "dataset_count", "model_count", "evaluation_count"]
 
     def dataset_count(self, obj):
         return len(obj.get_datasets())
@@ -25,10 +25,7 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(Dataset)
 class DatasetAdmin(admin.ModelAdmin):
-    list_display = ["name", "project", "datashape", "model_count", "evaluation_count"]
-
-    def model_count(self, obj):
-        return len(obj.get_models())
+    list_display = ["name", "project", "datashape", "evaluation_count"]
 
     def evaluation_count(self, obj):
         return len(obj.get_evaluations())
@@ -49,7 +46,7 @@ class FeatureAdmin(admin.ModelAdmin):
 
 @admin.register(Model)
 class ModelAdmin(admin.ModelAdmin):
-    list_display = ["name", "model_hub", "public", "dataset", "evaluation_count"]
+    list_display = ["name", "model_hub", "public", "evaluation_count"]
 
     def evaluation_count(self, obj):
         return len(obj.get_evaluations())

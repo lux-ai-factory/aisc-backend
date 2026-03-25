@@ -17,8 +17,6 @@ class ProjectStatus(models.TextChoices):
 
 class Project(Base):
     status = models.CharField(max_length=255, choices=ProjectStatus.choices)
-    frequency = models.CharField(max_length=255)
-    window_size = models.CharField(max_length=255)
 
     expected_datashape = models.OneToOneField(
         'DataShape', related_name='project', on_delete=models.PROTECT, null=True, blank=True,)
@@ -27,12 +25,7 @@ class Project(Base):
         return list(self.datasets.all())
 
     def get_models(self) -> list[Model]:
-        dataset_models: list[Model] = []
-        for dataset in self.get_datasets():
-            for model in dataset.get_models():
-                dataset_models.append(model)
-
-        return dataset_models
+        return list(self.models.all())
 
     def get_evaluations(self) -> list[Evaluation]:
         return list(self.evaluations.all())
