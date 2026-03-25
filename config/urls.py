@@ -59,9 +59,14 @@ api.add_router("/v1/", v1_router)
 urlpatterns = [
     path('admin/', admin.site.urls),
 
+    # Allauth headless API (no HTML, data only):
+    #   /_allauth/browser/v1/config                  → list available login providers
+    #   /_allauth/browser/v1/auth/provider/redirect   → initiate login (hidden form POSTs here) contructs Keycloak url with 302 code
+    #   /_allauth/browser/v1/auth/session             → check session (GET) / logout (DELETE)
     path("_allauth/", include("allauth.headless.urls")),
 
-    # allauth account + socialaccount URLs (OIDC callback, etc.)
+    # Allauth account + socialaccount URLs (OIDC callback):
+    #   /accounts/openid_connect/callback/keycloak/   → Keycloak redirects here after user login
     path("accounts/", include("allauth.urls")),
 
     path('api/', api.urls),
