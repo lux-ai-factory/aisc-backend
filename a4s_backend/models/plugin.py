@@ -51,7 +51,6 @@ class EvaluationPluginInputFile(models.Model):
     # Technical name from the @input decorator (e.g., "training_data")
     name = models.CharField(max_length=255)
 
-    # Generic Foreign Key to support both Dataset and Model
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey('content_type', 'object_id')
@@ -74,10 +73,5 @@ class EvaluationPlugin(Base):
         blank=True,
     )
 
-    def save(self, *args, **kwargs):
-        """
-        On first save (creation), if plugin_config isn't set, use the current plugin config.
-        """
-        if self._state.adding and self.plugin_config is None:
-            self.plugin_config = self.plugin.current_config
-        super().save(*args, **kwargs)
+    def get_input_files(self):
+        return self.input_files.all()

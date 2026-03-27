@@ -1,24 +1,20 @@
 import uuid
 from pathlib import Path
 
-from ninja import Router, File, Schema, Form
+from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from django.http import StreamingHttpResponse
-from pydantic import Field
 
 from a4s_backend.models.dataset import Dataset
-from a4s_backend.models.datashape import DataShapeStatus, DataShape
+from a4s_backend.models.datashape import DataShape
 from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.datashape_repository import DataShapeRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
-from a4s_backend.services import celery_service
 
-
-from a4s_backend.utils import file_utils
 
 from config.settings import S3_DATASETS_BUCKET
 
@@ -32,25 +28,14 @@ project_repository = ProjectRepository()
 
 class UploadDatasetFileResponse(Schema):
     file_name: str
-    datashape_pid: uuid.UUID
 
-class FileUploadMetadata(Schema):
-    csv_to_parquet: bool = Field(..., alias="csvToParquet")
 
 @router.put("/{dataset_pid}/data", response=UploadDatasetFileResponse)
-async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[UploadedFile], data: Form[FileUploadMetadata]):
+async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[UploadedFile]):
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
     dataset = await dataset_repository.get(dataset_pid, True)
-
-    datashape = dataset.get_datashape()
-    if datashape is None:
-        raise HttpError(404, f"Datashape for dataset ({dataset_pid}) not found")
-
-    # Check if file is CSV and convert to parquet if needed
-    if Path(file.name).suffix.lower() == ".csv" and data.csv_to_parquet:
-        file_utils.csv_to_parquet(file)
 
     suffix = Path(file.name).suffix.lower()
     file.name = f"{str(uuid.uuid4())}{suffix}"
@@ -60,17 +45,11 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
     if not result:
         raise HttpError(500, "Failed to upload file")
 
-    # Call evaluation engine to autodiscover datashape
-    autodiscover_datashape_response = await celery_service.autodiscover_datashape(datashape.pid)
-    if not autodiscover_datashape_response:
-        raise HttpError(500, f"Autodiscovery failed in a4s evaluation module")
 
-    datashape.status = DataShapeStatus.Requested
     dataset.data = file.name
     await dataset_repository.save(dataset)
-    await datashape_repository.save(datashape)
 
-    return UploadDatasetFileResponse(file_name=file.name, datashape_pid=datashape.pid)
+    return UploadDatasetFileResponse(file_name=file.name)
 
 
 @router.get("/{dataset_pid}/data")

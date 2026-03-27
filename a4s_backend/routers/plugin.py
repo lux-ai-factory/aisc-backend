@@ -160,20 +160,14 @@ async def get_plugin_evaluation_results(
     metrics = plugin.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
-    observation = await evaluation.observations.order_by("-whenObserved").afirst()
+    observation = await evaluation.observations.filter(tool=plugin_name).order_by("-whenObserved").afirst()
 
-    measurements = await measurement_repository.filter_with_related(
-        name__in=metrics, observation=observation
-    )
+    measurements = await measurement_repository.filter_with_related(name__in=metrics, observation=observation)
 
     eval_plugin = await EvaluationPlugin.objects.select_related(
-        "plugin", "plugin_config"
-    ).aget(evaluation=evaluation, plugin__name=plugin_name)
-    metric_visualizations = plugin.get_metric_visualizations(
-        eval_plugin.plugin_config.config
-        if eval_plugin.plugin_config
-        else eval_plugin.evaluation_config
-    )
+        "plugin_config"
+    ).aget(evaluation=evaluation, plugin_config__plugin__name=plugin_name)
+    metric_visualizations = plugin.get_metric_visualizations(eval_plugin.plugin_config.config)
 
     return EvaluationResultOutSchema(
         measurements=measurements, metric_visualizations=metric_visualizations
