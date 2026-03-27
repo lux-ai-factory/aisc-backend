@@ -3,6 +3,7 @@ import uuid
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from a4s_plugin_interface.models.evaluation_input import InputDefinition
 from a4s_plugin_manager import Loader
 from a4s_plugin_interface import MetricVisualization
 
@@ -60,6 +61,13 @@ async def get_plugin_display_icon(request, plugin_name: str):
     display_icon = plugin.display_icon
 
     return display_icon
+
+@router.get("/{plugin_name}/input_definitions", response=list[InputDefinition])
+async def get_plugin_input_definitions(request, plugin_name: str):
+    plugin = plugin_loader.load(plugin_name)
+    input_definitions: list[InputDefinition] = plugin.input_definitions
+
+    return input_definitions
 
 
 class CreatePluginRequest(Schema):
@@ -123,7 +131,7 @@ async def update_plugin_config_state(
     config, schema, ui_schema = plugin.on_config_change(data.config)
 
     response = ProjectPluginConfigStateResponse(
-        config=config, formSchema=schema, uiSchema=ui_schema
+        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema
     )
 
     return response
@@ -152,20 +160,14 @@ async def get_plugin_evaluation_results(
     metrics = plugin.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
-    observation = await evaluation.observations.order_by("-whenObserved").afirst()
+    observation = await evaluation.observations.filter(tool=plugin_name).order_by("-whenObserved").afirst()
 
-    measurements = await measurement_repository.filter_with_related(
-        name__in=metrics, observation=observation
-    )
+    measurements = await measurement_repository.filter_with_related(name__in=metrics, observation=observation)
 
     eval_plugin = await EvaluationPlugin.objects.select_related(
-        "plugin", "plugin_config"
-    ).aget(evaluation=evaluation, plugin__name=plugin_name)
-    metric_visualizations = plugin.get_metric_visualizations(
-        eval_plugin.plugin_config.config
-        if eval_plugin.plugin_config
-        else eval_plugin.evaluation_config
-    )
+        "plugin_config"
+    ).aget(evaluation=evaluation, plugin_config__plugin__name=plugin_name)
+    metric_visualizations = plugin.get_metric_visualizations(eval_plugin.plugin_config.config)
 
     return EvaluationResultOutSchema(
         measurements=measurements, metric_visualizations=metric_visualizations
@@ -217,9 +219,8 @@ async def parse_plugin_config_state_from_dataset(
     file_content = response["Body"].read()
 
     plugin = plugin_loader.load(plugin_name)
-    plugin.set_dataset_input_provider(file_content)
 
-    config = plugin.parse_config_from_dataset()
+    config = plugin.parse_config_from_dataset(file_content)
 
     config, schema, ui_schema = plugin.on_config_change(config)
 

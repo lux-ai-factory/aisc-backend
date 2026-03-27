@@ -13,31 +13,18 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
     if "project" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.select_related("project")
 
-    if "model" in include_list or include_all:
-        evaluation_queryset = evaluation_queryset.select_related("model")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape__date_feature")
-        evaluation_queryset = evaluation_queryset.select_related("model__dataset__datashape__target_feature")
-        evaluation_queryset = evaluation_queryset.prefetch_related("model__dataset__datashape__features")
-
-    if "dataset" in include_list or include_all:
-        evaluation_queryset = evaluation_queryset.select_related("dataset")
-        evaluation_queryset = evaluation_queryset.select_related("dataset__datashape")
-        evaluation_queryset = evaluation_queryset.select_related("dataset__datashape__date_feature")
-        evaluation_queryset = evaluation_queryset.select_related("dataset__datashape__target_feature")
-        evaluation_queryset = evaluation_queryset.prefetch_related("dataset__datashape__features")
-
     if "datashape" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.select_related("project__expected_datashape")
 
     if "plugin" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin")
+
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin__current_config")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__dataset")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__model")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__plugin")
+
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_object")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_type")
 
     return evaluation_queryset
 

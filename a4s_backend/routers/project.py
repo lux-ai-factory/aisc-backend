@@ -5,6 +5,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from a4s_backend.models import EvaluationStatus, Dataset
+from a4s_backend.models.common import StorageContainer
 from a4s_backend.models.datashape import DataShape, DataShapeStatus
 from a4s_backend.models.model import Model
 from a4s_backend.repositories.base_repository import BaseRepository
@@ -15,7 +16,7 @@ from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
 from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
 from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema
-from a4s_backend.schemas.model import ModelOutSchema
+from a4s_backend.schemas.model import ModelOutSchema, ModelInSchema
 from a4s_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
 
 
@@ -68,26 +69,18 @@ async def get_project_datashape(request, pid: uuid.UUID):
 async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema):
     project = await project_repository.get(pid)
 
-    dataset = await dataset_repository.save(Dataset(**data.model_dump(), project=project))
+    dataset = await dataset_repository.save(Dataset(**data.model_dump(), project=project, storage_container=StorageContainer.Datasets))
 
     await datashape_repository.save(DataShape(status=DataShapeStatus.Manual, dataset=dataset))
 
     return dataset
 
 
-class CreateProjectModelRequest(Schema):
-    name: str
-    dataset_pid: uuid.UUID
-
 @router.post("/{pid}/models", response=ModelOutSchema)
-async def create_project_model(request, pid: uuid.UUID, data: CreateProjectModelRequest):
+async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
     project = await project_repository.get(pid)
-    dataset = await dataset_repository.get(data.dataset_pid, True)
 
-    if project.pid != dataset.project.pid:
-        raise HttpError(409, "Dataset does not belong to project")
-
-    model = Model(name=data.name, dataset=dataset, public=True)
+    model = Model(**data.model_dump(), project=project, public=True, storage_container=StorageContainer.Models)
     return await model_repository.save(model)
 
 
