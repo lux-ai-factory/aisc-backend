@@ -131,7 +131,7 @@ async def update_plugin_config_state(
     config, schema, ui_schema = plugin.on_config_change(data.config)
 
     response = ProjectPluginConfigStateResponse(
-        config=config, formSchema=schema, uiSchema=ui_schema
+        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema
     )
 
     return response
@@ -219,9 +219,8 @@ async def parse_plugin_config_state_from_dataset(
     file_content = response["Body"].read()
 
     plugin = plugin_loader.load(plugin_name)
-    plugin.set_dataset_input_provider(file_content)
 
-    config = plugin.parse_config_from_dataset()
+    config = plugin.parse_config_from_dataset(file_content)
 
     config, schema, ui_schema = plugin.on_config_change(config)
 
