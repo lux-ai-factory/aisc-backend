@@ -109,7 +109,8 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: dev-file
       KC_HTTP_PORT: 8180
-      KC_HOSTNAME: http://host.docker.internal:8180
+      KC_HOSTNAME: keycloak.localhost
+      KC_HOSTNAME_PORT: 8180
       KC_HOSTNAME_STRICT: "false"
       KC_PROXY_HEADERS: xforwarded
     ports:
@@ -123,11 +124,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
-      - backend
+      backend:
+        aliases:
+          - keycloak.localhost
 
   # PostgreSQL database service
   postgres:
