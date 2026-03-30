@@ -122,6 +122,20 @@ Then create a plugin project folder inside that path (example):
 Follow the instructions in the  [a4s-plugin-interface](https://github.com/lux-ai-factory/a4s-plugin-interface) repository to scaffold and implement the plugin:
 
 
+### (Linux only) Add `host.docker.internal` to `/etc/hosts`
+
+The backend contacts Keycloak at `http://host.docker.internal:8180`. On macOS/Windows Docker resolves this automatically, but on Linux it does not exist by default. Without it, the OIDC login will fail with a 500 error.
+
+Check if it's already set:
+```
+getent hosts host.docker.internal
+```
+
+If it returns nothing, add it:
+```
+echo '127.0.0.1 host.docker.internal' | sudo tee -a /etc/hosts
+```
+
 ### Start the stack in dev mode
 
 From inside `a4s-backend`:
@@ -138,6 +152,20 @@ docker compose --env-file env.development \
 docker compose --env-file env.development \
   -f docker-compose-infra.development.yml \
   -f docker-compose.development.yml up --build
+```
+
+### After pulling changes or testing the Keycloak auth branch
+
+After pulling from a merge request or switching to the `feat/keycloak-audit` branch, rebuild everything:
+
+```
+docker compose --env-file env.development \
+  -f docker-compose-infra.development.yml \
+  -f docker-compose.development.yml down
+
+docker compose --env-file env.development \
+  -f docker-compose-infra.development.yml \
+  -f docker-compose.development.yml up -d --build
 ```
 
 ---

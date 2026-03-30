@@ -1,4 +1,16 @@
-"""Custom allauth adapter that syncs OIDC roles to Django Groups."""
+"""Custom allauth adapter that syncs OIDC roles to Django Groups.
+
+Authentication flow:
+    The frontend submits a hidden form with the login provider reference to allauth,
+    which handles the communication with Keycloak following the OIDC protocol.
+    Keycloak acts as the identity provider and verifies whether the user exists
+    after they enter their username/email and password. If valid, Keycloak returns
+    a signed token which is then decoded and validated by the backend to start
+    a new session.
+
+    This adapter extends that flow by syncing the roles carried in the OIDC token
+    (e.g. admin, user) to Django Groups on every login.
+"""
 
 import logging
 

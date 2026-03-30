@@ -107,7 +107,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_DB: dev-mem
+      KC_DB: dev-file
       KC_HTTP_PORT: 8180
       KC_HOSTNAME: http://host.docker.internal:8180
       KC_HOSTNAME_STRICT: "false"
@@ -116,6 +116,7 @@ services:
       - "8180:8180"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - keycloak_data:/opt/keycloak/data
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180 && echo OK"]
       interval: 15s
@@ -150,6 +151,7 @@ volumes:
   rabbitmq_data: # Persistent storage for RabbitMQ
   redis_data: # Persistent storage for Redis
   immudb_data: # Persistent storage for immudb audit logs
+  keycloak_data: # Persistent storage for Keycloak H2 database
 
 networks:
   backend:
