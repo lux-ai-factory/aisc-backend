@@ -17,7 +17,7 @@ class Base(models.Model):
 
 class HasData(Base):
     data = models.CharField(max_length=255)
-    storage_container = models.CharField(max_length=255, choices=StorageContainer.choices)
+    storage_container = models.CharField(default=StorageContainer.Datasets, max_length=255, choices=StorageContainer.choices)
 
     class Meta:
         abstract = True

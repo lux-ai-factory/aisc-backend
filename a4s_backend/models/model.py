@@ -6,7 +6,7 @@ from a4s_backend.models.common import HasData
 
 class Model(HasData):
     project = models.ForeignKey(
-        'Project', related_name='models', on_delete=models.PROTECT)
+        'Project', related_name='models', null=True, blank=True, on_delete=models.PROTECT)
     model_hub = models.CharField(max_length=255)
     public = models.BooleanField(default=True)
 
