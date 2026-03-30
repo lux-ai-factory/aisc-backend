@@ -62,6 +62,7 @@ async def get_plugin_display_icon(request, plugin_name: str):
 
     return display_icon
 
+
 @router.get("/{plugin_name}/input_definitions", response=list[InputDefinition])
 async def get_plugin_input_definitions(request, plugin_name: str):
     plugin = plugin_loader.load(plugin_name)
@@ -101,15 +102,25 @@ async def create_plugin(request, data: CreatePluginRequest):
     return project_plugin
 
 
-@router.get("/{plugin_name}/configs", response=list[PluginConfigOutSchema])
-async def get_plugin_config_history(request, plugin_name: str):
-    plugin = await plugin_repository.get_one(name=plugin_name)
+@router.get(
+    "/{plugin_name}/project/{project_uuid}/configs",
+    response=list[PluginConfigOutSchema],
+)
+async def get_plugin_config_history(request, plugin_name: str, project_uuid: uuid.UUID):
+    project = await project_repository.get(project_uuid)
+    plugin = await plugin_repository.get_one(name=plugin_name, project=project)
     return [c async for c in plugin.configs.all()]
 
 
-@router.post("/{plugin_name}/configs/{config_id}/restore", response=PluginOutSchema)
-async def restore_plugin_config(request, plugin_name: str, config_id: int):
-    plugin = await plugin_repository.get_one(name=plugin_name)
+@router.post(
+    "/{plugin_name}/project/{project_uuid}/configs/{config_id}/restore",
+    response=PluginOutSchema,
+)
+async def restore_plugin_config(
+    request, plugin_name: str, project_uuid: uuid.UUID, config_id: int
+):
+    project = await project_repository.get(project_uuid)
+    plugin = await plugin_repository.get_one(name=plugin_name, project=project)
     config = await PluginConfig.objects.aget(id=config_id, plugin=plugin)
 
     plugin.current_config = config
@@ -160,14 +171,22 @@ async def get_plugin_evaluation_results(
     metrics = plugin.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
-    observation = await evaluation.observations.filter(tool=plugin_name).order_by("-whenObserved").afirst()
+    observation = (
+        await evaluation.observations.filter(tool=plugin_name)
+        .order_by("-whenObserved")
+        .afirst()
+    )
 
-    measurements = await measurement_repository.filter_with_related(name__in=metrics, observation=observation)
+    measurements = await measurement_repository.filter_with_related(
+        name__in=metrics, observation=observation
+    )
 
-    eval_plugin = await EvaluationPlugin.objects.select_related(
-        "plugin_config"
-    ).aget(evaluation=evaluation, plugin_config__plugin__name=plugin_name)
-    metric_visualizations = plugin.get_metric_visualizations(eval_plugin.plugin_config.config)
+    eval_plugin = await EvaluationPlugin.objects.select_related("plugin_config").aget(
+        evaluation=evaluation, plugin_config__plugin__name=plugin_name
+    )
+    metric_visualizations = plugin.get_metric_visualizations(
+        eval_plugin.plugin_config.config
+    )
 
     return EvaluationResultOutSchema(
         measurements=measurements, metric_visualizations=metric_visualizations
@@ -198,7 +217,10 @@ async def get_project_plugin_config_state(
     config, schema, ui_schema = plugin.on_config_change(plugin_config)
 
     response = ProjectPluginConfigStateResponse(
-        plugin_config_id=plugin_config_id, config=config, formSchema=schema, uiSchema=ui_schema
+        plugin_config_id=plugin_config_id,
+        config=config,
+        formSchema=schema,
+        uiSchema=ui_schema,
     )
 
     return response
