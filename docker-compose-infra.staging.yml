@@ -51,6 +51,7 @@ services:
       /bin/sh -c "
       /usr/bin/mc alias set minio http://minio:9000 ${S3_USER} ${S3_PASSWORD} &&
       /usr/bin/mc mb --ignore-existing minio/datasets;
+      /usr/bin/mc mb --ignore-existing minio/artifacts;
       /usr/bin/mc mb --ignore-existing minio/models &&
       exit 0;
       "

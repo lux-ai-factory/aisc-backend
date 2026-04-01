@@ -6,13 +6,10 @@ from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
+from a4s_backend.models.common import StorageContainer
 from a4s_backend.models.model import Model
 from a4s_backend.repositories import file_repository
 from a4s_backend.repositories.base_repository import BaseRepository
-from a4s_backend.utils import file_utils
-
-from config.settings import S3_MODELS_BUCKET
-
 
 router = Router(tags=["model"])
 
@@ -28,18 +25,13 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
         raise HttpError(500, "Invalid file")
 
     model = await model_repository.get(model_pid)
-
-    # Check if file is CSV and convert to parquet if needed
-    if Path(file.name).suffix.lower() == ".csv":
-        file_utils.csv_to_parquet(file)
+    if not model:
+        raise HttpError(404, f"Model {model_pid} not found")
 
     suffix = Path(file.name).suffix.lower()
-    if suffix != ".onnx":
-        raise HttpError(400, f"File ({file.name}) is not an ONNX file")
-
     file.name = f"{str(uuid.uuid4())}{suffix}"
 
-    result = file_repository.upload_file(file, S3_MODELS_BUCKET)
+    result = file_repository.upload_file(file, StorageContainer.Models)
 
     if not result:
         raise HttpError(500, "Failed to upload file")
@@ -54,14 +46,14 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
 async def get_model_file(request, model_pid: uuid.UUID):
     try:
         # check bucket exists
-        bucket_exists = file_repository.bucket_exists(S3_MODELS_BUCKET)
+        bucket_exists = file_repository.bucket_exists(StorageContainer.Models)
         if not bucket_exists:
-            raise HttpError(500, f"Bucket {S3_MODELS_BUCKET} not found")
+            raise HttpError(500, f"Bucket {StorageContainer.Models} not found")
 
         model = await model_repository.get(model_pid)
 
         # Get the object from S3
-        response = file_repository.get_object(bucket_name=S3_MODELS_BUCKET, object_name=model.data)
+        response = file_repository.get_object(bucket_name=StorageContainer.Models, object_name=model.data)
         file_stream = response["Body"]
 
         content_type = response.get("ContentType", "application/octet-stream")

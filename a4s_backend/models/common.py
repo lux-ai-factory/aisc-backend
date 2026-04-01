@@ -2,10 +2,12 @@ import uuid
 
 from django.db import models
 
+from config.settings import S3_DATASETS_BUCKET, S3_MODELS_BUCKET, S3_ARTIFACTS_BUCKET
+
 class StorageContainer(models.TextChoices):
-    Datasets = 'datasets'
-    Models = 'models'
-    Artifacts = 'artifacts'
+    Datasets = S3_DATASETS_BUCKET
+    Models = S3_MODELS_BUCKET
+    Artifacts = S3_ARTIFACTS_BUCKET
 
 class Base(models.Model):
     pid = models.UUIDField(default=uuid.uuid4, editable=False)

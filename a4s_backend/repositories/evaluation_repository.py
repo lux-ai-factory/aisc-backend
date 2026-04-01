@@ -25,6 +25,7 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_object")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_type")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__artifacts")
 
     return evaluation_queryset
 
