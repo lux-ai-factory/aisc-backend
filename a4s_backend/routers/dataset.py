@@ -7,6 +7,7 @@ from ninja.files import UploadedFile
 
 from django.http import StreamingHttpResponse
 
+from a4s_backend.models.common import StorageContainer
 from a4s_backend.models.dataset import Dataset
 from a4s_backend.models.datashape import DataShape
 from a4s_backend.repositories import file_repository
@@ -14,10 +15,6 @@ from a4s_backend.repositories.dataset_repository import DatasetRepository
 from a4s_backend.repositories.datashape_repository import DataShapeRepository
 from a4s_backend.repositories.project_repository import ProjectRepository
 from a4s_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
-
-
-from config.settings import S3_DATASETS_BUCKET
-
 
 router = Router(tags=["dataset"])
 
@@ -36,6 +33,8 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
         raise HttpError(500, "Invalid file")
 
     dataset = await dataset_repository.get(dataset_pid, True)
+    if not dataset:
+        raise HttpError(404, f"Dataset {dataset_pid} not found")
 
     suffix = Path(file.name).suffix.lower()
     file.name = f"{str(uuid.uuid4())}{suffix}"
@@ -44,7 +43,6 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
 
     if not result:
         raise HttpError(500, "Failed to upload file")
-
 
     dataset.data = file.name
     await dataset_repository.save(dataset)
@@ -56,20 +54,20 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
 async def get_dataset_file(request, dataset_pid: uuid.UUID):
     try:
         # check bucket exists
-        bucket_exists = file_repository.bucket_exists(S3_DATASETS_BUCKET)
+        bucket_exists = file_repository.bucket_exists(StorageContainer.Datasets)
         if not bucket_exists:
-            raise HttpError(500, f"Bucket {S3_DATASETS_BUCKET} not found")
+            raise HttpError(500, f"Bucket {StorageContainer.Datasets} not found")
 
         # Get dataset exists
         dataset = await dataset_repository.get(dataset_pid)
 
         # Get the object from S3
-        response = file_repository.get_object(bucket_name=S3_DATASETS_BUCKET, object_name=dataset.data)
+        response = file_repository.get_object(bucket_name=StorageContainer.Datasets, object_name=dataset.data)
         file_stream = response["Body"]
 
         return StreamingHttpResponse(
             file_stream,
-            content_type="application/vnd.apache.parquet",
+            content_type="application/octet-stream",
         )
     except Exception as e:
         raise HttpError(500, f"Error fetching dataset file: {str(e)}")

@@ -75,3 +75,6 @@ class EvaluationPlugin(Base):
 
     def get_input_files(self):
         return self.input_files.all()
+
+    def get_artifacts(self):
+        return self.artifacts.all()

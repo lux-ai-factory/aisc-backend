@@ -3,6 +3,7 @@ import uuid
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from a4s_backend.models.common import StorageContainer
 from a4s_plugin_interface.models.evaluation_input import InputDefinition
 from a4s_plugin_manager import Loader
 from a4s_plugin_interface import MetricVisualization
@@ -20,7 +21,7 @@ from a4s_backend.schemas.plugin import (
     PluginOutSchema,
     PluginConfigOutSchema,
 )
-from config.settings import PLUGIN_PATH, S3_DATASETS_BUCKET
+from config.settings import PLUGIN_PATH
 
 router = Router(tags=["plugin"])
 
@@ -236,7 +237,7 @@ async def parse_plugin_config_state_from_dataset(
     dataset = await dataset_repository.get(dataset_uuid)
 
     response = file_repository.get_object(
-        bucket_name=S3_DATASETS_BUCKET, object_name=dataset.data
+        bucket_name=StorageContainer.Datasets, object_name=dataset.data
     )
     file_content = response["Body"].read()
 
