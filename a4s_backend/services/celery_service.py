@@ -3,6 +3,7 @@ import uuid
 from celery import Celery
 from celery.result import AsyncResult
 from celery.states import SUCCESS
+from kombu import Queue
 
 from a4s_plugin_interface import TaskProgress
 from config.settings import CELERY_BROKER_URL, REDIS_BACKEND_URL, CELERY_APP_NAME
@@ -15,8 +16,13 @@ RUN_EVAL_TASK = "a4s_eval.celery_tasks.run_evaluation"
 RUN_PLUGIN_TASK = "a4s_eval.celery_tasks.run_plugin"
 
 
-async def run_evaluation(evaluation_uuid: uuid.UUID):
-    run_evaluation_task_result = celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid])
+celery.conf.task_queues = (
+    Queue('default'),
+    Queue('long_running'),
+)
+
+async def run_evaluation(evaluation_uuid: uuid.UUID, queue):
+    run_evaluation_task_result = celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid],queue=queue)
     return run_evaluation_task_result
 
 
