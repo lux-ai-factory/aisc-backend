@@ -94,6 +94,8 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CORS_ORIGINS: "*"
       PLUGIN_PATH: ${PLUGIN_PATH}
+      EVAL_DEFAULT_QUEUE_NAME: "long_running" # Match it with subscribed queue to have all jobs picked up by this worker run same queue
+      EVAL_TASK_TIME_LIMIT: "6000" #Since it's a worker for long running jobs, extend the time limit
     depends_on:
       - a4s-backend
       - rabbitmq
