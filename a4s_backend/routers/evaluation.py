@@ -25,6 +25,7 @@ from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, Evaluation
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
 from a4s_backend.services import celery_service
 from a4s_plugin_interface import InputType
+from config.settings import WORKERS_DEFAULT_QUEUE_NAME
 
 router = Router(tags=["evaluation"])
 
@@ -67,13 +68,13 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             plugin_config = plugin.current_config
             if plugin_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
-            
             try:                
-                queue = plugin_config.queue or "default"
-            except(AttributeError):
-                queue = "default"
-            
-            # Group all the plugins with mactching queue name togheter
+                queue = plugin_config.config["queue"] or WORKERS_DEFAULT_QUEUE_NAME
+            except:
+                # Something was off reading queue from plugin_config, setting default queue 
+                queue = WORKERS_DEFAULT_QUEUE_NAME
+           
+            # Group toghether all the plugin with the same queue configuration
             if plugins.get(queue) is None:
                 plugins[queue] = []
             plugins[queue].append((plugin_config,plugin_to_run))
