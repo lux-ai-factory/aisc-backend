@@ -25,6 +25,7 @@ from a4s_backend.schemas.evaluation import EvaluationDetailOutSchema, Evaluation
 from a4s_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
 from a4s_backend.services import celery_service
 from a4s_plugin_interface import InputType
+from config.settings import WORKERS_DEFAULT_QUEUE_NAME
 
 router = Router(tags=["evaluation"])
 
@@ -53,14 +54,13 @@ class CreateEvaluationRequest(Schema):
     plugins_to_run: list[EvaluationPluginInSchema]
 
 
-@router.post("/task", response=EvaluationOutSchema)
+@router.post("/task", response=list[EvaluationOutSchema])
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
-    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
-    evaluation = await evaluation_repository.create(evaluation)
-
-    evaluation_plugins = []
+    plugins = {}
+    evaluations = []
+    
     for plugin_to_run in data.plugins_to_run:
         plugin_loader.load(plugin_to_run.name)
         plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name), None)
@@ -68,11 +68,26 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             plugin_config = plugin.current_config
             if plugin_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
+            try:                
+                queue = plugin_config.config["queue"] or WORKERS_DEFAULT_QUEUE_NAME
+            except:
+                # Something was off reading queue from plugin_config, setting default queue 
+                queue = WORKERS_DEFAULT_QUEUE_NAME
+           
+            # Group toghether all the plugin with the same queue configuration
+            if plugins.get(queue) is None:
+                plugins[queue] = []
+            plugins[queue].append((plugin_config,plugin_to_run))
 
+    queues = plugins.keys()
+
+    for queue in queues:
+        evaluation = Evaluation(status=EvaluationStatus.Pending,project=project)
+        evaluation = await evaluation_repository.create(evaluation)
+        for plugin_config, plugin_to_run in plugins[queue]:
             run_plugin = EvaluationPlugin(plugin_config=plugin_config, evaluation=evaluation)
             run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
-            # Link the input files
             if plugin_to_run.inputs:
                 for input_data in plugin_to_run.inputs:
                     # Determine content type and model
@@ -88,7 +103,6 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                     content_obj = await content_model.objects.aget(pid=input_data.pid)
                     content_type = await sync_to_async(ContentType.objects.get_for_model)(content_model)
 
-
                     # Create the link
                     input_file = EvaluationPluginInputFile(
                         evaluation_plugin=run_plugin,
@@ -99,14 +113,12 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                     )
                     await input_file.asave()
 
-            evaluation_plugins.append(run_plugin)
+        task = await celery_service.run_evaluation(evaluation.pid, queue=queue)
+        evaluation.task = task.task_id
+        await evaluation_repository.save(evaluation)
+        evaluations.append(evaluation)
 
-    evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
-
-    evaluation.task = evaluation_plugins_task.task_id
-    await evaluation_repository.save(evaluation)
-
-    return evaluation
+    return evaluations
 
 
 @router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)

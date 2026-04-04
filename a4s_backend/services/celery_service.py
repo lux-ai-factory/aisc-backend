@@ -3,9 +3,11 @@ import uuid
 from celery import Celery
 from celery.result import AsyncResult
 from celery.states import SUCCESS
+from kombu import Queue
 
 from a4s_plugin_interface import TaskProgress
-from config.settings import CELERY_BROKER_URL, REDIS_BACKEND_URL, CELERY_APP_NAME
+from config.settings import CELERY_BROKER_URL, REDIS_BACKEND_URL, CELERY_APP_NAME, WORKERS_DEFAULT_QUEUE_NAME, WORKERS_QUEUES
+
 
 celery: Celery = Celery(
     CELERY_APP_NAME, broker=CELERY_BROKER_URL, backend=REDIS_BACKEND_URL
@@ -14,11 +16,14 @@ celery: Celery = Celery(
 RUN_EVAL_TASK = "a4s_eval.celery_tasks.run_evaluation"
 RUN_PLUGIN_TASK = "a4s_eval.celery_tasks.run_plugin"
 
+celery.conf.task_queues = tuple(
+    Queue(q) for q in dict.fromkeys(WORKERS_QUEUES) if q
+)
+celery.conf.task_default_queue = WORKERS_DEFAULT_QUEUE_NAME
 
-async def run_evaluation(evaluation_uuid: uuid.UUID):
-    run_evaluation_task_result = celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid])
+async def run_evaluation(evaluation_uuid: uuid.UUID, queue):
+    run_evaluation_task_result = celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid],queue=queue)
     return run_evaluation_task_result
-
 
 async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProgress]:
     evaluation_task = AsyncResult(str(task_pid), app=celery)
@@ -35,12 +40,9 @@ async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProg
         }
 
         return plugin_statuses
-
+        
     return {}
-
 
 async def autodiscover_datashape(datashape_pid: uuid.UUID):
     result = celery.send_task("a4s_eval.tasks.datashape_tasks.auto_discover_datashape", args=[datashape_pid])
     return result
-
-

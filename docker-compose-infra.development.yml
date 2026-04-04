@@ -69,6 +69,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_LOGS: "error"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq # Persistent storage
     networks:

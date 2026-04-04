@@ -216,5 +216,16 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL","")
 REDIS_BACKEND_URL = env("REDIS_BACKEND_URL","")
 CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
+# Setting the default rabbitmq queue, is going to be used by all the evaluations without plugins that do not specify a queue, all the other tasks that go through Celery
+WORKERS_DEFAULT_QUEUE_NAME = env("WORKERS_DEFAULT_QUEUE_NAME","default")
+
+# Setting additional worker queues
+WORKERS_ADDITIONAL_QUEUES = env("WORKERS_ADDITIONAL_QUEUES","long_running")
+
+# If we get a comma separated string from env then we create a list splitting by commas
+if isinstance(WORKERS_ADDITIONAL_QUEUES, str):
+    WORKERS_ADDITIONAL_QUEUES = [q.strip() for q in WORKERS_ADDITIONAL_QUEUES.split(",") if q.strip()]
+# Storing all the worker queues that we are going to use 
+WORKERS_QUEUES = [WORKERS_DEFAULT_QUEUE_NAME, *WORKERS_ADDITIONAL_QUEUES]
 
 PLUGIN_PATH = env('PLUGIN_PATH', '')
