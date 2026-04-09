@@ -1,31 +1,31 @@
 
-# A4S Backend 
+# VERA Backend 
 
-This repository contains the **A4S backend** service (Django) and the **Docker Compose orchestration** used to run the full A4S stack.
+This repository contains the **VERA backend** service (Django) and the **Docker Compose orchestration** used to run the full VERA stack.
 
 ## Stack architecture (high-level)
 
-A4S is split across **three sibling repositories** that should live at the same directory level:
+VERA is split across **three sibling repositories** that should live at the same directory level:
 
-- **`a4s-backend`** (this repo): API, admin, plugin discovery + configuration UI plumbing
-- **`a4s-eval`**: evaluation runtime/engine that actually executes plugin evaluations
-- **`a4s-webapp`**: frontend web application
+- **`vera-backend`** (this repo): API, admin, plugin discovery + configuration UI plumbing
+- **`vera-eval`**: evaluation runtime/engine that actually executes plugin evaluations
+- **`vera-webapp`**: frontend web application
 
 Expected filesystem layout:
 
 ```
 your-workspace/
-├── a4s-backend   ← “main” repo (compose files live here)
-├── a4s-eval
-└── a4s-webapp
+├── vera-backend   ← “main” repo (compose files live here)
+├── vera-eval
+└── vera-webapp
 ```
 
 ### Plugin system (how it works)
 
-A4S uses a **plugin system** for evaluation logic:
+VERA uses a **plugin system** for evaluation logic:
 
-- **`a4s-backend`** loads plugins to **discover them and render configuration forms**.
-- **`a4s-eval`** loads plugins to **run the actual evaluations**.
+- **`vera-backend`** loads plugins to **discover them and render configuration forms**.
+- **`vera-eval`** loads plugins to **run the actual evaluations**.
 - In Docker-based plugin development, both containers mount a **shared volume** that points to your local plugin folder, so you can edit plugin code on your machine and have it picked up inside the running containers.
 
 As a plugin developer, you typically only need to:
@@ -40,7 +40,7 @@ There are two common ways to work with this repo. Pick the one that matches what
 
 ### A) Local development (developing **this backend**)
 
-Use this when you’re changing Django code in `a4s-backend` itself.
+Use this when you’re changing Django code in `vera-backend` itself.
 
 #### Prerequisites
 - Python 3.12+

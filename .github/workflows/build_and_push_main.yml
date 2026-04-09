@@ -1,4 +1,4 @@
-name: a4s-backend build pipeline
+name: backend build pipeline
 
 on:
   push:
