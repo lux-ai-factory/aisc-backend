@@ -31,7 +31,7 @@ from vera_backend.schemas.evaluation import EvaluationDetailOutSchema, Evaluatio
 from vera_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
 from vera_backend.services import celery_service
 from vera_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
-from a4s_plugin_interface import InputType
+from vera_plugin_interface import InputType
 
 router = Router(tags=["evaluation"])
 

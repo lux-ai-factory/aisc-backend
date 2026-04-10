@@ -50,8 +50,8 @@ Use this when you’re changing Django code in `vera-backend` itself.
 #### Setup
 
 ```
-git clone https://github.com/lux-ai-factory/a4s-backend.git
-cd a4s-backend
+git clone https://github.com/lux-ai-factory/vera-backend.git
+cd vera-backend
 uv sync
 ```
 
@@ -97,9 +97,9 @@ Use this when you want to run the full stack in containers and iterate on a plug
 
 ```
 cd your-workspace
-git clone https://github.com/lux-ai-factory/a4s-backend.git
-git clone https://github.com/lux-ai-factory/a4s-eval.git
-git clone https://github.com/lux-ai-factory/a4s-webapp.git
+git clone https://github.com/lux-ai-factory/vera-backend.git
+git clone https://github.com/lux-ai-factory/vera-eval.git
+git clone https://github.com/lux-ai-factory/vera-webapp.git
 ```
 
 This workflow mounts your local plugin workspace into the backend + eval containers so both can load the same plugin code.
@@ -119,12 +119,12 @@ Then create a plugin project folder inside that path (example):
 └── my-plugin-project/
 ```
 
-Follow the instructions in the  [a4s-plugin-interface](https://github.com/lux-ai-factory/a4s-plugin-interface) repository to scaffold and implement the plugin:
+Follow the instructions in the  [vera-plugin-interface](https://github.com/lux-ai-factory/vera-plugin-interface) repository to scaffold and implement the plugin:
 
 
 ### Start the stack in dev mode
 
-From inside `a4s-backend`:
+From inside `vera-backend`:
 
 ```
 docker compose --env-file env.development \
@@ -144,7 +144,7 @@ docker compose --env-file env.development \
 
 ## Troubleshooting checklist
 
-- Are `a4s-backend`, `a4s-eval`, and `a4s-webapp` cloned as **siblings**?
+- Are `vera-backend`, `vera-eval`, and `vera-webapp` cloned as **siblings**?
 - Is `PLUGIN_PATH` an **absolute path** and does it exist?
 - Does your plugin package export the plugin class correctly (so it can be discovered)?
 - If you changed dependencies: did you run with `--build`?

@@ -11,23 +11,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "a4s-plugin-interface"
-version = "0.1.0"
-source = { git = "https://github.com/lux-ai-factory/a4s-plugin-interface.git#5dafc26dff5a39ae15d73079109213b746dce2b7" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "rich" },
-]
-
-[[package]]
-name = "a4s-plugin-manager"
-version = "0.1.0"
-source = { git = "https://github.com/lux-ai-factory/a4s-plugin-manager?tag=v0.2.1#7d75be5924931523111300e49cf0b0c612893e55" }
-dependencies = [
-    { name = "a4s-plugin-interface" },
-]
-
-[[package]]
 name = "amqp"
 version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1161,8 +1144,6 @@ name = "vera-backend"
 version = "0.2.1"
 source = { virtual = "." }
 dependencies = [
-    { name = "a4s-plugin-interface" },
-    { name = "a4s-plugin-manager" },
     { name = "boto3" },
     { name = "celery", extra = ["redis"] },
     { name = "django" },
@@ -1176,13 +1157,13 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "uvicorn" },
+    { name = "vera-plugin-interface" },
+    { name = "vera-plugin-manager" },
     { name = "whitenoise" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "a4s-plugin-interface" },
-    { name = "a4s-plugin-manager", git = "https://github.com/lux-ai-factory/a4s-plugin-manager?tag=v0.2.1" },
     { name = "boto3", specifier = "==1.42.7" },
     { name = "celery", extras = ["redis"], specifier = ">=5.6.0" },
     { name = "django", specifier = ">=5.2.7" },
@@ -1196,7 +1177,26 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "uvicorn", specifier = ">=0.38.0" },
+    { name = "vera-plugin-interface" },
+    { name = "vera-plugin-manager", git = "https://github.com/lux-ai-factory/vera-plugin-manager" },
     { name = "whitenoise", specifier = ">=6.11.0" },
+]
+
+[[package]]
+name = "vera-plugin-interface"
+version = "0.2.1"
+source = { git = "https://github.com/lux-ai-factory/vera-plugin-interface.git#7a97a32f921c386b29c40091ecc52d5b635f8420" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "rich" },
+]
+
+[[package]]
+name = "vera-plugin-manager"
+version = "0.2.1"
+source = { git = "https://github.com/lux-ai-factory/vera-plugin-manager#230fe8d8d0ef1b9626d31c8dfa415af60dd1baef" }
+dependencies = [
+    { name = "vera-plugin-interface" },
 ]
 
 [[package]]

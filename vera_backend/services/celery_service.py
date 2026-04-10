@@ -4,7 +4,7 @@ from celery import Celery
 from celery.result import AsyncResult
 from celery.states import SUCCESS
 
-from a4s_plugin_interface import TaskProgress
+from vera_plugin_interface import TaskProgress
 from config.settings import CELERY_BROKER_URL, REDIS_BACKEND_URL, CELERY_APP_NAME
 
 celery: Celery = Celery(

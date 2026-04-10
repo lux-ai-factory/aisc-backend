@@ -4,9 +4,9 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from vera_backend.models.common import StorageContainer
-from a4s_plugin_interface.models.evaluation_input import InputDefinition
-from a4s_plugin_manager import Loader
-from a4s_plugin_interface import MetricVisualization
+from vera_plugin_interface.models.evaluation_input import InputDefinition
+from vera_plugin_manager import Loader
+from vera_plugin_interface import MetricVisualization
 
 from vera_backend.repositories import file_repository
 from vera_backend.repositories.dataset_repository import DatasetRepository
