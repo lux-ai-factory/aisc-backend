@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --upgrade-package a4s-plugin-manager \
+    uv sync --upgrade-package vera-plugin-manager \
         --no-dev
 
 # Collect static files (for Django admin)
