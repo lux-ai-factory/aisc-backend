@@ -1185,7 +1185,7 @@ requires-dist = [
 [[package]]
 name = "vera-plugin-interface"
 version = "0.2.1"
-source = { git = "https://github.com/lux-ai-factory/vera-plugin-interface.git#7a97a32f921c386b29c40091ecc52d5b635f8420" }
+source = { git = "https://github.com/lux-ai-factory/vera-plugin-interface.git#55d192ea6a23aedc172940c9bb57067f29a5c94c" }
 dependencies = [
     { name = "pydantic" },
     { name = "rich" },
