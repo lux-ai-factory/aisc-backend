@@ -1141,7 +1141,7 @@ wheels = [
 
 [[package]]
 name = "vera-backend"
-version = "0.2.1"
+version = "0.2.2"
 source = { virtual = "." }
 dependencies = [
     { name = "boto3" },
@@ -1177,15 +1177,15 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "uvicorn", specifier = ">=0.38.0" },
-    { name = "vera-plugin-interface" },
-    { name = "vera-plugin-manager", git = "https://github.com/lux-ai-factory/vera-plugin-manager" },
+    { name = "vera-plugin-interface", specifier = ">=0.2.2" },
+    { name = "vera-plugin-manager", git = "https://github.com/lux-ai-factory/vera-plugin-manager?tag=v0.2.2" },
     { name = "whitenoise", specifier = ">=6.11.0" },
 ]
 
 [[package]]
 name = "vera-plugin-interface"
-version = "0.2.1"
-source = { git = "https://github.com/lux-ai-factory/vera-plugin-interface.git#55d192ea6a23aedc172940c9bb57067f29a5c94c" }
+version = "0.2.2"
+source = { git = "https://github.com/lux-ai-factory/vera-plugin-interface.git?tag=v0.2.2#d0b5df08aed9bbf2e1f2bd3066cf03c5c106bb8c" }
 dependencies = [
     { name = "pydantic" },
     { name = "rich" },
@@ -1193,8 +1193,8 @@ dependencies = [
 
 [[package]]
 name = "vera-plugin-manager"
-version = "0.2.1"
-source = { git = "https://github.com/lux-ai-factory/vera-plugin-manager#be2e91f4cfe9138cef7cf5e8845bbbf4d4626dd7" }
+version = "0.2.2"
+source = { git = "https://github.com/lux-ai-factory/vera-plugin-manager?tag=v0.2.2#9f692d03825855ffac224c537f79c0d40d89231d" }
 dependencies = [
     { name = "vera-plugin-interface" },
 ]
