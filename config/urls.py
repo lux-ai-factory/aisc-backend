@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import path, include
 
@@ -28,6 +29,7 @@ from vera_backend.routers.evaluation import router as evaluation_router
 from vera_backend.routers.plugin import router as plugin_router
 from vera_backend.routers.task import router as task_router
 from vera_backend.routers.file import router as file_router
+from vera_backend.routers.stats import router as stats_router
 
 from vera_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from vera_backend.utils.exception_handlers import register_exception_handlers
@@ -48,14 +50,13 @@ v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)
 v1_router.add_router("/tasks", task_router)
 v1_router.add_router("/files", file_router)
+v1_router.add_router("/stats", stats_router)
 
 api.add_router("/v1/", v1_router)
 
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-
+    path("admin/", admin.site.urls),
     path("_allauth/", include("allauth.headless.urls")),
-
-    path('api/', api.urls),
+    path("api/", api.urls),
 ]

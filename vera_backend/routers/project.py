@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from ninja import Router, Schema
+from ninja import Router, Schema, Query
 from ninja.errors import HttpError
 
 from vera_backend.models import EvaluationStatus, Dataset
@@ -17,7 +17,11 @@ from vera_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
 from vera_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
 from vera_backend.schemas.evaluation import EvaluationDetailOutSchema
 from vera_backend.schemas.model import ModelOutSchema, ModelInSchema
-from vera_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
+from vera_backend.schemas.project import (
+    ProjectOutSchema,
+    ProjectInSchema,
+    ProjectDetailsOutSchema,
+)
 
 
 router = Router(tags=["project"])
@@ -69,9 +73,17 @@ async def get_project_datashape(request, pid: uuid.UUID):
 async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema):
     project = await project_repository.get(pid)
 
-    dataset = await dataset_repository.save(Dataset(**data.model_dump(), project=project, storage_container=StorageContainer.Datasets))
+    dataset = await dataset_repository.save(
+        Dataset(
+            **data.model_dump(),
+            project=project,
+            storage_container=StorageContainer.Datasets,
+        )
+    )
 
-    await datashape_repository.save(DataShape(status=DataShapeStatus.Manual, dataset=dataset))
+    await datashape_repository.save(
+        DataShape(status=DataShapeStatus.Manual, dataset=dataset)
+    )
 
     return dataset
 
@@ -80,7 +92,12 @@ async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema)
 async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
     project = await project_repository.get(pid)
 
-    model = Model(**data.model_dump(), project=project, public=True, storage_container=StorageContainer.Models)
+    model = Model(
+        **data.model_dump(),
+        project=project,
+        public=True,
+        storage_container=StorageContainer.Models,
+    )
     return await model_repository.save(model)
 
 
@@ -95,14 +112,19 @@ async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInSch
 
 
 @router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
-async def get_project_evaluations(request, pid: uuid.UUID, status: EvaluationStatus | None = None, exclude_status: EvaluationStatus | None = None):
+async def get_project_evaluations(
+    request,
+    pid: uuid.UUID,
+    status: EvaluationStatus | None = None,
+    exclude_status: list[EvaluationStatus] = Query([]),
+):
     project = await project_repository.get(pid)
     filter: dict[str, Any] = {"project": project}
     exclude = None
     if status is not None:
         filter["status"] = status
-    if exclude_status is not None:
-        exclude = {"status": exclude_status}
+    if exclude_status:
+        exclude = {"status__in": exclude_status}
     evaluations = await evaluation_repository.filter_with_related(filter, exclude)
     return evaluations
 
@@ -111,10 +133,13 @@ class ProjectPluginConfigResponse(Schema):
     name: str
     dataset_pid: uuid.UUID
 
+
 @router.get("/{pid}/plugins/{plugin_name}/config", response=dict | None)
 async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
     project = await project_repository.get(pid, True)
-    plugin = next((p for p in project.get_enabled_plugins() if p.name == plugin_name), None)
+    plugin = next(
+        (p for p in project.get_enabled_plugins() if p.name == plugin_name), None
+    )
     if not plugin:
         raise HttpError(404, f"Project {pid} has no plugin {plugin_name}")
     return plugin.config
