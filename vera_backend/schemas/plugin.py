@@ -32,11 +32,13 @@ class PluginOutSchema(ModelSchema):
 
     class Meta:
         model = Plugin
-        fields = ["pid", "name"]
+        fields = ["pid", "name", "package_name", "version"]
 
 
 class EvaluationPluginOutSchema(ModelSchema):
     name: str = Field(alias="plugin_config.plugin.name")
+    package_name: str = Field(alias="plugin_config.plugin.package_name")
+    version: str = Field(alias="plugin_config.plugin.version")
     plugin_config: PluginConfigOutSchema | None = Field(default=None, alias="plugin_config")
     input_files: list[EvaluationPluginInputFileOutSchema] = Field(default=[], alias="input_files")
 
