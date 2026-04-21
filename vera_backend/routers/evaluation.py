@@ -252,6 +252,9 @@ async def get_evaluation_artifacts(request, evaluation_pid: uuid.UUID, evaluatio
 
         if suffix == ".zip":
             preview_data = zip_bytes_to_file_list(file_content)
+            
+        if suffix == ".log" or suffix == ".txt":
+            preview_data = file_content.decode('utf-8')
 
         artifact_out_schema = ArtifactOutSchema.model_validate(artifact)
         artifact_preview: ArtifactPreviewSchema = ArtifactPreviewSchema(
