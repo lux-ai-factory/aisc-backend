@@ -8,6 +8,7 @@ from .common import Base
 class Plugin(Base):
     package_name = models.CharField(max_length=255)
     version = models.CharField(max_length=50)
+    display_name = models.CharField(max_length=255)
 
     project = models.ForeignKey(
         "Project", related_name="enabled_plugins", on_delete=models.CASCADE

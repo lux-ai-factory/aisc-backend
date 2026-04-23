@@ -54,7 +54,7 @@ class PackageAvailableSchema(Schema):
 
 @router.get("", response=list[PackageAvailableSchema])
 async def get_plugins(request):
-    packages_dict = plugin_loader.list_packages()
+    packages_dict = plugin_loader.list_packages(refresh=True)
 
     available_packages = []
     for pkg_name, versions_dict in packages_dict.items():
@@ -113,6 +113,7 @@ async def create_plugins(request, data: CreatePluginsRequest):
         if not project_plugin:
             project_plugin = Plugin(
                 name=plugin_name,
+                display_name=plugin_obj.display_name,
                 package_name=data.package_name,
                 version=data.version,
                 project=project
