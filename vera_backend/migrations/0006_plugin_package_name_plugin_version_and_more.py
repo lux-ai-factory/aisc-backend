@@ -28,4 +28,33 @@ class Migration(migrations.Migration):
             name='evaluation_plugin',
             field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='artifacts', to='vera_backend.evaluationplugin'),
         ),
+        migrations.AddField(
+            model_name='evaluationplugin',
+            name='error_message',
+            field=models.TextField(blank=True, default=''),
+        ),
+        migrations.AddField(
+            model_name='evaluationplugin',
+            name='finished_at',
+            field=models.DateTimeField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name='evaluationplugin',
+            name='started_at',
+            field=models.DateTimeField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name='evaluationplugin',
+            name='status',
+            field=models.CharField(
+                choices=[('Pending', 'Pending'), ('Running', 'Running'), ('Done', 'Done'), ('Failed', 'Failed')],
+                default='Pending', max_length=50),
+        ),
+        migrations.AlterField(
+            model_name='evaluation',
+            name='status',
+            field=models.CharField(
+                choices=[('Done', 'Done'), ('Failed', 'Failed'), ('Archived', 'Archived'), ('Pending', 'Pending'),
+                         ('Processing', 'Processing'), ('Custom', 'Custom')], max_length=255),
+        ),
     ]
