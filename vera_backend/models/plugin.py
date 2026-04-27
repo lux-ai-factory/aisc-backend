@@ -6,6 +6,10 @@ from .common import Base
 
 
 class Plugin(Base):
+    package_name = models.CharField(max_length=255)
+    version = models.CharField(max_length=50)
+    display_name = models.CharField(max_length=255)
+
     project = models.ForeignKey(
         "Project", related_name="enabled_plugins", on_delete=models.CASCADE
     )
@@ -22,10 +26,10 @@ class Plugin(Base):
         return self.current_config is not None
 
     class Meta:
-        unique_together = ("name", "project")
+        unique_together = ("name", "project", "version", "package_name")
 
     def __str__(self):
-        return f"{self.name}"
+        return f"{self.package_name}::{self.name} (v{self.version})"
 
 
 class PluginConfig(models.Model):
@@ -44,19 +48,23 @@ class PluginConfig(models.Model):
 
 class EvaluationPluginInputFile(models.Model):
     evaluation_plugin = models.ForeignKey(
-        "EvaluationPlugin",
-        related_name="input_files",
-        on_delete=models.CASCADE
+        "EvaluationPlugin", related_name="input_files", on_delete=models.CASCADE
     )
-    # Technical name from the @input decorator (e.g., "training_data")
     name = models.CharField(max_length=255)
 
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey('content_type', 'object_id')
+    content_object = GenericForeignKey("content_type", "object_id")
 
     class Meta:
         unique_together = ("evaluation_plugin", "name")
+
+
+class EvaluationPluginStatus(models.TextChoices):
+    Pending = "Pending", "Pending"
+    Running = "Running", "Running"
+    Done = "Done", "Done"
+    Failed = "Failed", "Failed"
 
 
 class EvaluationPlugin(Base):
@@ -72,6 +80,22 @@ class EvaluationPlugin(Base):
         null=True,
         blank=True,
     )
+
+    status = models.CharField(
+        max_length=50,
+        choices=EvaluationPluginStatus.choices,
+        default=EvaluationPluginStatus.Pending,
+    )
+    error_message = models.TextField(blank=True, default="")
+
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def duration_seconds(self) -> float | None:
+        if self.started_at and self.finished_at:
+            return (self.finished_at - self.started_at).total_seconds()
+        return None
 
     def get_input_files(self):
         return self.input_files.all()

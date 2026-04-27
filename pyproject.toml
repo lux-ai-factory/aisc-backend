@@ -1,6 +1,6 @@
 [project]
 name = "vera-backend"
-version = "0.2.2"
+version = "0.2.3"
 description = "Backend for VERA"
 authors = [
     { name = "Thibault Simonetto", email = "thibault.simonetto@uni.lu" },
@@ -24,9 +24,10 @@ dependencies = [
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",
     "jsonschema>=4.25.1",
-    "vera-plugin-manager>=0.2.2",
-    "vera-plugin-interface>=0.2.2"
+    "vera-plugin-manager>=0.2.3",
+    "vera-plugin-interface>=0.2.3",
+    "httpx>=0.28.1",
 ]
 
 [tool.uv.sources]
-vera-plugin-manager = { git = "https://github.com/lux-ai-factory/vera-plugin-manager", tag = "v0.2.2" }
+vera-plugin-manager = { git = "https://github.com/lux-ai-factory/vera-plugin-manager", tag = "v0.2.3" }
