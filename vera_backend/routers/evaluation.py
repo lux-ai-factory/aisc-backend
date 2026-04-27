@@ -23,8 +23,8 @@ from vera_backend.repositories.base_repository import BaseRepository
 from vera_backend.repositories.dataset_repository import DatasetRepository
 from vera_backend.repositories.evaluation_repository import EvaluationRepository
 from vera_backend.repositories.measurement_repository import MeasurementRepository
+from vera_backend.repositories.plugin_repository import EvaluationPluginRepository
 from vera_backend.repositories.project_repository import ProjectRepository
-from vera_backend.routers.plugin import plugin_loader
 from vera_backend.schemas.artifact import ArtifactOutSchema, ArtifactPreviewSchema
 from vera_backend.schemas.evaluation import (
     EvaluationDetailOutSchema,
@@ -46,7 +46,7 @@ observation_repository = BaseRepository(model=Observation)
 measurement_repository = MeasurementRepository()
 metric_repository = BaseRepository(model=Metric)
 feature_repository = BaseRepository(model=Feature)
-evaluation_plugin_repository = BaseRepository(model=EvaluationPlugin)
+evaluation_plugin_repository = EvaluationPluginRepository()
 
 
 class EvaluationPluginInputInSchema(Schema):
@@ -74,7 +74,6 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
     evaluation_plugins = []
     for plugin_to_run in data.plugins_to_run:
-        plugin_loader.load(plugin_to_run.name)
         plugin = next(
             (p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name),
             None,
@@ -106,7 +105,6 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                     content_type = await sync_to_async(
                         ContentType.objects.get_for_model
                     )(content_model)
-
                     # Create the link
                     input_file = EvaluationPluginInputFile(
                         evaluation_plugin=run_plugin,
@@ -153,24 +151,17 @@ class PluginTimestampSchema(Schema):
     field: str  # "started_at" or "finished_at"
 
 
-@router.patch("/{evaluation_pid}/plugins/{plugin_name}/timestamp", response=str)
+@router.patch("/{evaluation_pid}/plugins/{evaluation_plugin_pid}/timestamp", response=str)
 async def update_plugin_timestamp(
-    request, evaluation_pid: uuid.UUID, plugin_name: str, data: PluginTimestampSchema
+    request, evaluation_pid: uuid.UUID, evaluation_plugin_pid: uuid.UUID, data: PluginTimestampSchema
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid, True)
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    if evaluation is None:
+        raise HttpError(404, f"No evaluation found")
 
-    eval_plugin = next(
-        (
-            ep
-            for ep in evaluation.get_evaluation_plugins()
-            if ep.plugin_config.plugin.name == plugin_name
-        ),
-        None,
-    )
+    eval_plugin = await evaluation_plugin_repository.get(evaluation_plugin_pid)
     if eval_plugin is None:
-        raise HttpError(
-            404, f"No evaluation plugin found for plugin name: {plugin_name}"
-        )
+        raise HttpError(404, f"No evaluation plugin found")
 
     if data.field not in ("started_at", "finished_at"):
         raise HttpError(
@@ -192,24 +183,17 @@ class PluginFailureSchema(Schema):
     error_message: str = ""
 
 
-@router.patch("/{evaluation_pid}/plugins/{plugin_name}/fail", response=str)
+@router.patch("/{evaluation_pid}/plugins/{evaluation_plugin_pid}/fail", response=str)
 async def mark_plugin_failed(
-    request, evaluation_pid: uuid.UUID, plugin_name: str, data: PluginFailureSchema
+    request, evaluation_pid: uuid.UUID, evaluation_plugin_pid: uuid.UUID, data: PluginFailureSchema
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid, True)
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    if evaluation is None:
+        raise HttpError(404, f"No evaluation found")
 
-    eval_plugin = next(
-        (
-            ep
-            for ep in evaluation.get_evaluation_plugins()
-            if ep.plugin_config.plugin.name == plugin_name
-        ),
-        None,
-    )
+    eval_plugin = await evaluation_plugin_repository.get(evaluation_plugin_pid)
     if eval_plugin is None:
-        raise HttpError(
-            404, f"No evaluation plugin found for plugin name: {plugin_name}"
-        )
+        raise HttpError(404, f"No evaluation plugin found")
 
     eval_plugin.status = "Failed"
     eval_plugin.error_message = data.error_message
@@ -223,15 +207,19 @@ async def mark_plugin_failed(
 async def create_evaluation_measures(
     request,
     evaluation_pid: uuid.UUID,
-    data: dict[str, list[MeasureInSchema]] = Body(...),
+    data: dict[uuid.UUID, list[MeasureInSchema]] = Body(...),
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
-    for plugin_name, measures in data.items():
+    for evaluation_plugin_uuid, measures in data.items():
         # Create a new Observation for each plugin
+
+        evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
+        plugin = evaluation_plugin.plugin_config.plugin
+
         observation = Observation(
             observer="VERA System",
-            tool=plugin_name,
+            tool=str(plugin),
             whenObserved=datetime.datetime.now(),
             evaluation=evaluation,
         )
@@ -270,25 +258,18 @@ class UploadArtifactResponse(Schema):
 async def upload_evaluation_artifact(
     request,
     evaluation_pid: uuid.UUID,
-    plugin_name: str = Form(...),
+    evaluation_plugin_uuid: uuid.UUID = Form(...),
     file: UploadedFile = File(...),
 ):
-    evaluation = await evaluation_repository.get_with_related(evaluation_pid)
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    if evaluation is None:
+        raise HttpError(404, f"No evaluation found")
 
-    evaluation_plugins = evaluation.get_evaluation_plugins()
+    evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
+    if evaluation_plugin is None:
+        raise HttpError(404, f"No evaluation plugin found")
 
-    eval_plugin = next(
-        (
-            ep
-            for ep in evaluation_plugins
-            if ep.plugin_config.plugin.name == plugin_name
-        ),
-        None,
-    )
-    if eval_plugin is None:
-        raise HttpError(
-            404, f"No evaluation plugin found for plugin name: {plugin_name}"
-        )
+    plugin = evaluation_plugin.plugin_config.plugin
 
     original_filename = file.name
     suffix = Path(file.name).suffix.lower()
@@ -300,9 +281,9 @@ async def upload_evaluation_artifact(
 
     artifact = Artifact(
         name=original_filename,
-        description=f"Artifact generated by {plugin_name}",
+        description=f"Artifact generated by {str(plugin)}",
         data=file.name,
-        evaluation_plugin=eval_plugin,
+        evaluation_plugin=evaluation_plugin
     )
     await artifact.asave()
 
@@ -323,28 +304,20 @@ async def get_evaluation_measures(request, evaluation_pid: uuid.UUID, name: str)
 
 @router.get("/{evaluation_pid}/artifacts", response=list[ArtifactOutSchema])
 async def get_evaluation_artifacts(
-    request, evaluation_pid: uuid.UUID, plugin_name: str
+    request, evaluation_pid: uuid.UUID, evaluation_plugin_uuid: uuid.UUID
 ):
     evaluation = await evaluation_repository.get_with_related(evaluation_pid)
 
-    evaluation_plugins = evaluation.get_evaluation_plugins()
+    if evaluation is None:
+        raise HttpError(404, f"No evaluation found")
 
-    eval_plugin = next(
-        (
-            ep
-            for ep in evaluation_plugins
-            if ep.plugin_config.plugin.name == plugin_name
-        ),
-        None,
-    )
-    if eval_plugin is None:
-        raise HttpError(
-            404, f"No evaluation plugin found for plugin name: {plugin_name}"
-        )
+    evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
+    if evaluation_plugin is None:
+        raise HttpError(404, f"No evaluation plugin found")
 
     response: list[ArtifactOutSchema] = []
 
-    artifacts = eval_plugin.get_artifacts()
+    artifacts = evaluation_plugin.get_artifacts()
     for artifact in artifacts:
         path = Path(artifact.data)
         suffix = path.suffix.lower()
@@ -368,6 +341,9 @@ async def get_evaluation_artifacts(
 
         if suffix == ".zip":
             preview_data = zip_bytes_to_file_list(file_content)
+
+        if suffix == ".log" or suffix == ".txt":
+            preview_data = file_content.decode('utf-8')
 
         artifact_out_schema = ArtifactOutSchema.model_validate(artifact)
         artifact_preview: ArtifactPreviewSchema = ArtifactPreviewSchema(

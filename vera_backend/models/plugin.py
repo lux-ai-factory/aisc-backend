@@ -6,6 +6,10 @@ from .common import Base
 
 
 class Plugin(Base):
+    package_name = models.CharField(max_length=255)
+    version = models.CharField(max_length=50)
+    display_name = models.CharField(max_length=255)
+
     project = models.ForeignKey(
         "Project", related_name="enabled_plugins", on_delete=models.CASCADE
     )
@@ -22,10 +26,10 @@ class Plugin(Base):
         return self.current_config is not None
 
     class Meta:
-        unique_together = ("name", "project")
+        unique_together = ("name", "project", "version", "package_name")
 
     def __str__(self):
-        return f"{self.name}"
+        return f"{self.package_name}::{self.name} (v{self.version})"
 
 
 class PluginConfig(models.Model):
@@ -46,7 +50,6 @@ class EvaluationPluginInputFile(models.Model):
     evaluation_plugin = models.ForeignKey(
         "EvaluationPlugin", related_name="input_files", on_delete=models.CASCADE
     )
-    # Technical name from the @input decorator (e.g., "training_data")
     name = models.CharField(max_length=255)
 
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
