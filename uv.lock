@@ -1242,7 +1242,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "uvicorn", specifier = ">=0.38.0" },
-    { name = "vera-plugin-interface", specifier = ">=0.2.2" },
+    { name = "vera-plugin-interface", specifier = ">=0.2.3" },
     { name = "vera-plugin-manager", git = "https://github.com/lux-ai-factory/vera-plugin-manager?tag=v0.2.3" },
     { name = "whitenoise", specifier = ">=6.11.0" },
 ]
