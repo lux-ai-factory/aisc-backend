@@ -1,6 +1,6 @@
 [project]
 name = "vera-backend"
-version = "0.2.2"
+version = "0.2.3"
 description = "Backend for VERA"
 authors = [
     { name = "Thibault Simonetto", email = "thibault.simonetto@uni.lu" },
@@ -30,4 +30,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-vera-plugin-manager = { git = "https://github.com/lux-ai-factory/vera-plugin-manager", tag = "v0.2.2" }
+vera-plugin-manager = { git = "https://github.com/lux-ai-factory/vera-plugin-manager", tag = "v0.2.3" }
