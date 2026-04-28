@@ -1259,7 +1259,7 @@ dependencies = [
 [[package]]
 name = "vera-plugin-manager"
 version = "0.2.3"
-source = { git = "https://github.com/lux-ai-factory/vera-plugin-manager?tag=v0.2.3#21895bf1c62b7ae4ca4bebc853e35dc0c2953fe2" }
+source = { git = "https://github.com/lux-ai-factory/vera-plugin-manager?tag=v0.2.3#133345a0012682f8ee5dc89b66a3b4c64a5e7a22" }
 dependencies = [
     { name = "httpx" },
     { name = "vera-plugin-interface" },
