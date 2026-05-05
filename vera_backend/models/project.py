@@ -18,9 +18,6 @@ class ProjectStatus(models.TextChoices):
 class Project(Base):
     status = models.CharField(max_length=255, choices=ProjectStatus.choices)
 
-    expected_datashape = models.OneToOneField(
-        'DataShape', related_name='project', on_delete=models.PROTECT, null=True, blank=True,)
-
     def get_datasets(self) -> list[Dataset]:
         return list(self.datasets.all())
 

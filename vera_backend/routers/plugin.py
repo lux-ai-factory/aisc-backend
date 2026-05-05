@@ -228,13 +228,11 @@ async def get_plugin_evaluation_results(
     evaluation = await evaluation_repository.get(evaluation_uuid)
     observation = (
         await evaluation.observations.filter(tool=str(plugin_record))
-        .order_by("-whenObserved")
+        .order_by("-created_at")
         .afirst()
     )
 
-    measurements = await measurement_repository.filter_with_related(
-        name__in=metrics, observation=observation
-    )
+    measurements = await measurement_repository.filter(name__in=metrics, observation=observation)
 
     metric_visualizations = plugin.get_metric_visualizations(
         evaluation_plugin.plugin_config.config

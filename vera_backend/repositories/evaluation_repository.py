@@ -13,9 +13,6 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
     if "project" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.select_related("project")
 
-    if "datashape" in include_list or include_all:
-        evaluation_queryset = evaluation_queryset.select_related("project__expected_datashape")
-
     if "plugin" in include_list or include_all:
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins")
 

@@ -12,7 +12,6 @@ class DatasetRepository(BaseRepository[Dataset]):
     async def get_with_related(self, pid: uuid.UUID) -> Dataset:
         return await (
             Dataset.objects
-            .select_related("datashape", "project")
-            .prefetch_related("datashape__features")
+            .select_related("project")
             .aget(pid=pid)
         )

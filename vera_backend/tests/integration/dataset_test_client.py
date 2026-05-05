@@ -8,8 +8,6 @@ from vera_backend.routers.dataset import router, UploadDatasetFileResponse
 
 from ninja.testing import TestAsyncClient
 
-from vera_backend.schemas.datashape import DataShapeInSchema, DataShapeOutSchema
-from vera_backend.schemas.feature import FeatureInSchema
 from vera_backend.utils.file_utils import csv_bytes_to_parquet_bytes
 
 client = TestAsyncClient(router)

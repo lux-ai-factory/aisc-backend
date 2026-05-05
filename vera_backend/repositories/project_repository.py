@@ -22,20 +22,12 @@ class ProjectRepository(BaseRepository[Project]):
     async def get_with_related(self, pid: uuid.UUID) -> Project:
         project = await (
             Project.objects
-            .select_related(
-                "expected_datashape",
-                "expected_datashape__dataset"
-            )
             .prefetch_related(
                 "datasets",
                 "models",
                 "enabled_plugins",
 
-                "enabled_plugins__current_config",
-
-                "expected_datashape__features",
-                "expected_datashape__date_feature",
-                "expected_datashape__target_feature"
+                "enabled_plugins__current_config"
             )
             .aget(pid=pid)
         )

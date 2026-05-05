@@ -3,9 +3,6 @@ import math
 import random
 import uuid
 
-from vera_backend.models import FeatureType
-from vera_backend.schemas.datashape import DataShapeOutSchema
-from vera_backend.schemas.feature import FeatureInSchema, FeatureOutSchema
 from vera_backend.schemas.measure import MeasureInSchema
 
 def create_measure_in_schema_list_for_model_eval(batch_count: int, day_int: int) -> list[MeasureInSchema]:
