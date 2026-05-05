@@ -51,7 +51,7 @@ class ObservationAdmin(admin.ModelAdmin):
 
 @admin.register(Measurement)
 class MeasurementAdmin(admin.ModelAdmin):
-    list_display = ["name", "unit", "time", "score", "error", "uncertainty", "observation", "metric", "feature"]
+    list_display = ["name", "unit", "time", "score", "error", "uncertainty", "observation", "metric"]
 
 @admin.register(Plugin)
 class PluginAdmin(admin.ModelAdmin):
