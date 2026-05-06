@@ -17,6 +17,8 @@ class MeasurementRepository(BaseRepository[Measurement]):
         return self.model.objects.filter(**filters)
 
     async def get_unique_dimension_keys(self, base_queryset) -> list[str]:
+        # Exclude measurements where dimensions is null
+        base_queryset = base_queryset.exclude(dimensions__isnull=True)
         if connection.vendor == 'postgresql':
             queryset = base_queryset.annotate(
                 key=Func(F('dimensions'), function='jsonb_object_keys')
@@ -38,6 +40,10 @@ class MeasurementRepository(BaseRepository[Measurement]):
 
         return [val async for val in values]
 
+    async def get_unique_metric_names(self, base_queryset) -> list[str]:
+        queryset = base_queryset.values_list('metric__name', flat=True).distinct()
+        return [name async for name in queryset]
+
     async def aggregate_measurements(
             self,
             base_queryset,
@@ -45,6 +51,9 @@ class MeasurementRepository(BaseRepository[Measurement]):
             filters: Dict[str, Any] = None,
             aggregations: List[str] = None
     ) -> List[Dict[str, Any]]:
+        if aggregations is None:
+            aggregations = ["count", "min_score", "max_score", "avg_score"]
+
         queryset = base_queryset
 
         if filters:
@@ -57,18 +66,18 @@ class MeasurementRepository(BaseRepository[Measurement]):
         if group_by:
             values_args = [f"dimensions__{field}" for field in group_by]
             queryset = queryset.values(*values_args)
+        else:
+            queryset = queryset.values('observation_id')
 
         agg_map = {}
-        if aggregations:
-            for agg in aggregations:
-                if agg == 'count':
-                    agg_map['count'] = Count('id')
-                elif agg == 'min_score':
-                    agg_map['min_score'] = Min('score')
-                elif agg == 'max_score':
-                    agg_map['max_score'] = Max('score')
-                elif agg == 'avg_score':
-                    agg_map['avg_score'] = Avg('score')
+        if 'count' in aggregations:
+            agg_map['count'] = Count('id')
+        if 'min_score' in aggregations:
+            agg_map['min_score'] = Min('score')
+        if 'max_score' in aggregations:
+            agg_map['max_score'] = Max('score')
+        if 'avg_score' in aggregations:
+            agg_map['avg_score'] = Avg('score')
 
         if agg_map:
             queryset = queryset.annotate(**agg_map)

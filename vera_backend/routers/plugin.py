@@ -70,25 +70,25 @@ async def get_plugins(request):
 
 @router.get("/{plugin_pid}/feature_flags", response=dict)
 async def get_plugin_feature_flags(request, plugin_pid: uuid.UUID):
-    plugin_record = await plugin_repository.get(plugin_pid)
-    plugin = plugin_loader.load_plugin(plugin_record.package_name, plugin_record.name, plugin_record.version)
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
 
-    return plugin.feature_flags.model_dump()
+    return plugin_obj.feature_flags.model_dump()
 
 
 @router.get("/{plugin_pid}/display_icon", response=str)
 async def get_plugin_display_icon(request, plugin_pid: uuid.UUID):
-    plugin_record = await plugin_repository.get(plugin_pid)
-    plugin = plugin_loader.load_plugin(plugin_record.package_name, plugin_record.name, plugin_record.version)
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
 
-    return plugin.display_icon
+    return plugin_obj.display_icon
 
 
 @router.get("/{plugin_pid}/input_definitions", response=list[InputDefinition])
 async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
-    plugin_record = await plugin_repository.get(plugin_pid)
-    plugin = plugin_loader.load_plugin(plugin_record.package_name, plugin_record.name, plugin_record.version)
-    input_definitions: list[InputDefinition] = plugin.input_definitions
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    input_definitions: list[InputDefinition] = plugin_obj.input_definitions
 
     return input_definitions
 
@@ -102,10 +102,10 @@ class CreatePluginsRequest(Schema):
 async def create_plugins(request, data: CreatePluginsRequest):
     project = await project_repository.get(data.project_uuid, True)
 
-    plugins_dict = plugin_loader.load_package(data.package_name, data.version)
+    plugins_package_dict = plugin_loader.load_package(data.package_name, data.version)
     created_plugins = []
 
-    for plugin_name, plugin_obj in plugins_dict.items():
+    for plugin_name, plugin_obj in plugins_package_dict.items():
 
         project_plugin = next(
             (p for p in project.get_enabled_plugins() if p.name == plugin_name), None
@@ -170,7 +170,7 @@ async def update_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
     project_plugin = await plugin_repository.get(plugin_pid)
-    plugin = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
+    plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
 
     if not data.config:
         raise HttpError(400, "Config is required")
@@ -180,7 +180,7 @@ async def update_plugin_config_state(
     project_plugin.current_config = plugin_config
     await plugin_repository.save(project_plugin)
 
-    config, schema, ui_schema = plugin.on_config_change(plugin_config.config)
+    config, schema, ui_schema = plugin_obj.on_config_change(plugin_config.config)
 
     response = PluginConfigStateResponse(
         plugin_config_id=plugin_config.id,
@@ -197,9 +197,9 @@ async def update_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
     project_plugin = await plugin_repository.get(plugin_pid)
-    plugin = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
+    plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
 
-    config, schema, ui_schema = plugin.on_config_change(data.config)
+    config, schema, ui_schema = plugin_obj.on_config_change(data.config)
 
     response = PluginConfigStateResponse(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema
@@ -221,20 +221,20 @@ async def get_plugin_evaluation_results(
         request, evaluation_plugin_pid: uuid.UUID, evaluation_uuid: uuid.UUID
 ):
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
-    plugin_record = evaluation_plugin.plugin_config.plugin
-    plugin = plugin_loader.load_plugin(plugin_record.package_name, plugin_record.name, plugin_record.version)
-    metrics = plugin.get_metrics()
+    plugin = evaluation_plugin.plugin_config.plugin
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    metrics = plugin_obj.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
     observation = (
-        await evaluation.observations.filter(tool=str(plugin_record))
+        await evaluation.observations.filter(tool=str(plugin))
         .order_by("-created_at")
         .afirst()
     )
 
     measurements = await measurement_repository.filter(name__in=metrics, observation=observation)
 
-    metric_visualizations = plugin.get_metric_visualizations(
+    metric_visualizations = plugin_obj.get_metric_visualizations(
         evaluation_plugin.plugin_config.config
     )
 
@@ -256,7 +256,7 @@ async def get_project_plugin_config_state(
             404, f"Plugin {plugin_pid} not found"
         )
 
-    plugin = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
+    plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
 
     plugin_config = None
     plugin_config_id = None
@@ -264,7 +264,7 @@ async def get_project_plugin_config_state(
         plugin_config = project_plugin.current_config.config
         plugin_config_id = project_plugin.current_config.id
 
-    config, schema, ui_schema = plugin.on_config_change(plugin_config)
+    config, schema, ui_schema = plugin_obj.on_config_change(plugin_config)
 
     response = PluginConfigStateResponse(
         plugin_config_id=plugin_config_id,
@@ -290,12 +290,12 @@ async def parse_plugin_config_state_from_dataset(
     )
     file_content = response["Body"].read()
 
-    plugin_record = await plugin_repository.get(plugin_pid)
-    plugin = plugin_loader.load_plugin(plugin_record.package_name, plugin_record.name, plugin_record.version)
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
 
-    config = plugin.parse_config_from_dataset(file_content)
+    config = plugin_obj.parse_config_from_dataset(file_content)
 
-    config, schema, ui_schema = plugin.on_config_change(config)
+    config, schema, ui_schema = plugin_obj.on_config_change(config)
 
     response = PluginConfigStateResponse(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema

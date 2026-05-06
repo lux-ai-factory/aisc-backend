@@ -35,6 +35,7 @@ class Measurement(Base):
     dimensions = models.JSONField(
         default=dict,
         blank=True,
+        null=True,
         validators=[validate_flat_json]
     )
 

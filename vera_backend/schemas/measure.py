@@ -1,3 +1,4 @@
+import uuid
 from typing import List, Dict, Any
 
 from ninja import ModelSchema, Schema
@@ -38,9 +39,22 @@ class MeasureOutSchema(ModelSchema):
 
 
 class MeasurementAggregationRequest(Schema):
+    evaluation_plugin_pid: uuid.UUID | None = None
+    metric_name: str | None = None
     group_by: List[str] | None = None
     filters: Dict[str, Any] | None = None
     aggregations: List[str] | None = ["count", "min_score", "max_score", "avg_score"]
+
+class DimensionKeysRequest(Schema):
+    evaluation_plugin_pid: uuid.UUID | None = None
+    metric_name: str | None = None
+
+class DimensionValuesRequest(Schema):
+    evaluation_plugin_pid: uuid.UUID | None = None
+    metric_name: str | None = None
+
+class MetricNamesRequest(Schema):
+    evaluation_plugin_pid: uuid.UUID | None = None
 
 class MeasurementAggregationResponse(Schema):
     results: List[Dict[str, Any]]
@@ -51,3 +65,6 @@ class DimensionKeysResponse(Schema):
 class DimensionValuesResponse(Schema):
     key: str
     values: list[Any]
+
+class MetricNamesResponse(Schema):
+    names: list[str]
