@@ -69,53 +69,56 @@ class CreateEvaluationRequest(Schema):
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
-    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
-    evaluation = await evaluation_repository.create(evaluation)
-
-    evaluation_plugins = []
+    # Resolve and validate plugins before writing anything to DB
+    resolved: list[tuple[EvaluationPluginInSchema, object]] = []
     for plugin_to_run in data.plugins_to_run:
         plugin = next(
             (p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name),
             None,
         )
         if plugin:
-            plugin_config = plugin.current_config
-            if plugin_config is None:
+            if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
+            resolved.append((plugin_to_run, plugin.current_config))
 
-            run_plugin = EvaluationPlugin(
-                plugin_config=plugin_config, evaluation=evaluation
-            )
-            run_plugin = await evaluation_plugin_repository.create(run_plugin)
+    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
+    evaluation = await evaluation_repository.create(evaluation)
 
-            # Link the input files
-            if plugin_to_run.inputs:
-                for input_data in plugin_to_run.inputs:
-                    # Determine content type and model
-                    if input_data.input_type == InputType.DATASET:
-                        content_model = Dataset
-                    elif input_data.input_type == InputType.MODEL:
-                        content_model = Model
-                    else:
-                        continue
+    evaluation_plugins = []
+    for plugin_to_run, plugin_config in resolved:
+        run_plugin = EvaluationPlugin(
+            plugin_config=plugin_config, evaluation=evaluation
+        )
+        run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
-                    # Get the actual object (Dataset or Model) from DB
-                    # Note: Ensure you have access to a repository or use the model's objects
-                    content_obj = await content_model.objects.aget(pid=input_data.pid)
-                    content_type = await sync_to_async(
-                        ContentType.objects.get_for_model
-                    )(content_model)
-                    # Create the link
-                    input_file = EvaluationPluginInputFile(
-                        evaluation_plugin=run_plugin,
-                        name=input_data.name,  # This matches the key in the @input decorator
-                        content_type=content_type,
-                        object_id=content_obj.id,
-                        content_object=content_obj,
-                    )
-                    await input_file.asave()
+        # Link the input files
+        if plugin_to_run.inputs:
+            for input_data in plugin_to_run.inputs:
+                # Determine content type and model
+                if input_data.input_type == InputType.DATASET:
+                    content_model = Dataset
+                elif input_data.input_type == InputType.MODEL:
+                    content_model = Model
+                else:
+                    continue
 
-            evaluation_plugins.append(run_plugin)
+                # Get the actual object (Dataset or Model) from DB
+                # NOTE: Ensure you have access to a repository or use the model's objects
+                content_obj = await content_model.objects.aget(pid=input_data.pid)
+                content_type = await sync_to_async(
+                    ContentType.objects.get_for_model
+                )(content_model)
+                # Create the link
+                input_file = EvaluationPluginInputFile(
+                    evaluation_plugin=run_plugin,
+                    name=input_data.name,  # This matches the key in the @input decorator
+                    content_type=content_type,
+                    object_id=content_obj.id,
+                    content_object=content_obj,
+                )
+                await input_file.asave()
+
+        evaluation_plugins.append(run_plugin)
 
     evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
 
