@@ -59,6 +59,8 @@ class EvaluationRepository(BaseRepository[Evaluation]):
 
     async def get_including(self, evaluation_pid: uuid.UUID, include: str, include_all: bool = False) -> Evaluation:
         evaluation_queryset = build_evaluation_queryset(include, include_all)
+        # Always prefetch project since EvaluationDetailOutSchema requires it
+        evaluation_queryset = evaluation_queryset.select_related("project")
         evaluation_queryset = evaluation_queryset.prefetch_related("observations")
 
         return await evaluation_queryset.aget(pid=evaluation_pid)
