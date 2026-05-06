@@ -221,20 +221,13 @@ class StatsRepository:
             EvaluationPlugin.objects.filter(evaluation__project__pid=project_pid)
             .values(plugin_name=F("plugin_config__plugin__name"))
             .annotate(
-                usage_count=Count("id"),
-                artifact_count=Count("artifacts"),
+                usage_count=Count("id", distinct=True),
+                artifact_count=Count("artifacts__id", distinct=True),
                 successful_runs=Count(
-                    "id", filter=Q(evaluation__status=EvaluationStatus.Done)
+                    "id", filter=Q(status="Done"), distinct=True
                 ),
                 failed_runs=Count(
-                    "id",
-                    filter=~Q(
-                        evaluation__status__in=[
-                            EvaluationStatus.Done,
-                            EvaluationStatus.Pending,
-                            EvaluationStatus.Processing,
-                        ]
-                    ),
+                    "id", filter=Q(status="Failed"), distinct=True
                 ),
             )
         )
