@@ -141,6 +141,14 @@ async def update_evaluation_status(
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
+    # If trying to mark as Done, check if any plugins failed
+    if status == EvaluationStatus.Done:
+        has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
+        if has_failed_plugins:
+            evaluation.status = EvaluationStatus.Failed
+            await evaluation_repository.save(evaluation)
+            return evaluation.status
+
     evaluation.status = status
     await evaluation_repository.save(evaluation)
 
@@ -199,6 +207,9 @@ async def mark_plugin_failed(
     eval_plugin.error_message = data.error_message
     eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
     await eval_plugin.asave()
+
+    evaluation.status = EvaluationStatus.Failed
+    await evaluation_repository.save(evaluation)
 
     return "ok"
 
