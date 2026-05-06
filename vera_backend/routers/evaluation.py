@@ -155,6 +155,20 @@ async def update_evaluation_status(
     return evaluation.status
 
 
+@router.get("/{evaluation_pid}/plugins/status", response=dict)
+async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
+    """Check if any plugins in the evaluation have failed."""
+    evaluation = await evaluation_repository.get(evaluation_pid, True)
+
+    has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
+    total_plugins = await evaluation.evaluation_plugins.acount()
+
+    return {
+        "has_failed_plugins": has_failed_plugins,
+        "total_plugins": total_plugins,
+    }
+
+
 class PluginTimestampSchema(Schema):
     field: str  # "started_at" or "finished_at"
 
