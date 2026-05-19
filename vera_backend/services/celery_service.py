@@ -24,15 +24,22 @@ async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProg
     evaluation_task = AsyncResult(str(task_pid), app=celery)
 
     # evaluation task spawns subtasks for each plugin and should complete immediately
-    if evaluation_task.state == SUCCESS and isinstance(evaluation_task.result, dict) and 'evaluation_pid' in evaluation_task.result:
+    if (
+        evaluation_task.state == SUCCESS
+        and isinstance(evaluation_task.result, dict)
+        and "evaluation_pid" in evaluation_task.result
+    ):
+        plugin_task_ids = evaluation_task.result.get("plugin_task_ids", [])
 
-        #args[0] is the plugin name
-        plugin_statuses = {
-            child.parent.info['plugin_name']: child.parent.info
-            for group in evaluation_task.children or []
-            for child in group.children or []
-            if child.parent.state == "RUNNING" and isinstance(child.parent.info, dict) and 'plugin_name' in child.parent.info
-        }
+        plugin_statuses = {}
+        for task_id in plugin_task_ids:
+            task_result = AsyncResult(task_id, app=celery)
+            if (
+                task_result.state == "RUNNING"
+                and isinstance(task_result.info, dict)
+                and "plugin_name" in task_result.info
+            ):
+                plugin_statuses[task_result.info["plugin_name"]] = task_result.info
 
         return plugin_statuses
 
@@ -40,7 +47,7 @@ async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProg
 
 
 async def autodiscover_datashape(datashape_pid: uuid.UUID):
-    result = celery.send_task("vera_eval.tasks.datashape_tasks.auto_discover_datashape", args=[datashape_pid])
+    result = celery.send_task(
+        "vera_eval.tasks.datashape_tasks.auto_discover_datashape", args=[datashape_pid]
+    )
     return result
-
-

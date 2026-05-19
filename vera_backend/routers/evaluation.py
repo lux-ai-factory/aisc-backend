@@ -69,53 +69,56 @@ class CreateEvaluationRequest(Schema):
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
-    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
-    evaluation = await evaluation_repository.create(evaluation)
-
-    evaluation_plugins = []
+    # Resolve and validate plugins before writing anything to DB
+    resolved: list[tuple[EvaluationPluginInSchema, object]] = []
     for plugin_to_run in data.plugins_to_run:
         plugin = next(
             (p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name),
             None,
         )
         if plugin:
-            plugin_config = plugin.current_config
-            if plugin_config is None:
+            if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
+            resolved.append((plugin_to_run, plugin.current_config))
 
-            run_plugin = EvaluationPlugin(
-                plugin_config=plugin_config, evaluation=evaluation
-            )
-            run_plugin = await evaluation_plugin_repository.create(run_plugin)
+    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
+    evaluation = await evaluation_repository.create(evaluation)
 
-            # Link the input files
-            if plugin_to_run.inputs:
-                for input_data in plugin_to_run.inputs:
-                    # Determine content type and model
-                    if input_data.input_type == InputType.DATASET:
-                        content_model = Dataset
-                    elif input_data.input_type == InputType.MODEL:
-                        content_model = Model
-                    else:
-                        continue
+    evaluation_plugins = []
+    for plugin_to_run, plugin_config in resolved:
+        run_plugin = EvaluationPlugin(
+            plugin_config=plugin_config, evaluation=evaluation
+        )
+        run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
-                    # Get the actual object (Dataset or Model) from DB
-                    # Note: Ensure you have access to a repository or use the model's objects
-                    content_obj = await content_model.objects.aget(pid=input_data.pid)
-                    content_type = await sync_to_async(
-                        ContentType.objects.get_for_model
-                    )(content_model)
-                    # Create the link
-                    input_file = EvaluationPluginInputFile(
-                        evaluation_plugin=run_plugin,
-                        name=input_data.name,  # This matches the key in the @input decorator
-                        content_type=content_type,
-                        object_id=content_obj.id,
-                        content_object=content_obj,
-                    )
-                    await input_file.asave()
+        # Link the input files
+        if plugin_to_run.inputs:
+            for input_data in plugin_to_run.inputs:
+                # Determine content type and model
+                if input_data.input_type == InputType.DATASET:
+                    content_model = Dataset
+                elif input_data.input_type == InputType.MODEL:
+                    content_model = Model
+                else:
+                    continue
 
-            evaluation_plugins.append(run_plugin)
+                # Get the actual object (Dataset or Model) from DB
+                # NOTE: Ensure you have access to a repository or use the model's objects
+                content_obj = await content_model.objects.aget(pid=input_data.pid)
+                content_type = await sync_to_async(
+                    ContentType.objects.get_for_model
+                )(content_model)
+                # Create the link
+                input_file = EvaluationPluginInputFile(
+                    evaluation_plugin=run_plugin,
+                    name=input_data.name,  # This matches the key in the @input decorator
+                    content_type=content_type,
+                    object_id=content_obj.id,
+                    content_object=content_obj,
+                )
+                await input_file.asave()
+
+        evaluation_plugins.append(run_plugin)
 
     evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
 
@@ -126,7 +129,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
 
 @router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)
-async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str):
+async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
     return await evaluation_repository.get_including(evaluation_pid, include)
 
 
@@ -141,10 +144,32 @@ async def update_evaluation_status(
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
+    # If trying to mark as Done, check if any plugins failed
+    if status == EvaluationStatus.Done:
+        has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
+        if has_failed_plugins:
+            evaluation.status = EvaluationStatus.Failed
+            await evaluation_repository.save(evaluation)
+            return evaluation.status
+
     evaluation.status = status
     await evaluation_repository.save(evaluation)
 
     return evaluation.status
+
+
+@router.get("/{evaluation_pid}/plugins/status", response=dict)
+async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
+    """Check if any plugins in the evaluation have failed."""
+    evaluation = await evaluation_repository.get(evaluation_pid, True)
+
+    has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
+    total_plugins = await evaluation.evaluation_plugins.acount()
+
+    return {
+        "has_failed_plugins": has_failed_plugins,
+        "total_plugins": total_plugins,
+    }
 
 
 class PluginTimestampSchema(Schema):
@@ -199,6 +224,9 @@ async def mark_plugin_failed(
     eval_plugin.error_message = data.error_message
     eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
     await eval_plugin.asave()
+
+    evaluation.status = EvaluationStatus.Failed
+    await evaluation_repository.save(evaluation)
 
     return "ok"
 
