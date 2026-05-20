@@ -23,7 +23,6 @@ from vera_backend.models.plugin import (
     EvaluationPluginInputFile,
 )
 from vera_backend.models.artifact import Artifact
-from vera_backend.models.feature import Feature
 from vera_backend.models.dataset import Dataset
 from vera_backend.models.model import Model
 
@@ -67,18 +66,6 @@ class StatsRepository:
 
         # Feature coverage
         observations = Observation.objects.filter(evaluation__project__pid=project_pid)
-        total_features = await Feature.objects.filter(
-            datashape__dataset__project__pid=project_pid
-        ).acount()
-        measured_features = (
-            await measurements.filter(feature__isnull=False)
-            .values("feature")
-            .distinct()
-            .acount()
-        )
-        feature_coverage = (
-            (measured_features / total_features * 100) if total_features > 0 else 0.0
-        )
 
         # Avg duration across all individual plugin runs
         timed_plugins = EvaluationPlugin.objects.filter(
@@ -101,9 +88,9 @@ class StatsRepository:
 
         # Last evaluation date
         last_obs = (
-            await observations.order_by("-whenObserved").values("whenObserved").afirst()
+            await observations.order_by("-created_at").values("created_at").afirst()
         )
-        last_evaluation_date = last_obs["whenObserved"] if last_obs else None
+        last_evaluation_date = last_obs["created_at"] if last_obs else None
 
         # Datasets and models evaluated (via EvaluationPluginInputFile generic FK)
         eval_plugins = EvaluationPlugin.objects.filter(
@@ -169,7 +156,7 @@ class StatsRepository:
             else None,
             "error_rate": round(error_rate, 2),
             "unique_metrics_used": unique_metrics,
-            "feature_coverage": round(feature_coverage, 2),
+            "feature_coverage": 0,
             "datasets_evaluated": datasets_evaluated,
             "models_evaluated": models_evaluated,
             "total_datasets": total_datasets,

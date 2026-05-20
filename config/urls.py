@@ -24,7 +24,6 @@ from vera_backend.routers.app import router as app_router
 from vera_backend.routers.project import router as project_router
 from vera_backend.routers.dataset import router as dataset_router
 from vera_backend.routers.model import router as model_router
-from vera_backend.routers.datashape import router as datashape_router
 from vera_backend.routers.evaluation import router as evaluation_router
 from vera_backend.routers.plugin import router as plugin_router
 from vera_backend.routers.task import router as task_router
@@ -45,7 +44,6 @@ v1_router.add_router("/app", app_router)
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/datasets", dataset_router)
 v1_router.add_router("/models", model_router)
-v1_router.add_router("/datashapes", datashape_router)
 v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)
 v1_router.add_router("/tasks", task_router)

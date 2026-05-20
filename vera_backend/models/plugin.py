@@ -32,12 +32,11 @@ class Plugin(Base):
         return f"{self.package_name}::{self.name} (v{self.version})"
 
 
-class PluginConfig(models.Model):
+class PluginConfig(Base):
     plugin = models.ForeignKey(
         "Plugin", related_name="configs", on_delete=models.CASCADE
     )
     config = models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -46,11 +45,10 @@ class PluginConfig(models.Model):
         return f"{self.plugin.name} config ({self.created_at})"
 
 
-class EvaluationPluginInputFile(models.Model):
+class EvaluationPluginInputFile(Base):
     evaluation_plugin = models.ForeignKey(
         "EvaluationPlugin", related_name="input_files", on_delete=models.CASCADE
     )
-    name = models.CharField(max_length=255)
 
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()

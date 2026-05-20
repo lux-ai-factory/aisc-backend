@@ -6,16 +6,16 @@ from ninja.errors import HttpError
 
 from vera_backend.models import EvaluationStatus, Dataset
 from vera_backend.models.common import StorageContainer
-from vera_backend.models.datashape import DataShape, DataShapeStatus
 from vera_backend.models.model import Model
 from vera_backend.repositories.base_repository import BaseRepository
 from vera_backend.repositories.dataset_repository import DatasetRepository
-from vera_backend.repositories.datashape_repository import DataShapeRepository
 from vera_backend.repositories.evaluation_repository import EvaluationRepository
 from vera_backend.repositories.project_repository import ProjectRepository
+from vera_backend.repositories.measurement_repository import  MeasurementRepository
 from vera_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
-from vera_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
 from vera_backend.schemas.evaluation import EvaluationDetailOutSchema
+from vera_backend.schemas.measure import MeasurementAggregationResponse, MeasurementAggregationRequest, \
+    DimensionKeysResponse, DimensionValuesResponse
 from vera_backend.schemas.model import ModelOutSchema, ModelInSchema
 from vera_backend.schemas.project import (
     ProjectOutSchema,
@@ -28,9 +28,9 @@ router = Router(tags=["project"])
 
 project_repository = ProjectRepository()
 dataset_repository = DatasetRepository()
-datashape_repository = DataShapeRepository()
 model_repository = BaseRepository(model=Model)
 evaluation_repository = EvaluationRepository()
+measurement_repository = MeasurementRepository()
 
 
 @router.post("", response=ProjectOutSchema)
@@ -59,16 +59,6 @@ async def get_project_details(request, pid: uuid.UUID):
     return await project_repository.get(pid, True)
 
 
-@router.get("/{pid}/datashape", response=DataShapeOutSchema)
-async def get_project_datashape(request, pid: uuid.UUID):
-    project = await project_repository.get(pid, True)
-
-    if project.expected_datashape is None:
-        raise HttpError(404, f"Project {pid} has no expected datashape")
-
-    return project.expected_datashape
-
-
 @router.post("/{pid}/datasets", response=DatasetOutSchema)
 async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema):
     project = await project_repository.get(pid)
@@ -79,10 +69,6 @@ async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema)
             project=project,
             storage_container=StorageContainer.Datasets,
         )
-    )
-
-    await datashape_repository.save(
-        DataShape(status=DataShapeStatus.Manual, dataset=dataset)
     )
 
     return dataset
@@ -100,15 +86,6 @@ async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
     )
     return await model_repository.save(model)
 
-
-@router.patch("/{pid}/datashape", response=DataShapeOutSchema)
-async def update_project_datashape(request, pid: uuid.UUID, data: DataShapeInSchema):
-    project = await project_repository.get(pid, True)
-
-    if project.expected_datashape is None:
-        raise HttpError(404, f"Project {pid} has no expected datashape")
-
-    return await datashape_repository.patch(project.expected_datashape, data)
 
 
 @router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
@@ -143,3 +120,34 @@ async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
     if not plugin:
         raise HttpError(404, f"Project {pid} has no plugin {plugin_name}")
     return plugin.config
+
+@router.post("/{pid}/measurements/aggregate", response=MeasurementAggregationResponse)
+async def aggregate_project_measurements(
+    request,
+    pid: uuid.UUID,
+    data: MeasurementAggregationRequest
+):
+    project = await project_repository.get(pid)
+    queryset = await measurement_repository.filter_queryset(observation__evaluation__project=project)
+    results = await measurement_repository.aggregate_measurements(
+        queryset, data.group_by, data.filters, data.aggregations
+    )
+    return {"results": results}
+
+@router.get("/{pid}/measurements/dimension-keys", response=DimensionKeysResponse)
+async def get_project_dimension_keys(request, pid: uuid.UUID):
+    project = await project_repository.get(pid)
+    queryset = await measurement_repository.filter_queryset(
+        observation__evaluation__project=project
+    )
+    keys = await measurement_repository.get_unique_dimension_keys(queryset)
+    return {"keys": keys}
+
+@router.get("/{pid}/measurements/dimension-values/{key}", response=DimensionValuesResponse)
+async def get_project_dimension_values(request, pid: uuid.UUID, key: str):
+    project = await project_repository.get(pid)
+    queryset = await measurement_repository.filter_queryset(
+        observation__evaluation__project=project
+    )
+    values = await measurement_repository.get_unique_dimension_values(queryset, key)
+    return {"key": key, "values": values}

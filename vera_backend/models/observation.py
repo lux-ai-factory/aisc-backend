@@ -7,7 +7,6 @@ from .common import Base
 class Observation(Base):
     observer = models.CharField(max_length=255)
     tool = models.CharField(max_length=255)
-    whenObserved = models.DateTimeField()
 
     evaluation = models.ForeignKey(
         'Evaluation', related_name='observations', on_delete=models.CASCADE)
@@ -16,4 +15,4 @@ class Observation(Base):
         return self.measurements.all()
 
     def __str__(self):
-        return f'{self.observer} ({self.whenObserved})'
+        return f'{self.observer} ({self.created_at})'

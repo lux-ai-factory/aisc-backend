@@ -13,6 +13,7 @@ class Base(models.Model):
     pid = models.UUIDField(default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     description = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         abstract = True

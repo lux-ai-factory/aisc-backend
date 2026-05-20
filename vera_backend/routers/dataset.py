@@ -8,18 +8,13 @@ from ninja.files import UploadedFile
 from django.http import StreamingHttpResponse
 
 from vera_backend.models.common import StorageContainer
-from vera_backend.models.dataset import Dataset
-from vera_backend.models.datashape import DataShape
 from vera_backend.repositories import file_repository
 from vera_backend.repositories.dataset_repository import DatasetRepository
-from vera_backend.repositories.datashape_repository import DataShapeRepository
 from vera_backend.repositories.project_repository import ProjectRepository
-from vera_backend.schemas.datashape import DataShapeOutSchema, DataShapeInSchema
 
 router = Router(tags=["dataset"])
 
 dataset_repository = DatasetRepository()
-datashape_repository = DataShapeRepository()
 project_repository = ProjectRepository()
 
 
@@ -72,27 +67,3 @@ async def get_dataset_file(request, dataset_pid: uuid.UUID):
     except Exception as e:
         raise HttpError(500, f"Error fetching dataset file: {str(e)}")
 
-
-@router.get("/{dataset_pid}/datashape", response=DataShapeOutSchema)
-async def get_dataset_datashape(request, dataset_pid: uuid.UUID):
-    dataset = await dataset_repository.get(dataset_pid, True)
-
-    datashape = dataset.get_datashape()
-    project = dataset.project
-    project.expected_datashape = datashape
-
-    await project_repository.save(project)
-
-    return datashape
-
-
-@router.patch("/{dataset_pid}/datashape", response=DataShapeOutSchema)
-async def update_dataset_datashape(request, dataset_pid: uuid.UUID, data: DataShapeInSchema):
-    dataset: Dataset = await dataset_repository.get(dataset_pid, True)
-
-    datashape: DataShape = dataset.get_datashape()
-
-    if datashape is None:
-        raise HttpError(404, f"Datashape for dataset ({dataset_pid}) not found")
-
-    return await datashape_repository.patch(datashape, data)

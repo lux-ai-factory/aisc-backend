@@ -9,10 +9,9 @@ from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router, Schema, Body, Form, File, UploadedFile
 from ninja.errors import HttpError
 
-from vera_backend.models import EvaluationPlugin, Dataset, EvaluationPluginInputFile
+from vera_backend.models import EvaluationPlugin, Dataset, EvaluationPluginInputFile, Measurement
 from vera_backend.models.artifact import Artifact
 from vera_backend.models.common import StorageContainer
-from vera_backend.models.feature import Feature
 from vera_backend.models.observation import Observation
 from vera_backend.models.metric import Metric
 
@@ -31,7 +30,9 @@ from vera_backend.schemas.evaluation import (
     EvaluationByStatusResponseSchema,
     EvaluationOutSchema,
 )
-from vera_backend.schemas.measure import MeasureInSchema, MeasureOutSchema
+from vera_backend.schemas.measure import MeasureInSchema, MeasureOutSchema, MeasurementAggregationResponse, \
+    MeasurementAggregationRequest, DimensionKeysResponse, DimensionValuesResponse, MetricNamesResponse, \
+    DimensionKeysRequest, DimensionValuesRequest, MetricNamesRequest
 from vera_backend.services import celery_service
 from vera_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
 from vera_plugin_interface import InputType
@@ -45,7 +46,6 @@ model_repository = BaseRepository(model=Model)
 observation_repository = BaseRepository(model=Observation)
 measurement_repository = MeasurementRepository()
 metric_repository = BaseRepository(model=Metric)
-feature_repository = BaseRepository(model=Feature)
 evaluation_plugin_repository = EvaluationPluginRepository()
 
 
@@ -248,11 +248,11 @@ async def create_evaluation_measures(
         observation = Observation(
             observer="VERA System",
             tool=str(plugin),
-            whenObserved=datetime.datetime.now(),
             evaluation=evaluation,
         )
         await observation_repository.save(observation)
 
+        measurement_objs = []
         for measure_in_schema in measures:
             measure_in_schema.description = (
                 ""
@@ -271,9 +271,11 @@ async def create_evaluation_measures(
             # Save Measure associated with the Observation
             measure_in_schema.observation = observation
             measure_in_schema.metric = metric
-            await measurement_repository.create(
-                measure_in_schema.model_dump(exclude={"feature_pid"})
-            )
+
+            measurement_objs.append(Measurement(**measure_in_schema.model_dump()))
+
+        if measurement_objs:
+            await Measurement.objects.abulk_create(measurement_objs)
 
     return Schema()
 
@@ -316,18 +318,6 @@ async def upload_evaluation_artifact(
     await artifact.asave()
 
     return UploadArtifactResponse(file_name=file.name)
-
-
-@router.get("/{evaluation_pid}/measures", response=list[MeasureOutSchema])
-async def get_evaluation_measures(request, evaluation_pid: uuid.UUID, name: str):
-    evaluation = await evaluation_repository.get(evaluation_pid)
-    observation = await evaluation.observations.order_by("-whenObserved").afirst()
-
-    measurements = await measurement_repository.filter_with_related(
-        name=name, observation=observation
-    )
-
-    return measurements
 
 
 @router.get("/{evaluation_pid}/artifacts", response=list[ArtifactOutSchema])
@@ -382,3 +372,87 @@ async def get_evaluation_artifacts(
         response.append(artifact_out_schema)
 
     return response
+
+@router.post("/{evaluation_pid}/measurements/aggregate", response=MeasurementAggregationResponse)
+async def aggregate_evaluation_measurements(
+    request,
+    evaluation_pid: uuid.UUID,
+    data: MeasurementAggregationRequest
+):
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    filter_params = {"observation__evaluation": evaluation}
+
+    if data.evaluation_plugin_pid:
+        evaluation_plugin = await evaluation_plugin_repository.get_with_related(data.evaluation_plugin_pid)
+        plugin = evaluation_plugin.plugin_config.plugin
+        filter_params["observation__tool"] = str(plugin)
+    
+    if data.metric_name:
+        filter_params["metric__name"] = data.metric_name
+
+    queryset = await measurement_repository.filter_queryset(**filter_params)
+    results = await measurement_repository.aggregate_measurements(
+        queryset, data.group_by, data.filters, data.aggregations
+    )
+    return {"results": results}
+
+@router.post("/{evaluation_pid}/measurements/dimension-keys", response=DimensionKeysResponse)
+async def get_evaluation_dimension_keys(
+    request, 
+    evaluation_pid: uuid.UUID, 
+    data: DimensionKeysRequest
+):
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    filter_params = {"observation__evaluation": evaluation}
+
+    if data.evaluation_plugin_pid:
+        evaluation_plugin = await evaluation_plugin_repository.get_with_related(data.evaluation_plugin_pid)
+        plugin = evaluation_plugin.plugin_config.plugin
+        filter_params["observation__tool"] = str(plugin)
+    
+    if data.metric_name:
+        filter_params["metric__name"] = data.metric_name
+
+    queryset = await measurement_repository.filter_queryset(**filter_params)
+    keys = await measurement_repository.get_unique_dimension_keys(queryset)
+    return {"keys": keys}
+
+@router.post("/{evaluation_pid}/measurements/dimension-values/{key}", response=DimensionValuesResponse)
+async def get_evaluation_dimension_values(
+    request, 
+    evaluation_pid: uuid.UUID, 
+    key: str,
+    data: DimensionValuesRequest
+):
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    filter_params = {"observation__evaluation": evaluation}
+
+    if data.evaluation_plugin_pid:
+        evaluation_plugin = await evaluation_plugin_repository.get_with_related(data.evaluation_plugin_pid)
+        plugin = evaluation_plugin.plugin_config.plugin
+        filter_params["observation__tool"] = str(plugin)
+    
+    if data.metric_name:
+        filter_params["metric__name"] = data.metric_name
+
+    queryset = await measurement_repository.filter_queryset(**filter_params)
+    values = await measurement_repository.get_unique_dimension_values(queryset, key)
+    return {"key": key, "values": values}
+
+@router.post("/{evaluation_pid}/measurements/metric-names", response=MetricNamesResponse)
+async def get_evaluation_metric_names(
+    request, 
+    evaluation_pid: uuid.UUID, 
+    data: MetricNamesRequest
+):
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    filter_params = {"observation__evaluation": evaluation}
+
+    if data.evaluation_plugin_pid:
+        evaluation_plugin = await evaluation_plugin_repository.get_with_related(data.evaluation_plugin_pid)
+        plugin = evaluation_plugin.plugin_config.plugin
+        filter_params["observation__tool"] = str(plugin)
+    
+    queryset = await measurement_repository.filter_queryset(**filter_params)
+    names = await measurement_repository.get_unique_metric_names(queryset)
+    return {"names": names}
