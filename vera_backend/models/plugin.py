@@ -22,6 +22,12 @@ class Plugin(Base):
         blank=True,
     )
 
+    # Soft-disable flag. Toggle-off marks this False instead of deleting the
+    # row so the evaluation history (EvaluationPlugin + Observations +
+    # Measurements + Artifacts) remains accessible. Toggle-on flips it back
+    # to True (re-using the same Plugin row).
+    enabled = models.BooleanField(default=True)
+
     def config_set(self) -> bool:
         return self.current_config is not None
 

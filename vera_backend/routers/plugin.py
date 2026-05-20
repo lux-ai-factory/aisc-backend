@@ -100,23 +100,39 @@ class CreatePluginsRequest(Schema):
 
 @router.post("", response=list[PluginOutSchema])
 async def create_plugins(request, data: CreatePluginsRequest):
+    from asgiref.sync import sync_to_async
+
     project = await project_repository.get(data.project_uuid, True)
 
     plugins_dict = plugin_loader.load_package(data.package_name, data.version)
     created_plugins = []
 
     for plugin_name, plugin_obj in plugins_dict.items():
+        # Look up ANY Plugin row for this (package, version, name, project) —
+        # including soft-disabled ones — so the toggle re-uses the existing
+        # row and the historical eval data stays attached.
+        existing = await sync_to_async(
+            lambda: Plugin.objects.filter(
+                project=project,
+                package_name=data.package_name,
+                version=data.version,
+                name=plugin_name,
+            ).first()
+        )()
 
-        project_plugin = next(
-            (p for p in project.get_enabled_plugins() if p.name == plugin_name), None
-        )
-        if not project_plugin:
+        if existing is not None:
+            if not existing.enabled:
+                existing.enabled = True
+                await sync_to_async(existing.save)()
+            project_plugin = existing
+        else:
             project_plugin = Plugin(
                 name=plugin_name,
                 display_name=plugin_obj.display_name,
                 package_name=data.package_name,
                 version=data.version,
-                project=project
+                project=project,
+                enabled=True,
             )
             project_plugin = await plugin_repository.create(project_plugin)
 
@@ -131,9 +147,21 @@ class DeletePluginsRequest(Schema):
 
 @router.delete("", response={204: None})
 async def delete_plugin(request, data: DeletePluginsRequest):
-    plugins = await plugin_repository.filter(package_name=data.package_name, version=data.version, project__pid=data.project_uuid)
+    from asgiref.sync import sync_to_async
+
+    # Soft-disable instead of deleting. Keeps the Plugin row + every
+    # downstream link (PluginConfig, EvaluationPlugin, Artifact) intact so
+    # the existing evaluation history remains visible. Re-toggling the
+    # plugin on flips `enabled` back to True without losing any data.
+    plugins = await plugin_repository.filter(
+        package_name=data.package_name,
+        version=data.version,
+        project__pid=data.project_uuid,
+    )
     for plugin in plugins:
-        await plugin_repository.delete(plugin)
+        if plugin.enabled:
+            plugin.enabled = False
+            await sync_to_async(plugin.save)()
     return 204, None
 
 

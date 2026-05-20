@@ -31,7 +31,10 @@ class Project(Base):
         return list(self.evaluations.all())
 
     def get_enabled_plugins(self) -> list[Plugin]:
-        return list(self.enabled_plugins.all())
+        # Filter the prefetched list in Python so this works from async
+        # contexts (ninja's get-project endpoint). A `.filter()` call would
+        # trigger a new sync DB query and raise SynchronousOnlyOperation.
+        return [p for p in self.enabled_plugins.all() if p.enabled]
 
     def __str__(self):
         return f'{self.name}, status: {self.status}'
