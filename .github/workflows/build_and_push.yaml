@@ -1,4 +1,4 @@
-name: VERA-backend build pipeline
+name: AISC-backend build pipeline
 
 on:
   push:

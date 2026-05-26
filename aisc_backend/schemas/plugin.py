@@ -1,0 +1,52 @@
+import uuid
+from typing import Union
+
+from ninja import ModelSchema, Schema
+from pydantic import Field
+
+from aisc_backend.models import Plugin, EvaluationPlugin, PluginConfig
+from aisc_backend.schemas.dataset import DatasetOutSchema
+from aisc_backend.schemas.model import ModelOutSchema
+
+
+class EvaluationPluginInputFileOutSchema(Schema):
+    name: str
+    input_type: str
+    input_file: Union[DatasetOutSchema, ModelOutSchema]
+
+    @staticmethod
+    def resolve_input_type(obj):
+        return obj.content_type.model
+
+    @staticmethod
+    def resolve_input_file(obj):
+        return obj.content_object
+
+class PluginConfigOutSchema(ModelSchema):
+    class Meta:
+        model = PluginConfig
+        fields = ["id", "config", "created_at"]
+
+
+class PluginOutSchema(ModelSchema):
+    config: dict | None = Field(None, alias="current_config.config")
+    pid: uuid.UUID
+
+    class Meta:
+        model = Plugin
+        fields = ["pid", "name", "package_name", "version", "display_name"]
+
+
+class EvaluationPluginOutSchema(ModelSchema):
+    name: str = Field(alias="plugin_config.plugin.name")
+    package_name: str = Field(alias="plugin_config.plugin.package_name")
+    version: str = Field(alias="plugin_config.plugin.version")
+    display_name: str = Field(alias="plugin_config.plugin.display_name")
+    plugin_pid: uuid.UUID = Field(alias="plugin_config.plugin.pid")
+    plugin_config: PluginConfigOutSchema | None = Field(default=None, alias="plugin_config")
+    input_files: list[EvaluationPluginInputFileOutSchema] = Field(default=[], alias="input_files")
+
+    class Meta:
+        model = EvaluationPlugin
+        fields = "__all__"
+        fields_optional = "__all__"
