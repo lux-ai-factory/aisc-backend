@@ -1,6 +1,6 @@
 [project]
 name = "aisc-backend"
-version = "0.2.3"
+version = "0.2.4"
 description = "Backend for AISC"
 authors = [
     { name = "Thibault Simonetto", email = "thibault.simonetto@uni.lu" },
@@ -24,10 +24,10 @@ dependencies = [
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",
     "jsonschema>=4.25.1",
-    "aisc-plugin-manager>=0.2.3",
-    "aisc-plugin-interface>=0.2.3",
+    "aisc-plugin-manager>=0.2.4",
+    "aisc-plugin-interface>=0.2.4",
     "httpx>=0.28.1",
 ]
 
 [tool.uv.sources]
-aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.2.3" }
+aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.2.4" }
