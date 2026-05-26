@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 
     # Third party
     'corsheaders',
@@ -48,7 +49,7 @@ INSTALLED_APPS = [
     'ninja_jwt',
 
     # Local
-    'vera_backend'
+    'aisc_backend'
 ]
 
 SITE_ID = 1
@@ -200,7 +201,7 @@ NINJA_JWT = {
 
 ## .env vars
 
-APP_NAME = env("APP_NAME","vera-backend")
+APP_NAME = env("APP_NAME","aisc-backend")
 LOG_LEVEL = env("LOG_LEVEL", "INFO")
 
 # S3 settings
