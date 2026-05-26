@@ -1,6 +1,6 @@
 # Simplified Gitflow Guide
 
-This document describes the current simplified branching strategy for all `VERA` projects.
+This document describes the current simplified branching strategy for all `AISC` projects.
 
 > This guide is intentionally lightweight and subject to change as the project and deployment process evolve.
 
