@@ -20,18 +20,18 @@ from django.urls import path, include
 
 from ninja import Router
 
-from vera_backend.routers.app import router as app_router
-from vera_backend.routers.project import router as project_router
-from vera_backend.routers.dataset import router as dataset_router
-from vera_backend.routers.model import router as model_router
-from vera_backend.routers.evaluation import router as evaluation_router
-from vera_backend.routers.plugin import router as plugin_router
-from vera_backend.routers.task import router as task_router
-from vera_backend.routers.file import router as file_router
-from vera_backend.routers.stats import router as stats_router
+from aisc_backend.routers.app import router as app_router
+from aisc_backend.routers.project import router as project_router
+from aisc_backend.routers.dataset import router as dataset_router
+from aisc_backend.routers.model import router as model_router
+from aisc_backend.routers.evaluation import router as evaluation_router
+from aisc_backend.routers.plugin import router as plugin_router
+from aisc_backend.routers.task import router as task_router
+from aisc_backend.routers.file import router as file_router
+from aisc_backend.routers.stats import router as stats_router
 
-from vera_backend.utils.logging_ninja_api import LoggingNinjaAPI
-from vera_backend.utils.exception_handlers import register_exception_handlers
+from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
+from aisc_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
 
 api = LoggingNinjaAPI(title=APP_NAME)

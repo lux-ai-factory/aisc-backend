@@ -1,31 +1,31 @@
 
-# VERA Backend 
+# AISC Backend 
 
-This repository contains the **VERA backend** service (Django) and the **Docker Compose orchestration** used to run the full VERA stack.
+This repository contains the **AISC backend** service (Django) and the **Docker Compose orchestration** used to run the full AISC stack.
 
 ## Stack architecture (high-level)
 
-VERA is split across **three sibling repositories** that should live at the same directory level:
+AISC is split across **three sibling repositories** that should live at the same directory level:
 
-- **`vera-backend`** (this repo): API, admin, plugin discovery + configuration UI plumbing
-- **`vera-eval`**: evaluation runtime/engine that actually executes plugin evaluations
-- **`vera-webapp`**: frontend web application
+- **`aisc-backend`** (this repo): API, admin, plugin discovery + configuration UI plumbing
+- **`aisc-eval`**: evaluation runtime/engine that actually executes plugin evaluations
+- **`aisc-webapp`**: frontend web application
 
 Expected filesystem layout:
 
 ```
 your-workspace/
-├── vera-backend   ← “main” repo (compose files live here)
-├── vera-eval
-└── vera-webapp
+├── aisc-backend   ← “main” repo (compose files live here)
+├── aisc-eval
+└── aisc-webapp
 ```
 
 ### Plugin system (how it works)
 
-VERA uses a **plugin system** for evaluation logic:
+AISC uses a **plugin system** for evaluation logic:
 
-- **`vera-backend`** loads plugins to **discover them and render configuration forms**.
-- **`vera-eval`** loads plugins to **run the actual evaluations**.
+- **`aisc-backend`** loads plugins to **discover them and render configuration forms**.
+- **`aisc-eval`** loads plugins to **run the actual evaluations**.
 - In Docker-based plugin development, both containers mount a **shared volume** that points to your local plugin folder, so you can edit plugin code on your machine and have it picked up inside the running containers.
 
 As a plugin developer, you typically only need to:
@@ -40,7 +40,7 @@ There are two common ways to work with this repo. Pick the one that matches what
 
 ### A) Local development (developing **this backend**)
 
-Use this when you’re changing Django code in `vera-backend` itself.
+Use this when you’re changing Django code in `aisc-backend` itself.
 
 #### Prerequisites
 - Python 3.12+
@@ -50,8 +50,8 @@ Use this when you’re changing Django code in `vera-backend` itself.
 #### Setup
 
 ```
-git clone https://github.com/lux-ai-factory/vera-backend.git
-cd vera-backend
+git clone https://github.com/lux-ai-factory/aisc-backend.git
+cd aisc-backend
 uv sync
 ```
 
@@ -97,9 +97,9 @@ Use this when you want to run the full stack in containers and iterate on a plug
 
 ```
 cd your-workspace
-git clone https://github.com/lux-ai-factory/vera-backend.git
-git clone https://github.com/lux-ai-factory/vera-eval.git
-git clone https://github.com/lux-ai-factory/vera-webapp.git
+git clone https://github.com/lux-ai-factory/aisc-backend.git
+git clone https://github.com/lux-ai-factory/aisc-eval.git
+git clone https://github.com/lux-ai-factory/aisc-webapp.git
 ```
 
 This workflow mounts your local plugin workspace into the backend + eval containers so both can load the same plugin code.
@@ -119,12 +119,12 @@ Then create a plugin project folder inside that path (example):
 └── my-plugin-project/
 ```
 
-Follow the instructions in the  [vera-plugin-interface](https://github.com/lux-ai-factory/vera-plugin-interface) repository to scaffold and implement the plugin:
+Follow the instructions in the  [aisc-plugin-interface](https://github.com/lux-ai-factory/aisc-plugin-interface) repository to scaffold and implement the plugin:
 
 
 ### Start the stack in dev mode
 
-From inside `vera-backend`:
+From inside `aisc-backend`:
 
 ```
 docker compose --env-file env.development \
@@ -144,7 +144,7 @@ docker compose --env-file env.development \
 
 ## Troubleshooting checklist
 
-- Are `vera-backend`, `vera-eval`, and `vera-webapp` cloned as **siblings**?
+- Are `aisc-backend`, `aisc-eval`, and `aisc-webapp` cloned as **siblings**?
 - Is `PLUGIN_PATH` an **absolute path** and does it exist?
 - Does your plugin package export the plugin class correctly (so it can be discovered)?
 - If you changed dependencies: did you run with `--build`?
