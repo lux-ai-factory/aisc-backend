@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc__backend', '0009_alter_measurement_dimensions'),
+        ('aisc_backend', '0009_alter_measurement_dimensions'),
     ]
 
     # The `enabled` column was historically added by an orphaned 0008

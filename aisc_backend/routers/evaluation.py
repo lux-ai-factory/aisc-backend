@@ -30,7 +30,7 @@ from aisc_backend.schemas.evaluation import (
     EvaluationByStatusResponseSchema,
     EvaluationOutSchema,
 )
-from aisc_backend.schemas.measure import MeasureInSchema, MeasureOutSchema, MeasurementAggregationResponse, \
+from aisc_backend.schemas.measure import MeasureInSchema, MeasurementAggregationResponse, \
     MeasurementAggregationRequest, DimensionKeysResponse, DimensionValuesResponse, MetricNamesResponse, \
     DimensionKeysRequest, DimensionValuesRequest, MetricNamesRequest
 from aisc_backend.services import celery_service
