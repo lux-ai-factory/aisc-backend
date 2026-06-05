@@ -33,5 +33,8 @@ class Project(Base):
         # trigger a new sync DB query and raise SynchronousOnlyOperation.
         return [p for p in self.enabled_plugins.all() if p.enabled]
 
+    def get_plugins(self) -> list[Plugin]:
+        return list(self.enabled_plugins.all())
+
     def __str__(self):
         return f'{self.name}, status: {self.status}'
