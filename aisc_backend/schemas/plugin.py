@@ -34,7 +34,7 @@ class PluginOutSchema(ModelSchema):
 
     class Meta:
         model = Plugin
-        fields = ["pid", "name", "package_name", "version", "display_name"]
+        fields = ["pid", "name", "package_name", "version", "display_name", "enabled"]
 
 
 class EvaluationPluginOutSchema(ModelSchema):

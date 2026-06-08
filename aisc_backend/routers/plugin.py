@@ -165,6 +165,19 @@ async def delete_plugin(request, data: DeletePluginsRequest):
     return 204, None
 
 
+class UpdatePluginEnabledRequest(Schema):
+    enabled: bool
+
+@router.patch("/{plugin_pid}/enabled", response=PluginOutSchema)
+async def update_plugin_enabled(
+        request, plugin_pid: uuid.UUID, data: UpdatePluginEnabledRequest
+):
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin.enabled = data.enabled
+    await plugin_repository.save(plugin)
+    return plugin
+
+
 @router.get(
     "/{plugin_pid}/configs",
     response=list[PluginConfigOutSchema],
