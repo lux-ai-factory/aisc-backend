@@ -148,3 +148,6 @@ docker compose --env-file env.development \
 - Is `PLUGIN_PATH` an **absolute path** and does it exist?
 - Does your plugin package export the plugin class correctly (so it can be discovered)?
 - If you changed dependencies: did you run with `--build`?
+
+## License
+This project is licensed under the Apache License 2.0. See LICENSE for details.
