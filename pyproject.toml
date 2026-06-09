@@ -30,4 +30,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.2.5" }
+aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.2.6" }
