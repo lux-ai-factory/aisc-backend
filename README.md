@@ -160,10 +160,10 @@ By submitting contributions, you agree to the [CLA](CLA/CLA_VERA.md) and license
 ##  License
 
 This project is licensed under the [Apache License 2.0](LICENSE).  
-© 2024–2026 University of Luxembourg and Luxembourg Institute of Science and Technology.
+© 2024–2026 Université du Luxembourg and Luxembourg Institute of Science and Technology.
 
 ---
 
 ## Acknowledgments
 
-This work is part of ongoing research and development efforts within the University of Luxembourg’s digital governance and AI compliance initiatives, including the AI Factory Luxembourg initiative.  
+This work is part of ongoing research and development efforts within the Université du Luxembourg’s digital governance and AI compliance initiatives, including the AI Factory Luxembourg initiative.  
