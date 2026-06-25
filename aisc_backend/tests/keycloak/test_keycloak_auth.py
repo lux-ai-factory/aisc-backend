@@ -33,16 +33,18 @@ class KeycloakVerifyTokenTest(SimpleTestCase):
         cls.public_key = cls.private_key.public_key()
 
     def setUp(self):
-        # Configure the module for the test: enable auth, set the issuer, and make the JWKS
-        # lookup return our PUBLIC key (so tokens we sign with the PRIVATE key verify).
-        keycloak.AUTH_ENABLED = True
-        keycloak.KEYCLOAK_ISSUER = ISSUER
+        # Configure the module via patches that AUTO-RESTORE after each test, so we don't leak
+        # KEYCLOAK_ISSUER / AUTH_ENABLED into other test modules (e.g. the integration tests).
         fake_client = mock.Mock(
             get_signing_key_from_jwt=mock.Mock(return_value=_FakeKey(self.public_key))
         )
-        patcher = mock.patch.object(keycloak, "_get_jwks_client", return_value=fake_client)
-        self.addCleanup(patcher.stop)
-        patcher.start()
+        for patcher in (
+            mock.patch.object(keycloak, "AUTH_ENABLED", True),
+            mock.patch.object(keycloak, "KEYCLOAK_ISSUER", ISSUER),
+            mock.patch.object(keycloak, "_get_jwks_client", return_value=fake_client),
+        ):
+            self.addCleanup(patcher.stop)
+            patcher.start()
 
     def _make_token(self, *, roles=None, issuer=ISSUER, exp_delta_seconds=300, key=None):
         now = datetime.datetime.now(datetime.timezone.utc)
