@@ -14,7 +14,7 @@ import unittest
 import urllib.parse
 import urllib.request
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, AsyncClient
 from ninja.testing import TestClient
 
 from aisc_backend.routers.me import router as me_router
@@ -68,3 +68,15 @@ class KeycloakIntegrationTest(SimpleTestCase):
         resp = self.client.get("", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["username"], "user")
+
+    # --- Phase 6: deny-by-default. Go through the REAL api with the ASGI client (the app runs ASGI). ---
+    async def test_deny_by_default_blocks_anonymous_on_real_endpoint(self):
+        # /app/app-name used to be open; the API-wide KeycloakAuth now requires a token.
+        # (Auth rejects before the handler, so no DB is touched — safe in SimpleTestCase.)
+        resp = await AsyncClient().get("/api/v1/app/app-name")
+        self.assertEqual(resp.status_code, 401)
+
+    async def test_docs_and_schema_stay_public(self):
+        # The OpenAPI schema lives under /api/ (not /api/v1/) and must remain reachable without a token.
+        resp = await AsyncClient().get("/api/openapi.json")
+        self.assertEqual(resp.status_code, 200)
