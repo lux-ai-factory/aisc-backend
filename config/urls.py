@@ -31,11 +31,16 @@ from aisc_backend.routers.file import router as file_router
 from aisc_backend.routers.stats import router as stats_router
 from aisc_backend.routers.me import router as me_router
 
+from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from aisc_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
 
-api = LoggingNinjaAPI(title=APP_NAME)
+# Deny-by-default: KeycloakAuth() is the API-wide default, so EVERY endpoint requires a valid token.
+# (KeycloakAuth lets everyone through while AUTH_ENABLED is False, so dev is unaffected; in prod with
+# AUTH_ENABLED=true it enforces. Any new router is automatically protected — nothing can be forgotten.)
+# The Swagger docs + openapi.json live under /api/ (not /api/v1/) and stay public.
+api = LoggingNinjaAPI(title=APP_NAME, auth=KeycloakAuth())
 register_exception_handlers(api)
 
 v1_router = Router()
