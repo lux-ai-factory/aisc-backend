@@ -134,5 +134,39 @@ class AuditClerk:
         )
 
 
+    def list_events(self, limit: int = 100) -> list[dict]:
+        """Read recent audit events (newest first). ADMIN-only use (gated at the endpoint)."""
+        self.connect()
+        assert self._client is not None
+        rows = self._client.sqlQuery(
+            "SELECT id, who, what, app, occurred_at, consequence, status, summary FROM audit_log;"
+        )
+        cols = ["id", "who", "what", "app", "occurred_at", "consequence", "status", "summary"]
+        events = []
+        for r in rows:
+            e = dict(zip(cols, r))
+            ts = e.get("occurred_at")
+            e["occurred_at"] = ts.isoformat() if hasattr(ts, "isoformat") else ts  # JSON-friendly
+            events.append(e)
+        events.sort(key=lambda e: e["id"], reverse=True)   # newest first
+        return events[:limit]
+
+    def verify(self) -> bool:
+        """
+        Tamper-check the ledger: verifiedSet a sentinel then verifiedGet it. The SDK validates the
+        server's cryptographic proof against the saved state — if the server tampered, this raises/fails.
+        Returns True iff the cryptographic verification passes.
+        """
+        self.connect()
+        assert self._client is not None
+        try:
+            self._client.verifiedSet(b"audit:_integrity_probe", b"ok")
+            res = self._client.verifiedGet(b"audit:_integrity_probe")
+            return getattr(res, "value", None) == b"ok"
+        except Exception as e:  # noqa: BLE001
+            logger.warning("immudb verify() failed: %s", e)
+            return False
+
+
 # Module-level singleton: the rest of the app imports this ONE instance.
 clerk = AuditClerk()
