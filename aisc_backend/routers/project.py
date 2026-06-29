@@ -1,8 +1,11 @@
 import uuid
 from typing import Any
 
+from asgiref.sync import sync_to_async
 from ninja import Router, Schema, Query
 from ninja.errors import HttpError
+
+from aisc_backend.audit.log import log_action
 
 from aisc_backend.models import EvaluationStatus, Dataset
 from aisc_backend.models.common import StorageContainer
@@ -35,13 +38,21 @@ measurement_repository = MeasurementRepository()
 
 @router.post("", response=ProjectOutSchema)
 async def create_project(request, data: ProjectInSchema):
-    return await project_repository.create(data.name)
+    project = await project_repository.create(data.name)
+    # AUDIT: who created which project (best-effort; never breaks the create)
+    await sync_to_async(log_action)(
+        request, "project:create", {"pid": str(project.pid), "name": project.name})
+    return project
 
 
 @router.patch("/{pid}", response=ProjectOutSchema)
 async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
     project = await project_repository.get(pid)
-    return await project_repository.patch(project, data)
+    updated = await project_repository.patch(project, data)
+    # AUDIT: who renamed which project, and to what
+    await sync_to_async(log_action)(
+        request, "project:update", {"pid": str(pid), "name": data.name})
+    return updated
 
 
 @router.get("", response=list[ProjectOutSchema])
