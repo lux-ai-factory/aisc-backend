@@ -198,14 +198,6 @@ NINJA_JWT = {
     "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600
 }
 
-# --- Keycloak auth (read by aisc_backend.auth.keycloak) ---
-# AUTH_ENABLED gates the Keycloak bearer auth; while False the API behaves as before.
-AUTH_ENABLED = env.bool("AUTH_ENABLED", default=False)
-# The exact issuer string the realm puts in tokens (must match where tokens are obtained from).
-KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
-# Where the realm publishes its public keys (used to verify token signatures).
-KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
-
 
 ## .env vars
 
