@@ -206,6 +206,15 @@ KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
 
+# --- immudb audit ledger (read by aisc_backend.audit.clerk) ---
+# Where the immudb server is. Host runs: localhost:3322; inside docker: immudb:3322.
+IMMUDB_URL = env("IMMUDB_URL", default="localhost:3322")
+IMMUDB_USER = env("IMMUDB_USER", default="immudb")
+# Reuse the same dev secret as the container's admin password (one source of truth).
+IMMUDB_PASSWORD = env("IMMUDB_PASSWORD", default=env("IMMUDB_ADMIN_PASSWORD", default=""))
+# The dedicated audit database (separate from immudb's defaultdb).
+IMMUDB_DATABASE = env("IMMUDB_DATABASE", default="auditdb")
+
 
 ## .env vars
 
