@@ -82,6 +82,10 @@ async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema)
         )
     )
 
+    # AUDIT: who added which dataset to which project (webapp action; best-effort)
+    await sync_to_async(log_action)(
+        request, "dataset:create",
+        {"projectPid": str(pid), "datasetPid": str(getattr(dataset, "pid", "")), "name": getattr(dataset, "name", None)})
     return dataset
 
 
@@ -95,7 +99,12 @@ async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
         public=True,
         storage_container=StorageContainer.Models,
     )
-    return await model_repository.save(model)
+    saved = await model_repository.save(model)
+    # AUDIT: who registered which model under which project (webapp action; best-effort)
+    await sync_to_async(log_action)(
+        request, "model:create",
+        {"projectPid": str(pid), "modelPid": str(getattr(saved, "pid", "")), "name": getattr(saved, "name", None)})
+    return saved
 
 
 
