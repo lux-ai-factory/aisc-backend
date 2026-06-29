@@ -76,3 +76,13 @@ class AuditClerkUnitTest(SimpleTestCase):
         params = m.sqlExec.call_args_list[-1].kwargs["params"]
         self.assertEqual(json.loads(params["consequence"]), {})
         self.assertEqual(params["status"], "ok")   # default status
+
+    def test_write_event_includes_readable_summary(self):
+        c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
+        c.write_event("admin", "project:create", "backend", {"name": "Demo"})
+        params = m.sqlExec.call_args_list[-1].kwargs["params"]
+        self.assertIn("summary", params)
+        # a plain-English one-liner an auditor can read at a glance
+        self.assertIn("admin", params["summary"])
+        self.assertIn("project:create", params["summary"])
+        self.assertIn("name=Demo", params["summary"])

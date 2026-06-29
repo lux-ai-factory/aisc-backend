@@ -38,14 +38,29 @@ CREATE TABLE IF NOT EXISTS audit_log (
     occurred_at  TIMESTAMP,
     consequence  VARCHAR,
     status       VARCHAR[16],
+    summary      VARCHAR,
     PRIMARY KEY (id)
 );
 """
 
+# For tables created before `summary` existed: add the column (idempotent — guarded in connect()).
+_ADD_SUMMARY = "ALTER TABLE audit_log ADD COLUMN summary VARCHAR;"
+
 _INSERT = (
-    "INSERT INTO audit_log (who, what, app, occurred_at, consequence, status) "
-    "VALUES (@who, @what, @app, @occurred_at, @consequence, @status);"
+    "INSERT INTO audit_log (who, what, app, occurred_at, consequence, status, summary) "
+    "VALUES (@who, @what, @app, @occurred_at, @consequence, @status, @summary);"
 )
+
+
+def _build_summary(who: str, what: str, app: str, consequence: dict, status: str) -> str:
+    """A plain-English one-liner so the raw ledger row is readable at a glance (no JSON decoding)."""
+    detail = ", ".join(f"{k}={v}" for k, v in (consequence or {}).items())
+    line = f"{who} performed '{what}' in {app}"
+    if detail:
+        line += f" ({detail})"
+    if status != "ok":
+        line += f" [{status}]"
+    return line
 
 
 class AuditClerk:
@@ -75,6 +90,13 @@ class AuditClerk:
             client.useDatabase(db_bytes)
 
             client.sqlExec(_CREATE_TABLE)  # idempotent (IF NOT EXISTS)
+            # Add `summary` to tables created before it existed. immudb has no "ADD COLUMN IF NOT EXISTS",
+            # so attempt it and ignore the error if the column is already there (idempotent).
+            try:
+                client.sqlExec(_ADD_SUMMARY)
+                logger.info("immudb: added summary column to audit_log")
+            except Exception:  # noqa: BLE001 - column already exists on an up-to-date table
+                pass
             self._client = client
             logger.info("immudb audit clerk ready (db=%r)", db)
 
@@ -96,6 +118,7 @@ class AuditClerk:
         """
         self.connect()
         assert self._client is not None
+        consequence = consequence or {}
         self._client.sqlExec(
             _INSERT,
             params={
@@ -103,8 +126,10 @@ class AuditClerk:
                 "what": what,
                 "app": app,
                 "occurred_at": datetime.now(timezone.utc),
-                "consequence": json.dumps(consequence or {}),
+                "consequence": json.dumps(consequence),
                 "status": status,
+                # a readable one-liner stored IN the immutable row (auditor reads it at a glance)
+                "summary": _build_summary(who, what, app, consequence, status),
             },
         )
 
