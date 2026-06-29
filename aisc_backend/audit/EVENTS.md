@@ -44,7 +44,8 @@ user's token — the server sets `what`, so it can't be forged). Reading/verifyi
 | `checklist:answer` | submit a filled checklist |
 | `checklist:review` | save a reviewed checklist |
 | `source:create` | add a source/authority |
-| `submission:save_draft` / `submission:reopen` / `submission:archive` / `submission:restore` | manage a submission |
+| `submission:save_draft` / `submission:close` | save / close a submission draft |
+| `submission:reopen` / `:archive` / `:restore` | (planned — triggered from a server component; needs token-forwarding before they can attribute "who") |
 
 ### qualification
 | what | when |
