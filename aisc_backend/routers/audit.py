@@ -11,7 +11,7 @@ POST /api/v1/audit   body: { what, app, consequence?, status? }   -> writes one 
 """
 from ninja import Router, Schema
 
-from aisc_backend.auth.keycloak import KeycloakAuth
+from aisc_backend.auth.keycloak import KeycloakAuth, require_role
 from aisc_backend.audit.clerk import clerk
 
 # auth=KeycloakAuth() -> a valid Keycloak token is required (the caller forwards the user's token).
@@ -39,3 +39,18 @@ def post_audit(request, event: AuditEventIn):
         status=event.status,
     )
     return {"ok": True, "who": who}
+
+
+@router.get("", auth=require_role("admin"))
+def list_audit(request, limit: int = 100):
+    """
+    ADMIN-ONLY: read + verify the tamper-proof audit log.
+    Returns the newest events plus `verified` — the cryptographic proof (VerifiedGet) that the ledger
+    was not tampered with. Gated by require_role("admin") (same as /me/admin) -> non-admins get 401/403.
+    Reusing the Keycloak role gating: WRITING events is open to any authenticated caller; READING/VERIFYING
+    the ledger is admin-only.
+    """
+    return {
+        "verified": clerk.verify(),
+        "events": clerk.list_events(limit=limit),
+    }

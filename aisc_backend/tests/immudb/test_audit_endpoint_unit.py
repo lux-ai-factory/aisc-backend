@@ -64,3 +64,15 @@ class AuditEndpointUnitTest(SimpleTestCase):
         # No Authorization header at all -> ninja HttpBearer 401s (the door still needs a token presented).
         resp = self.client.post("", json={"what": "x:y", "app": "controls"})
         self.assertEqual(resp.status_code, 401)
+
+    def test_get_audit_returns_verify_and_events(self):
+        # GET /audit is admin-gated; with AUTH_ENABLED pinned False, require_role bypasses -> allowed.
+        self.mock_clerk.verify.return_value = True
+        self.mock_clerk.list_events.return_value = [{"id": 1, "summary": "x did y"}]
+        resp = self.client.get("?limit=5", headers=AUTH)
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["verified"], True)
+        self.assertEqual(body["events"], [{"id": 1, "summary": "x did y"}])
+        self.mock_clerk.list_events.assert_called_once_with(limit=5)
+        self.mock_clerk.verify.assert_called_once()

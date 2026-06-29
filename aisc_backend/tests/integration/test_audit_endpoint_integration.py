@@ -69,3 +69,18 @@ class AuditEndpointIntegrationTest(SimpleTestCase):
         who, what, app = rows[-1]
         self.assertEqual(who, "admin")
         self.assertEqual(app, "controls")
+
+    def test_get_audit_admin_only(self):
+        # ADMIN: can read + verify the ledger
+        admin = _get_token("admin", "admin")
+        resp = self.client.get("", headers={"Authorization": f"Bearer {admin}"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIn("events", body)
+        self.assertTrue(body["verified"])              # cryptographic VerifiedGet proof passes
+        self.assertIsInstance(body["events"], list)
+
+        # NON-admin (primary-user): rejected by require_role("admin")
+        user = _get_token("user", "user")
+        resp2 = self.client.get("", headers={"Authorization": f"Bearer {user}"})
+        self.assertIn(resp2.status_code, (401, 403))
