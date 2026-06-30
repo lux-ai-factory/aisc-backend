@@ -23,6 +23,7 @@ def validate_flat_json(value):
 class Measurement(Base):
     unit = models.CharField(default="N/A", blank=True, null=True, max_length=255)
     time = models.DateTimeField()
+    direction = models.CharField(default="", blank=True, null=True, max_length=50)
     score = models.FloatField()
     error = models.CharField(default="N/A", blank=True, null=True, max_length=255)
     uncertainty = models.FloatField(default=0)
