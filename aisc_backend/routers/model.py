@@ -43,7 +43,8 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
     await model_repository.save(model)
 
     await sync_to_async(log_action)(
-        request, "model:upload", {"modelPid": str(model_pid), "filename": file.name})
+        request, action="upload", resource_type="model",
+        resource_id=str(model_pid), metadata={"filename": file.name})
     return UploadModelFileResponse(file_name=file.name)
 
 

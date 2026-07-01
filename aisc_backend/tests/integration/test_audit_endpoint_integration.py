@@ -53,21 +53,23 @@ class AuditEndpointIntegrationTest(SimpleTestCase):
 
     def test_post_with_real_token_writes_event_with_token_identity(self):
         token = _get_token("admin", "admin")
-        marker = "endpoint-itest:probe"
+        marker = "endpoint_itest_probe"   # unique resource_type
         resp = self.client.post(
-            "", json={"what": marker, "app": "controls", "consequence": {"x": 1}},
+            "", json={"action": "probe", "resource_type": marker, "resource_id": "e-1",
+                      "source_app": "controls", "metadata": {"x": 1}},
             headers={"Authorization": f"Bearer {token}"},
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["who"], "admin")   # identity came FROM the verified token
+        self.assertEqual(resp.json()["actor"], "admin")   # identity came FROM the verified token
 
-        # confirm it actually landed in immudb with who=admin
+        # confirm it actually landed in immudb with actor=admin
         clerk = AuditClerk(); clerk.connect()
         rows = clerk._client.sqlQuery(
-            "SELECT who, what, app FROM audit_log WHERE what = @w;", params={"w": marker})
+            "SELECT actor, action, source_app FROM audit_log WHERE resource_type = @rt;",
+            params={"rt": marker})
         self.assertTrue(rows)
-        who, what, app = rows[-1]
-        self.assertEqual(who, "admin")
+        actor, action, app = rows[-1]
+        self.assertEqual(actor, "admin")
         self.assertEqual(app, "controls")
 
     def test_get_audit_admin_only(self):

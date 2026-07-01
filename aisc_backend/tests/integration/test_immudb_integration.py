@@ -35,19 +35,25 @@ class ImmudbIntegrationTest(SimpleTestCase):
         self.clerk.connect()   # real connect + provision against the running immudb
 
     def test_write_event_persists_and_reads_back(self):
-        marker = "integration:probe"
-        self.clerk.write_event("itest-user", marker, "backend", {"k": "v", "n": 7}, status="ok")
+        marker = "integration_probe"   # unique resource_type for this test
+        self.clerk.write_event(actor="itest-user", action="probe", resource_type=marker,
+                               resource_id="r-7", source_app="backend", source_ip="1.2.3.4",
+                               outcome="ok", metadata={"k": "v", "n": 7})
         rows = self.clerk._client.sqlQuery(
-            "SELECT who, what, app, status, consequence FROM audit_log WHERE what = @w;",
-            params={"w": marker},
+            "SELECT actor, action, resource_type, resource_id, source_app, source_ip, outcome, metadata "
+            "FROM audit_log WHERE resource_type = @rt;",
+            params={"rt": marker},
         )
         self.assertTrue(rows, "the event we just wrote should be queryable")
-        who, what, app, status, consequence = rows[-1]
-        self.assertEqual(who, "itest-user")
-        self.assertEqual(what, marker)
+        actor, action, rtype, rid, app, ip, outcome, metadata = rows[-1]
+        self.assertEqual(actor, "itest-user")
+        self.assertEqual(action, "probe")
+        self.assertEqual(rtype, marker)
+        self.assertEqual(rid, "r-7")
         self.assertEqual(app, "backend")
-        self.assertEqual(status, "ok")
-        self.assertEqual(json.loads(consequence), {"k": "v", "n": 7})
+        self.assertEqual(ip, "1.2.3.4")
+        self.assertEqual(outcome, "ok")
+        self.assertEqual(json.loads(metadata), {"k": "v", "n": 7})
 
     def test_verified_roundtrip_proves_tamper_check_works(self):
         # The design relies on Python's VERIFIED ops (Node's are broken). Prove a verifiedSet/verifiedGet

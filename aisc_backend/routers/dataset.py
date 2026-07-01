@@ -46,7 +46,8 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
     await dataset_repository.save(dataset)
 
     await sync_to_async(log_action)(
-        request, "dataset:upload", {"datasetPid": str(dataset_pid), "filename": file.name})
+        request, action="upload", resource_type="dataset",
+        resource_id=str(dataset_pid), metadata={"filename": file.name})
     return UploadDatasetFileResponse(file_name=file.name)
 
 

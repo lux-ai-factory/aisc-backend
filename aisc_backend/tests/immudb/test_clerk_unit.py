@@ -4,7 +4,7 @@ UNIT tests for aisc_backend.audit.clerk.AuditClerk — NO live immudb, NO databa
 Strategy: patch `ImmudbClient` with a Mock so we assert the CLERK's logic without a server:
   - idempotent provisioning (createDatabase only when the db is missing from databaseList),
   - useDatabase + CREATE TABLE IF NOT EXISTS run,
-  - write_event issues a parameterized INSERT with the right @params (consequence JSON-encoded).
+  - write_event issues a parameterized INSERT with the standard audit fields (metadata JSON-encoded).
 
 Run:  uv run manage.py test aisc_backend.tests.immudb.test_clerk_unit
 """
@@ -32,57 +32,61 @@ class AuditClerkUnitTest(SimpleTestCase):
         c, m = self._make_clerk_with_mock(existing_dbs=[])   # auditdb NOT present
         c.connect()
         m.login.assert_called_once()
-        # createDatabase called with the db name as BYTES
         m.createDatabase.assert_called_once()
         (arg,), _ = m.createDatabase.call_args
-        self.assertIsInstance(arg, bytes)
+        self.assertIsInstance(arg, bytes)                    # db name passed as BYTES
         m.useDatabase.assert_called_once()
-        # CREATE TABLE IF NOT EXISTS executed
         create_sql = m.sqlExec.call_args_list[0].args[0]
         self.assertIn("CREATE TABLE IF NOT EXISTS audit_log", create_sql)
 
     def test_connect_skips_create_when_db_exists(self):
-        # auditdb already present (as bytes, like the SDK returns) -> must NOT create again (idempotent)
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
         c.connect()
-        m.createDatabase.assert_not_called()
+        m.createDatabase.assert_not_called()                 # idempotent
         m.useDatabase.assert_called_once()
 
     def test_connect_is_called_once_even_if_invoked_twice(self):
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
         c.connect()
         c.connect()                       # second call must be a no-op (already connected)
-        m.login.assert_called_once()      # only logged in once
+        m.login.assert_called_once()
 
     def test_write_event_issues_parameterized_insert(self):
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
-        c.write_event("admin", "project:delete", "backend", {"projectPid": "abc-123"}, status="ok")
-        # last sqlExec call is the INSERT (first was CREATE TABLE during connect)
-        insert_call = m.sqlExec.call_args_list[-1]
+        c.write_event(actor="admin", action="delete", resource_type="project",
+                      resource_id="abc-123", source_app="backend", source_ip="10.0.0.5",
+                      outcome="ok", metadata={"reason": "cleanup"})
+        insert_call = m.sqlExec.call_args_list[-1]           # last sqlExec = the INSERT
         sql = insert_call.args[0]
         params = insert_call.kwargs["params"]
         self.assertIn("INSERT INTO audit_log", sql)
-        self.assertIn("@who", sql)                       # parameterized, not string-formatted
-        self.assertEqual(params["who"], "admin")
-        self.assertEqual(params["what"], "project:delete")
-        self.assertEqual(params["app"], "backend")
-        self.assertEqual(params["status"], "ok")
-        self.assertEqual(json.loads(params["consequence"]), {"projectPid": "abc-123"})  # JSON-encoded
-        self.assertIsInstance(params["occurred_at"], datetime)                          # server-stamped time
+        self.assertIn("@actor", sql)                          # parameterized, not string-formatted
+        self.assertEqual(params["actor"], "admin")
+        self.assertEqual(params["action"], "delete")
+        self.assertEqual(params["resource_type"], "project")
+        self.assertEqual(params["resource_id"], "abc-123")
+        self.assertEqual(params["source_app"], "backend")
+        self.assertEqual(params["source_ip"], "10.0.0.5")
+        self.assertEqual(params["outcome"], "ok")
+        self.assertEqual(json.loads(params["metadata"]), {"reason": "cleanup"})   # JSON-encoded
+        self.assertIsInstance(params["occurred_at"], datetime)                    # server-stamped time
 
-    def test_write_event_defaults_consequence_to_empty_json(self):
+    def test_write_event_defaults(self):
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
-        c.write_event("user", "auth:login", "controls")
+        c.write_event(actor="user", action="login", resource_type="session")
         params = m.sqlExec.call_args_list[-1].kwargs["params"]
-        self.assertEqual(json.loads(params["consequence"]), {})
-        self.assertEqual(params["status"], "ok")   # default status
+        self.assertEqual(json.loads(params["metadata"]), {})   # metadata defaults to empty
+        self.assertEqual(params["outcome"], "ok")              # outcome defaults to ok
+        self.assertEqual(params["source_app"], "backend")      # source_app defaults to backend
+        self.assertIsNone(params["resource_id"])               # optional
 
     def test_write_event_includes_readable_summary(self):
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
-        c.write_event("admin", "project:create", "backend", {"name": "Demo"})
-        params = m.sqlExec.call_args_list[-1].kwargs["params"]
-        self.assertIn("summary", params)
-        # a plain-English one-liner an auditor can read at a glance
-        self.assertIn("admin", params["summary"])
-        self.assertIn("project:create", params["summary"])
-        self.assertIn("name=Demo", params["summary"])
+        c.write_event(actor="admin", action="create", resource_type="project",
+                      resource_id="p-9", metadata={"name": "Demo"})
+        summary = m.sqlExec.call_args_list[-1].kwargs["params"]["summary"]
+        self.assertIn("admin", summary)
+        self.assertIn("create", summary)
+        self.assertIn("project", summary)
+        self.assertIn("p-9", summary)
+        self.assertIn("name=Demo", summary)

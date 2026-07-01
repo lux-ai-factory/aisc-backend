@@ -1,19 +1,17 @@
 """
 The AuditClerk — the ONE writer to the immudb tamper-proof audit ledger.
 
-Design (see personal-docs/immudb-integration/): every app's "who did what, where, with what consequence"
-is recorded immutably in immudb. The backend is the single writer; other apps reach it via the /audit
-endpoint, and the backend's own code calls write_event() directly. This module is that single writer.
+Every app's action ("who did what to which resource, when, from where, with what outcome") is recorded
+immutably in immudb. The backend is the single writer; other apps reach it via the /audit endpoint, and
+the backend's own code calls write_event() directly.
 
-Three jobs:
-  1. connect()      — open an immudb client + log in (once).
-  2. provision      — ensure the audit database exists (idempotent) + CREATE TABLE IF NOT EXISTS.
-  3. write_event()  — INSERT one audit row (parameterized).
+Schema follows standard audit-log practice (queryable fields, not one opaque string):
+  occurred_at, actor, action, resource_type, resource_id, source_app, source_ip, outcome, metadata, summary
+so an auditor can query "all deletes" or "everything done to project X" — plus source_ip for "where from".
 
-immudb-py API facts verified against the installed SDK (1.5.0):
-  - ImmudbClient("host:port"); login(user, pwd); databaseList(); createDatabase(b"name");
-    useDatabase(b"name"); sqlExec(stmt, params={}); SQL params use @name.
-  - DB names are BYTES. createDatabase is NOT idempotent (raises if exists) -> we check databaseList first.
+immudb-py API facts (SDK 1.5.0): ImmudbClient("host:port"); login(user,pwd); databaseList();
+createDatabase(b"name") (bytes, NOT idempotent -> guard on databaseList); useDatabase(b"name");
+sqlExec(stmt, params={}) with @name params.
 """
 from __future__ import annotations
 
@@ -27,39 +25,49 @@ from immudb import ImmudbClient
 
 logger = logging.getLogger(__name__)
 
-# The audit table. CREATE TABLE IF NOT EXISTS is idempotent (safe every startup).
-# Columns avoid SQL reserved words: `app` (not "where"), `occurred_at` (not "when").
+# The audit table (standard audit-log columns). CREATE TABLE IF NOT EXISTS is idempotent.
+# VARCHAR needs a max length in immudb; metadata + summary are unbounded VARCHAR.
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS audit_log (
-    id           INTEGER AUTO_INCREMENT,
-    who          VARCHAR[256],
-    what         VARCHAR[128],
-    app          VARCHAR[32],
-    occurred_at  TIMESTAMP,
-    consequence  VARCHAR,
-    status       VARCHAR[16],
-    summary      VARCHAR,
+    id             INTEGER AUTO_INCREMENT,
+    occurred_at    TIMESTAMP,
+    actor          VARCHAR[256],
+    action         VARCHAR[64],
+    resource_type  VARCHAR[64],
+    resource_id    VARCHAR[256],
+    source_app     VARCHAR[32],
+    source_ip      VARCHAR[64],
+    outcome        VARCHAR[16],
+    metadata       VARCHAR,
+    summary        VARCHAR,
     PRIMARY KEY (id)
 );
 """
 
-# For tables created before `summary` existed: add the column (idempotent — guarded in connect()).
-_ADD_SUMMARY = "ALTER TABLE audit_log ADD COLUMN summary VARCHAR;"
+_COLUMNS = [
+    "id", "occurred_at", "actor", "action", "resource_type", "resource_id",
+    "source_app", "source_ip", "outcome", "metadata", "summary",
+]
 
 _INSERT = (
-    "INSERT INTO audit_log (who, what, app, occurred_at, consequence, status, summary) "
-    "VALUES (@who, @what, @app, @occurred_at, @consequence, @status, @summary);"
+    "INSERT INTO audit_log "
+    "(occurred_at, actor, action, resource_type, resource_id, source_app, source_ip, outcome, metadata, summary) "
+    "VALUES (@occurred_at, @actor, @action, @resource_type, @resource_id, @source_app, @source_ip, @outcome, @metadata, @summary);"
 )
 
 
-def _build_summary(who: str, what: str, app: str, consequence: dict, status: str) -> str:
+def _build_summary(actor: str, action: str, resource_type: str, resource_id: str | None,
+                   source_app: str, source_ip: str | None, outcome: str, metadata: dict) -> str:
     """A plain-English one-liner so the raw ledger row is readable at a glance (no JSON decoding)."""
-    detail = ", ".join(f"{k}={v}" for k, v in (consequence or {}).items())
-    line = f"{who} performed '{what}' in {app}"
+    target = resource_type + (f" {resource_id}" if resource_id else "")
+    line = f"{actor} {action} {target} via {source_app}"
+    if source_ip:
+        line += f" from {source_ip}"
+    detail = ", ".join(f"{k}={v}" for k, v in (metadata or {}).items())
     if detail:
         line += f" ({detail})"
-    if status != "ok":
-        line += f" [{status}]"
+    if outcome != "ok":
+        line += f" [{outcome}]"
     return line
 
 
@@ -82,7 +90,6 @@ class AuditClerk:
 
             db = settings.IMMUDB_DATABASE
             db_bytes = db.encode()
-            # createDatabase has no "IF NOT EXISTS" and raises if it exists -> create only if missing.
             existing = [d.decode() if isinstance(d, bytes) else d for d in client.databaseList()]
             if db not in existing:
                 client.createDatabase(db_bytes)
@@ -90,61 +97,62 @@ class AuditClerk:
             client.useDatabase(db_bytes)
 
             client.sqlExec(_CREATE_TABLE)  # idempotent (IF NOT EXISTS)
-            # Add `summary` to tables created before it existed. immudb has no "ADD COLUMN IF NOT EXISTS",
-            # so attempt it and ignore the error if the column is already there (idempotent).
-            try:
-                client.sqlExec(_ADD_SUMMARY)
-                logger.info("immudb: added summary column to audit_log")
-            except Exception:  # noqa: BLE001 - column already exists on an up-to-date table
-                pass
             self._client = client
             logger.info("immudb audit clerk ready (db=%r)", db)
 
     def write_event(
         self,
-        who: str,
-        what: str,
-        app: str,
-        consequence: dict | None = None,
-        status: str = "ok",
+        actor: str,
+        action: str,
+        resource_type: str,
+        resource_id: str | None = None,
+        source_app: str = "backend",
+        source_ip: str | None = None,
+        outcome: str = "ok",
+        metadata: dict | None = None,
     ) -> None:
         """
-        Append one immutable audit event.
-          who         - the acting user (from the verified Keycloak token; never user-supplied free text)
-          what        - "object:verb", e.g. "project:delete"
-          app         - which app: backend | webapp | controls | qualification
-          consequence - dict of what actually changed (stored as JSON)
-          status      - "ok" | "failed"
+        Append one immutable audit event (standard audit fields).
+          actor         - WHO: the acting user (from the verified token; never user-supplied free text)
+          action        - WHAT: the verb, e.g. create | update | delete | run | upload
+          resource_type - the object type acted on, e.g. project | dataset | evaluation | checklist
+          resource_id   - WHICH object (id/pid), optional
+          source_app    - WHERE: backend | webapp | controls | qualification
+          source_ip     - WHERE FROM: the client IP (best-effort)
+          outcome       - ok | failed
+          metadata      - WHY/details: dict of what actually changed (stored as JSON)
         """
         self.connect()
         assert self._client is not None
-        consequence = consequence or {}
+        metadata = metadata or {}
         self._client.sqlExec(
             _INSERT,
             params={
-                "who": who,
-                "what": what,
-                "app": app,
                 "occurred_at": datetime.now(timezone.utc),
-                "consequence": json.dumps(consequence),
-                "status": status,
-                # a readable one-liner stored IN the immutable row (auditor reads it at a glance)
-                "summary": _build_summary(who, what, app, consequence, status),
+                "actor": actor,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "source_app": source_app,
+                "source_ip": source_ip,
+                "outcome": outcome,
+                "metadata": json.dumps(metadata),
+                "summary": _build_summary(actor, action, resource_type, resource_id,
+                                          source_app, source_ip, outcome, metadata),
             },
         )
-
 
     def list_events(self, limit: int = 100) -> list[dict]:
         """Read recent audit events (newest first). ADMIN-only use (gated at the endpoint)."""
         self.connect()
         assert self._client is not None
         rows = self._client.sqlQuery(
-            "SELECT id, who, what, app, occurred_at, consequence, status, summary FROM audit_log;"
+            "SELECT id, occurred_at, actor, action, resource_type, resource_id, "
+            "source_app, source_ip, outcome, metadata, summary FROM audit_log;"
         )
-        cols = ["id", "who", "what", "app", "occurred_at", "consequence", "status", "summary"]
         events = []
         for r in rows:
-            e = dict(zip(cols, r))
+            e = dict(zip(_COLUMNS, r))
             ts = e.get("occurred_at")
             e["occurred_at"] = ts.isoformat() if hasattr(ts, "isoformat") else ts  # JSON-friendly
             events.append(e)

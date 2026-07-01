@@ -1,56 +1,62 @@
 # Audit events — what we log & where it lands
 
 All audit events from every app are stored immutably (tamper-proof) in **immudb**, in the **`audit_log`** table.
+The schema follows standard audit-log practice: fields are **queryable** (query "all deletes" or
+"everything done to project X"), not one opaque string.
 
 ## The `audit_log` table (immudb SQL)
-| column | meaning |
-|---|---|
-| `id` | auto-increment |
-| `who` | the acting user (from the verified Keycloak token; `eval-worker`/`unknown` for system calls) |
-| `what` | the action, `object:verb` (e.g. `evaluation:run`) |
-| `app` | where it came from: `backend` · `webapp` · `controls` · `qualification` |
-| `occurred_at` | timestamp (UTC) |
-| `consequence` | JSON: what actually changed |
-| `status` | `ok` / `failed` |
-| `summary` | human-readable one-liner of the event |
+| column | the "W" | meaning |
+|---|---|---|
+| `id` | — | auto-increment |
+| `occurred_at` | **WHEN** | UTC timestamp |
+| `actor` | **WHO** | acting user (from the verified Keycloak token; `unknown` for system/anonymous) |
+| `action` | **WHAT** | the verb: `create` · `update` · `delete` · `run` · `upload` · `answer` · … |
+| `resource_type` | **on WHAT** | object type: `project` · `dataset` · `evaluation` · `plugin` · `checklist` · … |
+| `resource_id` | which one | the object's id/pid (nullable) |
+| `source_app` | **WHERE** | `backend` · `webapp` · `controls` · `qualification` |
+| `source_ip` | **WHERE FROM** | client IP (honours `X-Forwarded-For`) |
+| `outcome` | result | `ok` / `failed` |
+| `metadata` | **WHY / details** | JSON: what actually changed |
+| `summary` | — | human-readable one-liner (deterministic, no LLM) |
 
 How it gets there: the **backend is the single writer**. The webapp's actions are logged by the backend
 directly; **controls** and **qualification** POST their events to `POST /api/v1/audit` (forwarding the
-user's token — the server sets `what`, so it can't be forged). Reading/verifying the log is admin-only
-(`GET /api/v1/audit`, requires the `admin` role).
+user's token — the server sets `actor` + `source_ip`, so they can't be forged). Reading/verifying the log
+is admin-only (`GET /api/v1/audit`, requires the `admin` role).
 
-## Events
+## Events  (`action` on `resource_type`)
 
 ### webapp → backend
-| what | when |
+| action · resource_type | when |
 |---|---|
-| `project:create` / `project:update` | create / rename a project |
-| `dataset:create` / `dataset:upload` | add a dataset / upload its file |
-| `model:create` / `model:upload` | register a model / upload its file |
-| `plugin:install` / `plugin:disable` / `plugin:toggle` / `plugin:config` | manage project plugins |
-| `evaluation:run` | start an evaluation |
+| `create`/`update` · project | create / rename a project |
+| `create`/`upload` · dataset | add a dataset / upload its file |
+| `create`/`upload` · model | register a model / upload its file |
+| `install`/`disable`/`toggle`/`configure` · plugin | manage project plugins |
+| `run` · evaluation | start an evaluation |
 
 ### system (eval-worker) → backend — evaluation lifecycle
-| what | when |
+| action · resource_type | when |
 |---|---|
-| `evaluation:status` | evaluation status changes |
-| `evaluation:plugin_failed` | a plugin run failed |
-| `evaluation:artifact` | an artifact was produced |
-| `evaluation:measures` | measurements recorded |
+| `status_change` · evaluation | evaluation status changes |
+| `plugin_failed` · evaluation | a plugin run failed (outcome=failed) |
+| `upload_artifact` · evaluation | an artifact was produced |
+| `record_measures` · evaluation | measurements recorded |
 
 ### controls
-| what | when |
+| action · resource_type | when |
 |---|---|
-| `checklist:answer` | submit a filled checklist |
-| `checklist:review` | save a reviewed checklist |
-| `source:create` | add a source/authority |
-| `submission:save_draft` / `submission:close` | save / close a submission draft |
-| `submission:reopen` / `:archive` / `:restore` | (planned — triggered from a server component; needs token-forwarding before they can attribute "who") |
+| `answer` · checklist | submit a filled checklist |
+| `review` · checklist | save a reviewed checklist |
+| `create` · source | add a source/authority |
+| `save_draft`/`close` · submission | save / close a submission draft |
+| `reopen`/`archive`/`restore` · submission | (planned — server-component-triggered; needs token-forwarding to attribute the actor) |
 
 ### qualification
-| what | when |
+| action · resource_type | when |
 |---|---|
-| `qualification:create` | qualify an AI system |
-| `systemcard:generate` | generate its system card |
+| `create` · qualification | qualify an AI system |
+| `generate` · systemcard | generate its system card |
 
-> `what` is always server-decided (never from the request body); `who` comes from the verified token.
+> `action` + `resource_type` are always server-decided (never from the request body); `actor` + `source_ip`
+> come from the verified request.

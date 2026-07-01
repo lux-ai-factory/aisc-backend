@@ -141,9 +141,9 @@ async def create_plugins(request, data: CreatePluginsRequest):
         created_plugins.append(project_plugin)
 
     await sync_to_async(log_action)(
-        request, "plugin:install",
-        {"package": data.package_name, "version": data.version, "projectPid": str(data.project_uuid),
-         "plugins": [p.name for p in created_plugins]})
+        request, action="install", resource_type="plugin", resource_id=data.package_name,
+        metadata={"version": data.version, "projectPid": str(data.project_uuid),
+                  "plugins": [p.name for p in created_plugins]})
     return created_plugins
 
 class DeletePluginsRequest(Schema):
@@ -169,8 +169,8 @@ async def delete_plugin(request, data: DeletePluginsRequest):
             plugin.enabled = False
             await sync_to_async(plugin.save)()
     await sync_to_async(log_action)(
-        request, "plugin:disable",
-        {"package": data.package_name, "version": data.version, "projectPid": str(data.project_uuid)})
+        request, action="disable", resource_type="plugin", resource_id=data.package_name,
+        metadata={"version": data.version, "projectPid": str(data.project_uuid)})
     return 204, None
 
 
@@ -185,7 +185,8 @@ async def update_plugin_enabled(
     plugin.enabled = data.enabled
     await plugin_repository.save(plugin)
     await sync_to_async(log_action)(
-        request, "plugin:toggle", {"pluginPid": str(plugin_pid), "enabled": data.enabled})
+        request, action="toggle", resource_type="plugin",
+        resource_id=str(plugin_pid), metadata={"enabled": data.enabled})
     return plugin
 
 
@@ -242,7 +243,8 @@ async def update_plugin_config_state(
     )
 
     await sync_to_async(log_action)(
-        request, "plugin:config", {"pluginPid": str(plugin_pid), "configId": plugin_config.id})
+        request, action="configure", resource_type="plugin",
+        resource_id=str(plugin_pid), metadata={"configId": plugin_config.id})
     return response
 
 

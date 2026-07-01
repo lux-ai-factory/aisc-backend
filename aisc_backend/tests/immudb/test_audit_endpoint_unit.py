@@ -4,7 +4,7 @@ UNIT tests for the /audit endpoint (aisc_backend.routers.audit) — NO live serv
 ninja TestClient(audit_router) with clerk.write_event mocked. AUTH_ENABLED is False in tests (dev bypass),
 but ninja's HttpBearer still requires an Authorization header to be PRESENT (it 401s on a missing header
 before the bypass runs) — real callers always forward the user's token, so we send a dummy bearer here.
-With AUTH_ENABLED False the token isn't verified and request.auth becomes True -> "who" = "unknown".
+With AUTH_ENABLED False the token isn't verified and request.auth becomes True -> actor = "unknown".
 
 We assert the BODY maps to the clerk call and that identity is NEVER taken from the body.
 
@@ -34,35 +34,40 @@ class AuditEndpointUnitTest(SimpleTestCase):
 
     def test_post_audit_delegates_body_to_clerk(self):
         resp = self.client.post("", json={
-            "what": "checklist:answer", "app": "controls",
-            "consequence": {"submission": 45, "q": "Q3"}, "status": "ok",
+            "action": "answer", "resource_type": "checklist", "resource_id": "chk-3",
+            "source_app": "controls", "metadata": {"submission": 45, "q": "Q3"}, "outcome": "ok",
         }, headers=AUTH)
         self.assertEqual(resp.status_code, 200)
         self.mock_clerk.write_event.assert_called_once()
         kw = self.mock_clerk.write_event.call_args.kwargs
-        self.assertEqual(kw["what"], "checklist:answer")
-        self.assertEqual(kw["app"], "controls")
-        self.assertEqual(kw["consequence"], {"submission": 45, "q": "Q3"})
-        self.assertEqual(kw["status"], "ok")
+        self.assertEqual(kw["action"], "answer")
+        self.assertEqual(kw["resource_type"], "checklist")
+        self.assertEqual(kw["resource_id"], "chk-3")
+        self.assertEqual(kw["source_app"], "controls")
+        self.assertEqual(kw["metadata"], {"submission": 45, "q": "Q3"})
+        self.assertEqual(kw["outcome"], "ok")
 
-    def test_who_is_not_taken_from_body(self):
-        self.client.post("", json={"what": "x:y", "app": "controls", "who": "hacker"}, headers=AUTH)
+    def test_actor_is_not_taken_from_body(self):
+        self.client.post("", json={"action": "x", "resource_type": "y", "source_app": "controls",
+                                   "actor": "hacker"}, headers=AUTH)
         kw = self.mock_clerk.write_event.call_args.kwargs
-        self.assertNotEqual(kw["who"], "hacker")   # never trusts the body's "who"
+        self.assertNotEqual(kw["actor"], "hacker")   # never trusts the body's actor
 
-    def test_schema_has_no_who_field(self):
-        self.assertNotIn("who", AuditEventIn.model_fields)   # input contract excludes "who" by design
+    def test_schema_has_no_actor_field(self):
+        self.assertNotIn("actor", AuditEventIn.model_fields)     # input contract excludes actor by design
+        self.assertNotIn("source_ip", AuditEventIn.model_fields) # nor source_ip — server-derived
 
-    def test_consequence_and_status_default(self):
-        resp = self.client.post("", json={"what": "auth:login", "app": "qualification"}, headers=AUTH)
+    def test_metadata_and_outcome_default(self):
+        resp = self.client.post("", json={"action": "generate", "resource_type": "systemcard",
+                                          "source_app": "qualification"}, headers=AUTH)
         self.assertEqual(resp.status_code, 200)
         kw = self.mock_clerk.write_event.call_args.kwargs
-        self.assertEqual(kw["consequence"], {})
-        self.assertEqual(kw["status"], "ok")
+        self.assertEqual(kw["metadata"], {})
+        self.assertEqual(kw["outcome"], "ok")
 
     def test_missing_token_is_rejected(self):
         # No Authorization header at all -> ninja HttpBearer 401s (the door still needs a token presented).
-        resp = self.client.post("", json={"what": "x:y", "app": "controls"})
+        resp = self.client.post("", json={"action": "x", "resource_type": "y", "source_app": "controls"})
         self.assertEqual(resp.status_code, 401)
 
     def test_get_audit_returns_verify_and_events(self):

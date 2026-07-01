@@ -41,7 +41,8 @@ async def create_project(request, data: ProjectInSchema):
     project = await project_repository.create(data.name)
     # AUDIT: who created which project (best-effort; never breaks the create)
     await sync_to_async(log_action)(
-        request, "project:create", {"pid": str(project.pid), "name": project.name})
+        request, action="create", resource_type="project",
+        resource_id=str(project.pid), metadata={"name": project.name})
     return project
 
 
@@ -51,7 +52,8 @@ async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
     updated = await project_repository.patch(project, data)
     # AUDIT: who renamed which project, and to what
     await sync_to_async(log_action)(
-        request, "project:update", {"pid": str(pid), "name": data.name})
+        request, action="update", resource_type="project",
+        resource_id=str(pid), metadata={"name": data.name})
     return updated
 
 
@@ -84,8 +86,9 @@ async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema)
 
     # AUDIT: who added which dataset to which project (webapp action; best-effort)
     await sync_to_async(log_action)(
-        request, "dataset:create",
-        {"projectPid": str(pid), "datasetPid": str(getattr(dataset, "pid", "")), "name": getattr(dataset, "name", None)})
+        request, action="create", resource_type="dataset",
+        resource_id=str(getattr(dataset, "pid", "")),
+        metadata={"projectPid": str(pid), "name": getattr(dataset, "name", None)})
     return dataset
 
 
@@ -102,8 +105,9 @@ async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
     saved = await model_repository.save(model)
     # AUDIT: who registered which model under which project (webapp action; best-effort)
     await sync_to_async(log_action)(
-        request, "model:create",
-        {"projectPid": str(pid), "modelPid": str(getattr(saved, "pid", "")), "name": getattr(saved, "name", None)})
+        request, action="create", resource_type="model",
+        resource_id=str(getattr(saved, "pid", "")),
+        metadata={"projectPid": str(pid), "name": getattr(saved, "name", None)})
     return saved
 
 
