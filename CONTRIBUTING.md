@@ -1,109 +1,31 @@
-# Simplified Gitflow Guide
+# Contributing to AISC
 
-This document describes the current simplified branching strategy for all `AISC` projects.
+Thank you for your interest in contributing to the AISC project!
 
-> This guide is intentionally lightweight and subject to change as the project and deployment process evolve.
+We welcome contributions from the community, including bug reports, documentation improvements, feature suggestions, and code contributions.
 
-## Goals
+## Contributor License Agreement (CLA)
 
-The current branching strategy is designed to support:
+By submitting a contribution, you confirm that:
 
-- easier day-to-day development
-- clearer organization of work
-- a simple and predictable merge process
+- You are the original author of your contribution, or you have the right to submit it.
+- You license your contribution under the terms of the [Apache License 2.0](LICENSE).
+- You agree to the Contributor License Agreement (CLA).
 
-Because there is **no long-lived deployment environment yet**, this workflow focuses more on developer ease than on release complexity.
+You do not need to sign the CLA separately — by submitting a pull request, issue, or other form of contribution, you implicitly agree to the terms.
 
-## Main Branches
+## How to Contribute
 
-### `main` / `master`
+1. Fork the repository and create your branch from `main`.
+2. Follow our coding guidelines and documentation standards.
+3. Include appropriate tests and documentation with your pull request.
+4. Submit a pull request with a clear description of your changes.
 
-- This branch is **protected**
-- It should always be in a **deployable state**
-- Releases from this branch should be **tagged** with a sematic version number
-- Only code that is ready for release should be merged here
+We may request changes or ask questions before merging your contribution.
+We reserve the right to reject a pull request for any reason.
 
-> Note: The repository may use either `main` or `master`. The protected primary branch should follow these rules.
+## Maintainers
 
-### `dev` / `develop`
+The AISC project is co-developed and co-maintained by the **Université du Luxembourg** and the **Luxembourg Institute of Science and Technology (LIST)**, within the **Interdisciplinary Centre for Security, Reliability and Trust (SnT)** and the **SerVal Research Group**. This initiative is funded under the [Luxembourg AI Factory](https://aifactory.lu/) (Horizon Europe grant agreement n° 101234366).
 
-- This branch is **protected**
-- It acts as the main integration branch for ongoing work
-- **Feature** and **fix** branches should be merged into this branch
-- When the team is ready for a release, `dev` / `develop` is merged into `main` / `master`
-
-## Short-Lived Branches
-
-### Feature branches
-
-Feature branches should:
-
-- be created from `dev` / `develop`
-- contain work for new functionality
-- be merged back into `dev` / `develop` through a pull request
-
-### Fix branches
-
-Fix branches should:
-
-- be created from `dev` / `develop`
-- contain bug fixes or small corrections
-- be merged back into `dev` / `develop` through a pull request
-
-## Branch Naming
-
-There is currently **no strict naming convention** for feature or fix branches.
-
-That said, branch names should still be reasonably clear and descriptive. For example:
-
-- `feature/user-import`
-- `fix/login-timeout`
-- `feature/add-audit-logging`
-
-A stricter naming standard may be introduced later.
-
-## Pull Requests
-
-All feature and fix branches should be merged into `dev` / `develop` using a pull request.
-
-At a minimum, pull requests should aim to:
-
-- keep changes focused
-- be understandable to reviewers
-- avoid merging incomplete or broken work
-
-Additional PR requirements may be defined later.
-
-## Releases
-
-When the code in `dev` / `develop` is considered ready:
-
-1. Merge `dev` / `develop` into `main` / `master`
-2. Tag the release on `main` / `master`
-
-This keeps the primary branch stable and release-oriented.
-
-## Automation / Actions
-
-There will likely be GitHub Actions or other automated steps at various points in this workflow, such as:
-
-- pull request validation
-- test execution
-- linting or quality checks
-- release-related actions
-
-These are **not fully defined yet** and will be documented once agreed.
-
-## Summary
-
-In short:
-
-- `main` / `master` is protected, tagged, and always deployable
-- `dev` / `develop` is protected and used for integrating ongoing work
-- feature and fix branches start from `dev` / `develop`
-- feature and fix branches merge back into `dev` / `develop` via pull request
-- releases happen by merging `dev` / `develop` into `main` / `master`
-
-## Future Changes
-
-This guide is a starting point and is expected to evolve as the project matures, especially once deployment workflows and automation are better defined.
+Thank you for contributing to the AISC project!
