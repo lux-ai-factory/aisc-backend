@@ -13,7 +13,7 @@ class DatasetPidOutSchema(ModelSchema):
 class DatasetOutSchema(ModelSchema):
     class Meta:
         model = Dataset
-        fields = ["pid", "name", "data"]
+        fields = ["pid", "name", "data", "file_size"]
 
 class DatasetInSchema(ModelSchema):
     class Meta:
