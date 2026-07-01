@@ -6,10 +6,13 @@ from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
+from asgiref.sync import sync_to_async
+
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.model import Model
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository
+from aisc_backend.audit.log import log_action
 
 router = Router(tags=["model"])
 
@@ -39,6 +42,9 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
     model.data = file.name
     await model_repository.save(model)
 
+    await sync_to_async(log_action)(
+        request, action="upload", resource_type="model",
+        resource_id=str(model_pid), metadata={"filename": file.name})
     return UploadModelFileResponse(file_name=file.name)
 
 

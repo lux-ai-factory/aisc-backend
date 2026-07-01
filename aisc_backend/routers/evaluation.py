@@ -35,6 +35,7 @@ from aisc_backend.schemas.measure import MeasureInSchema, MeasurementAggregation
     DimensionKeysRequest, DimensionValuesRequest, MetricNamesRequest
 from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
+from aisc_backend.audit.log import log_action
 from aisc_plugin_interface import InputType
 
 router = Router(tags=["evaluation"])
@@ -125,6 +126,11 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     evaluation.task = evaluation_plugins_task.task_id
     await evaluation_repository.save(evaluation)
 
+    # AUDIT: who ran which evaluation, on which project, with which plugins (the core webapp action)
+    await sync_to_async(log_action)(
+        request, action="run", resource_type="evaluation", resource_id=str(evaluation.pid),
+        metadata={"projectPid": str(data.project_pid),
+                  "plugins": [p.name for p in data.plugins_to_run]})
     return evaluation
 
 
@@ -150,11 +156,17 @@ async def update_evaluation_status(
         if has_failed_plugins:
             evaluation.status = EvaluationStatus.Failed
             await evaluation_repository.save(evaluation)
+            await sync_to_async(log_action)(
+                request, action="status_change", resource_type="evaluation",
+                resource_id=str(evaluation_pid), metadata={"status": str(evaluation.status)})
             return evaluation.status
 
     evaluation.status = status
     await evaluation_repository.save(evaluation)
 
+    await sync_to_async(log_action)(
+        request, action="status_change", resource_type="evaluation",
+        resource_id=str(evaluation_pid), metadata={"status": str(evaluation.status)})
     return evaluation.status
 
 
@@ -228,6 +240,9 @@ async def mark_plugin_failed(
     evaluation.status = EvaluationStatus.Failed
     await evaluation_repository.save(evaluation)
 
+    await sync_to_async(log_action)(
+        request, action="plugin_failed", resource_type="evaluation", resource_id=str(evaluation_pid),
+        outcome="failed", metadata={"pluginPid": str(evaluation_plugin_pid)})
     return "ok"
 
 
@@ -277,6 +292,9 @@ async def create_evaluation_measures(
         if measurement_objs:
             await Measurement.objects.abulk_create(measurement_objs)
 
+    await sync_to_async(log_action)(
+        request, action="record_measures", resource_type="evaluation",
+        resource_id=str(evaluation_pid), metadata={"plugins": len(data)})
     return Schema()
 
 
@@ -317,6 +335,9 @@ async def upload_evaluation_artifact(
     )
     await artifact.asave()
 
+    await sync_to_async(log_action)(
+        request, action="upload_artifact", resource_type="evaluation",
+        resource_id=str(evaluation_pid), metadata={"artifact": original_filename})
     return UploadArtifactResponse(file_name=file.name)
 
 

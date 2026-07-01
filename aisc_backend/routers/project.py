@@ -1,8 +1,11 @@
 import uuid
 from typing import Any
 
+from asgiref.sync import sync_to_async
 from ninja import Router, Schema, Query
 from ninja.errors import HttpError
+
+from aisc_backend.audit.log import log_action
 
 from aisc_backend.models import EvaluationStatus, Dataset
 from aisc_backend.models.common import StorageContainer
@@ -35,13 +38,23 @@ measurement_repository = MeasurementRepository()
 
 @router.post("", response=ProjectOutSchema)
 async def create_project(request, data: ProjectInSchema):
-    return await project_repository.create(data.name)
+    project = await project_repository.create(data.name)
+    # AUDIT: who created which project (best-effort; never breaks the create)
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="project",
+        resource_id=str(project.pid), metadata={"name": project.name})
+    return project
 
 
 @router.patch("/{pid}", response=ProjectOutSchema)
 async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
     project = await project_repository.get(pid)
-    return await project_repository.patch(project, data)
+    updated = await project_repository.patch(project, data)
+    # AUDIT: who renamed which project, and to what
+    await sync_to_async(log_action)(
+        request, action="update", resource_type="project",
+        resource_id=str(pid), metadata={"name": data.name})
+    return updated
 
 
 @router.get("", response=list[ProjectOutSchema])
@@ -71,6 +84,11 @@ async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema)
         )
     )
 
+    # AUDIT: who added which dataset to which project (webapp action; best-effort)
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="dataset",
+        resource_id=str(getattr(dataset, "pid", "")),
+        metadata={"projectPid": str(pid), "name": getattr(dataset, "name", None)})
     return dataset
 
 
@@ -84,7 +102,13 @@ async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
         public=True,
         storage_container=StorageContainer.Models,
     )
-    return await model_repository.save(model)
+    saved = await model_repository.save(model)
+    # AUDIT: who registered which model under which project (webapp action; best-effort)
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="model",
+        resource_id=str(getattr(saved, "pid", "")),
+        metadata={"projectPid": str(pid), "name": getattr(saved, "name", None)})
+    return saved
 
 
 
