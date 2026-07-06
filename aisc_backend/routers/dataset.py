@@ -23,6 +23,7 @@ project_repository = ProjectRepository()
 
 class UploadDatasetFileResponse(Schema):
     file_name: str
+    file_size: int
 
 
 @router.put("/{dataset_pid}/data", response=UploadDatasetFileResponse)
@@ -43,12 +44,13 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
         raise HttpError(500, "Failed to upload file")
 
     dataset.data = file.name
+    dataset.file_size = file.size
     await dataset_repository.save(dataset)
 
     await sync_to_async(log_action)(
         request, action="upload", resource_type="dataset",
-        resource_id=str(dataset_pid), metadata={"filename": file.name})
-    return UploadDatasetFileResponse(file_name=file.name)
+        resource_id=str(dataset_pid), metadata={"filename": file.name, "filesize": file.size})
+    return UploadDatasetFileResponse(file_name=file.name, file_size=file.size)
 
 
 @router.get("/{dataset_pid}/data")

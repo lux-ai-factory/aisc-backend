@@ -21,6 +21,7 @@ model_repository = BaseRepository(model=Model)
 
 class UploadModelFileResponse(Schema):
     file_name: str
+    file_size: int
 
 @router.put("/{model_pid}/data", response=UploadModelFileResponse)
 async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFile]):
@@ -40,12 +41,13 @@ async def upload_model_file(request, model_pid: uuid.UUID, file: File[UploadedFi
         raise HttpError(500, "Failed to upload file")
 
     model.data = file.name
+    model.file_size = file.size
     await model_repository.save(model)
 
     await sync_to_async(log_action)(
         request, action="upload", resource_type="model",
-        resource_id=str(model_pid), metadata={"filename": file.name})
-    return UploadModelFileResponse(file_name=file.name)
+        resource_id=str(model_pid), metadata={"filename": file.name, "filesize": file.size})
+    return UploadModelFileResponse(file_name=file.name, file_size=file.size)
 
 
 @router.get("/{model_pid}/data")

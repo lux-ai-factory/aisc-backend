@@ -123,9 +123,6 @@ async def create_plugins(request, data: CreatePluginsRequest):
         )()
 
         if existing is not None:
-            if not existing.enabled:
-                existing.enabled = True
-                await sync_to_async(existing.save)()
             project_plugin = existing
         else:
             project_plugin = Plugin(
@@ -140,11 +137,61 @@ async def create_plugins(request, data: CreatePluginsRequest):
 
         created_plugins.append(project_plugin)
 
+    if created_plugins and all(not p.enabled for p in created_plugins):
+        for p in created_plugins:
+            p.enabled = True
+            await sync_to_async(p.save)()
+
     await sync_to_async(log_action)(
         request, action="install", resource_type="plugin", resource_id=data.package_name,
         metadata={"version": data.version, "projectPid": str(data.project_uuid),
                   "plugins": [p.name for p in created_plugins]})
+
     return created_plugins
+
+
+class RefreshPluginRequest(Schema):
+    package_name: str
+    version: str
+    project_uuid: uuid.UUID
+
+
+@router.post("/refresh", response=list[PluginOutSchema])
+async def refresh_plugins(request, data: RefreshPluginRequest):
+    from asgiref.sync import sync_to_async
+
+    plugins_package_dict = plugin_loader.refresh_package(data.package_name, data.version)
+
+    project = await project_repository.get(data.project_uuid, True)
+
+    existing = await plugin_repository.filter(
+        package_name=data.package_name,
+        version=data.version,
+        project__pid=data.project_uuid,
+    )
+    existing_by_name = {p.name: p for p in existing}
+
+    result = []
+    for plugin_name, plugin_obj in plugins_package_dict.items():
+        if plugin_name in existing_by_name:
+            project_plugin = existing_by_name[plugin_name]
+            project_plugin.display_name = plugin_obj.display_name
+            await sync_to_async(project_plugin.save)()
+        else:
+            project_plugin = Plugin(
+                name=plugin_name,
+                display_name=plugin_obj.display_name,
+                package_name=data.package_name,
+                version=data.version,
+                project=project,
+                enabled=True,
+            )
+            project_plugin = await plugin_repository.create(project_plugin)
+
+        result.append(project_plugin)
+
+    return result
+
 
 class DeletePluginsRequest(Schema):
     package_name: str

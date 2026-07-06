@@ -20,6 +20,7 @@ class Base(models.Model):
 
 class HasData(Base):
     data = models.CharField(max_length=255)
+    file_size = models.BigIntegerField(null=True, blank=True)
     storage_container = models.CharField(default=StorageContainer.Datasets, max_length=255, choices=StorageContainer.choices)
 
     class Meta:

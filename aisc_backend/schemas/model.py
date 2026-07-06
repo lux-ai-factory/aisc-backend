@@ -11,7 +11,7 @@ class ModelPidOutSchema(ModelSchema):
 class ModelOutSchema(ModelSchema):
     class Meta:
         model = Model
-        fields = ["pid", "name", "data"]
+        fields = ["pid", "name", "data", "file_size"]
 
 class ModelInSchema(ModelSchema):
     class Meta:
