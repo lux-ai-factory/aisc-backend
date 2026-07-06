@@ -121,9 +121,6 @@ async def create_plugins(request, data: CreatePluginsRequest):
         )()
 
         if existing is not None:
-            if not existing.enabled:
-                existing.enabled = True
-                await sync_to_async(existing.save)()
             project_plugin = existing
         else:
             project_plugin = Plugin(
@@ -137,6 +134,11 @@ async def create_plugins(request, data: CreatePluginsRequest):
             project_plugin = await plugin_repository.create(project_plugin)
 
         created_plugins.append(project_plugin)
+
+    if created_plugins and all(not p.enabled for p in created_plugins):
+        for p in created_plugins:
+            p.enabled = True
+            await sync_to_async(p.save)()
 
     return created_plugins
 
