@@ -7,6 +7,8 @@ from aisc_backend.models.common import StorageContainer
 from aisc_plugin_interface.models.evaluation_input import InputDefinition
 
 from aisc_backend.repositories.plugin_repository import PluginRepository, EvaluationPluginRepository
+from aisc_backend.audit.log import log_action
+from asgiref.sync import sync_to_async
 from aisc_plugin_manager import Loader
 from aisc_plugin_interface import MetricVisualization
 
@@ -140,6 +142,11 @@ async def create_plugins(request, data: CreatePluginsRequest):
             p.enabled = True
             await sync_to_async(p.save)()
 
+    await sync_to_async(log_action)(
+        request, action="install", resource_type="plugin", resource_id=data.package_name,
+        metadata={"version": data.version, "projectPid": str(data.project_uuid),
+                  "plugins": [p.name for p in created_plugins]})
+
     return created_plugins
 
 
@@ -208,6 +215,9 @@ async def delete_plugin(request, data: DeletePluginsRequest):
         if plugin.enabled:
             plugin.enabled = False
             await sync_to_async(plugin.save)()
+    await sync_to_async(log_action)(
+        request, action="disable", resource_type="plugin", resource_id=data.package_name,
+        metadata={"version": data.version, "projectPid": str(data.project_uuid)})
     return 204, None
 
 
@@ -221,6 +231,9 @@ async def update_plugin_enabled(
     plugin = await plugin_repository.get(plugin_pid)
     plugin.enabled = data.enabled
     await plugin_repository.save(plugin)
+    await sync_to_async(log_action)(
+        request, action="toggle", resource_type="plugin",
+        resource_id=str(plugin_pid), metadata={"enabled": data.enabled})
     return plugin
 
 
@@ -276,6 +289,9 @@ async def update_plugin_config_state(
         uiSchema=ui_schema,
     )
 
+    await sync_to_async(log_action)(
+        request, action="configure", resource_type="plugin",
+        resource_id=str(plugin_pid), metadata={"configId": plugin_config.id})
     return response
 
 

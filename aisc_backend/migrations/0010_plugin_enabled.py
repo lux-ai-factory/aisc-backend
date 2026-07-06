@@ -3,16 +3,36 @@
 from django.db import migrations, models
 
 
-class Migration(migrations.Migration):
+def add_enabled_column_if_not_exists(apps, schema_editor):
+    connection = schema_editor.connection
+    # 1. Query the current structural columns for the plugin table
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA table_info(aisc_backend_plugin);")
+        columns = [row[1] for row in cursor.fetchall()]
 
+    # 2. Only add the column if it was not natively created yet
+    if 'enabled' not in columns:
+        with connection.cursor() as cursor:
+            cursor.execute("ALTER TABLE aisc_backend_plugin ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT TRUE;")
+
+
+def remove_enabled_column_if_exists(apps, schema_editor):
+    connection = schema_editor.connection
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA table_info(aisc_backend_plugin);")
+        columns = [row[1] for row in cursor.fetchall()]
+
+    if 'enabled' in columns:
+        # Note: Dropping columns via ALTER TABLE requires SQLite 3.35.0+
+        with connection.cursor() as cursor:
+            cursor.execute("ALTER TABLE aisc_backend_plugin DROP COLUMN enabled;")
+
+
+class Migration(migrations.Migration):
     dependencies = [
         ('aisc_backend', '0009_alter_measurement_dimensions'),
     ]
 
-    # The `enabled` column was historically added by an orphaned 0008
-    # migration on some environments (the original soft-disable patch).
-    # Use IF NOT EXISTS so a fresh DB and a previously-patched DB both
-    # converge to the same end state without manual intervention.
     operations = [
         migrations.SeparateDatabaseAndState(
             state_operations=[
@@ -23,10 +43,11 @@ class Migration(migrations.Migration):
                 ),
             ],
             database_operations=[
-                migrations.RunSQL(
-                    sql="ALTER TABLE aisc_backend_plugin ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;",
-                    reverse_sql="ALTER TABLE aisc_backend_plugin DROP COLUMN IF EXISTS enabled;",
-                ),
+                # Use RunPython wrappers to safely parse the schema metadata
+                migrations.RunPython(
+                    code=add_enabled_column_if_not_exists,
+                    reverse_code=remove_enabled_column_if_exists,
+                )
             ],
         ),
     ]
