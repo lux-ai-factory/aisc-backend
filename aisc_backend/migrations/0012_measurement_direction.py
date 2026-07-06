@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("aisc_backend", "0010_plugin_enabled"),
+        ("aisc_backend", "0011_artifact_file_size_dataset_file_size_model_file_size"),
     ]
 
     operations = [
