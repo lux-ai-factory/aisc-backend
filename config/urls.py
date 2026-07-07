@@ -31,6 +31,7 @@ from aisc_backend.routers.file import router as file_router
 from aisc_backend.routers.stats import router as stats_router
 from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
+from aisc_backend.routers.internal import router as internal_router
 
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
@@ -60,6 +61,7 @@ v1_router.add_router("/me", me_router)
 v1_router.add_router("/audit", audit_router)
 
 api.add_router("/v1/", v1_router)
+api.add_router("/v1/internal", internal_router)
 
 
 urlpatterns = [

@@ -5,6 +5,8 @@ from botocore.exceptions import ClientError
 import os
 
 from django.core.files import File
+from django.http import StreamingHttpResponse
+from ninja.errors import HttpError
 
 from config.settings import S3_USER, S3_PASSWORD, S3_URL
 
@@ -53,3 +55,15 @@ def get_object(bucket_name: str, object_name: str):
     except ClientError as e:
         logging.error(e)
         return None
+
+async def get_s3_file_stream(bucket_name: str, file_name: str) -> StreamingHttpResponse:
+    try:
+        if not bucket_exists(bucket_name):
+            raise HttpError(500, f"Bucket {bucket_name} not found")
+
+        response = get_object(bucket_name=bucket_name, object_name=file_name)
+        return StreamingHttpResponse(response["Body"])
+    except HttpError:
+        raise
+    except Exception as e:
+        raise HttpError(500, f"Error fetching file from {bucket_name}: {str(e)}")
