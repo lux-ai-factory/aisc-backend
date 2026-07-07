@@ -8,6 +8,7 @@ from ninja import Router, Schema, Form, UploadedFile, File, Path, Body
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
+from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_backend.models import EvaluationStatus, Observation, Metric, Measurement
 from aisc_backend.models.artifact import Artifact
 from aisc_backend.models.common import StorageContainer
@@ -18,7 +19,7 @@ from aisc_backend.repositories.plugin_repository import EvaluationPluginReposito
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
 
-router = Router(tags=["internal"], auth=None)
+router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
 evaluation_repository = EvaluationRepository()
 evaluation_plugin_repository = EvaluationPluginRepository()
