@@ -264,7 +264,6 @@ async def get_plugin_evaluation_results(
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
     plugin = evaluation_plugin.plugin_config.plugin
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
-    metrics = plugin_obj.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
     observation = (
@@ -273,7 +272,7 @@ async def get_plugin_evaluation_results(
         .afirst()
     )
 
-    measurements = await measurement_repository.filter(name__in=metrics, observation=observation)
+    measurements = await measurement_repository.filter(observation=observation)
 
     metric_visualizations = plugin_obj.get_metric_visualizations(
         evaluation_plugin.plugin_config.config
