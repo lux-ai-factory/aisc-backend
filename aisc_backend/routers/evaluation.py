@@ -9,7 +9,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router, Schema, Body, Form, File, UploadedFile
 from ninja.errors import HttpError
 
-from aisc_backend.models import EvaluationPlugin, Dataset, EvaluationPluginInputFile, Measurement
+from aisc_backend.models import EvaluationPlugin, Dataset, EvaluationPluginInputFile, Measurement, PluginConfig
 from aisc_backend.models.artifact import Artifact
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -70,7 +70,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
     # Resolve and validate plugins before writing anything to DB
-    resolved: list[tuple[EvaluationPluginInSchema, object]] = []
+    resolved: list[tuple[EvaluationPluginInSchema, object, dict]] = []
     for plugin_to_run in data.plugins_to_run:
         plugin = next(
             (p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name),
@@ -79,13 +79,32 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
         if plugin:
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
-            resolved.append((plugin_to_run, plugin.current_config))
+
+            # Collect label mappings from dataset inputs
+            dataset_label_mappings = {}
+            if plugin_to_run.inputs:
+                for input_data in plugin_to_run.inputs:
+                    if input_data.input_type == InputType.DATASET:
+                        dataset = await Dataset.objects.aget(pid=input_data.pid)
+                        if dataset.label_mappings:
+                            dataset_label_mappings[str(dataset.pid)] = dataset.label_mappings
+
+            resolved.append((plugin_to_run, plugin, dataset_label_mappings))
 
     evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
-    for plugin_to_run, plugin_config in resolved:
+    for plugin_to_run, plugin, dataset_label_mappings in resolved:
+        # Create merged PluginConfig if dataset label mappings exist
+        plugin_config = plugin.current_config
+        if dataset_label_mappings:
+            merged_config = {**plugin_config.config, "dataset_config": {"label_mappings": dataset_label_mappings}}
+            plugin_config = await PluginConfig.objects.acreate(
+                plugin=plugin,
+                config=merged_config
+            )
+
         run_plugin = EvaluationPlugin(
             plugin_config=plugin_config, evaluation=evaluation
         )

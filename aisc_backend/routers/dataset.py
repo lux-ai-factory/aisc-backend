@@ -11,6 +11,7 @@ from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.dataset_repository import DatasetRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
+from aisc_backend.schemas.dataset import DatasetLabelMappingsUpdateSchema, DatasetOutSchema
 
 router = Router(tags=["dataset"])
 
@@ -43,6 +44,18 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
     await dataset_repository.save(dataset)
 
     return UploadDatasetFileResponse(file_name=file.name)
+
+
+@router.patch("/{dataset_pid}/label-mappings", response=DatasetOutSchema)
+async def update_dataset_label_mappings(request, dataset_pid: uuid.UUID, data: DatasetLabelMappingsUpdateSchema):
+    dataset = await dataset_repository.get(dataset_pid, True)
+    if not dataset:
+        raise HttpError(404, f"Dataset {dataset_pid} not found")
+
+    dataset.label_mappings = data.label_mappings
+    await dataset_repository.save(dataset)
+
+    return dataset
 
 
 @router.get("/{dataset_pid}/data")
