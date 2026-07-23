@@ -60,6 +60,11 @@ class KeycloakAuth(HttpBearer):
 
     """
 
+    def __call__(self, request):
+        if not AUTH_ENABLED:
+            return True
+        return super().__call__(request)
+
     def authenticate(self, request, token):
         # if authenticator is disabled, allow all requests
         if not AUTH_ENABLED:
