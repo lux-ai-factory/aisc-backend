@@ -1,10 +1,11 @@
 import datetime
+import os
 import uuid
 
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import StreamingHttpResponse
-from ninja import Router, Schema, Form, UploadedFile, File, Path, Body
+from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
@@ -198,12 +199,12 @@ async def upload_evaluation_artifact(
 
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
     if evaluation_plugin is None:
-        raise HttpError(404, f"No evaluation plugin found")
+        raise HttpError(404, "No evaluation plugin found")
 
     plugin = evaluation_plugin.plugin_config.plugin
 
     original_filename = file.name
-    suffix = Path(file.name).suffix.lower()
+    suffix = os.path.splitext(file.name)[1].lower()
     file.name = f"{str(uuid.uuid4())}{suffix}"
 
     result = file_repository.upload_file(file, StorageContainer.Artifacts)
