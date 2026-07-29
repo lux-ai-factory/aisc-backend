@@ -1,10 +1,11 @@
 import datetime
 import uuid
+from pathlib import Path
 
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import StreamingHttpResponse
-from ninja import Router, Schema, Form, UploadedFile, File, Path, Body
+from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
