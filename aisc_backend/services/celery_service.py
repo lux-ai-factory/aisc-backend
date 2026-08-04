@@ -45,9 +45,3 @@ async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProg
 
     return {}
 
-
-async def autodiscover_datashape(datashape_pid: uuid.UUID):
-    result = celery.send_task(
-        "aisc_eval.tasks.datashape_tasks.auto_discover_datashape", args=[datashape_pid]
-    )
-    return result

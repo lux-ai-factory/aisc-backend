@@ -95,6 +95,13 @@ async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
     return input_definitions
 
 
+@router.get("/{plugin_pid}/setting_definitions", response=list[dict])
+async def get_plugin_setting_definitions(request, plugin_pid: uuid.UUID):
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    return [definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions]
+
+
 class CreatePluginsRequest(Schema):
     package_name: str
     version: str
@@ -287,6 +294,7 @@ async def update_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=ui_schema,
+        setting_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions],
     )
 
     await sync_to_async(log_action)(
@@ -305,7 +313,8 @@ async def update_plugin_config_state(
     config, schema, ui_schema = plugin_obj.on_config_change(data.config)
 
     response = PluginConfigStateResponse(
-        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema
+        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
+        setting_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions],
     )
 
     return response
@@ -374,6 +383,7 @@ async def get_project_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=ui_schema,
+        setting_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions],
     )
 
     return response
@@ -401,7 +411,8 @@ async def parse_plugin_config_state_from_dataset(
     config, schema, ui_schema = plugin_obj.on_config_change(config)
 
     response = PluginConfigStateResponse(
-        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema
+        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
+        setting_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions],
     )
 
     return response

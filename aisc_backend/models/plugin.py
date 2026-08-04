@@ -84,6 +84,13 @@ class EvaluationPlugin(Base):
         null=True,
         blank=True,
     )
+    datashape = models.ForeignKey(
+        "ProjectSetting",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="evaluation_plugins",
+    )
 
     status = models.CharField(
         max_length=50,

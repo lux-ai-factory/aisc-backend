@@ -34,6 +34,7 @@ from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
 from aisc_backend.audit.log import log_action
 from aisc_plugin_interface import InputType
+from aisc_backend.models.project_setting import ProjectSetting, ProjectSettingCategory
 
 router = Router(tags=["evaluation"])
 
@@ -56,6 +57,7 @@ class EvaluationPluginInputInSchema(Schema):
 class EvaluationPluginInSchema(Schema):
     name: str
     inputs: list[EvaluationPluginInputInSchema] | None = None
+    datashape_pid: uuid.UUID | None = None
 
 
 class CreateEvaluationRequest(Schema):
@@ -78,14 +80,25 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
             resolved.append((plugin_to_run, plugin.current_config))
+        else:
+            raise HttpError(400, f"Plugin {plugin_to_run.name} is not enabled for this project")
 
     evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
     for plugin_to_run, plugin_config in resolved:
+        datashape = None
+        if plugin_to_run.datashape_pid:
+            datashape = await ProjectSetting.objects.filter(
+                project=project,
+                pid=plugin_to_run.datashape_pid,
+                category=ProjectSettingCategory.DATASHAPE,
+            ).afirst()
+            if datashape is None:
+                raise HttpError(400, f"Invalid datashape for plugin {plugin_to_run.name}")
         run_plugin = EvaluationPlugin(
-            plugin_config=plugin_config, evaluation=evaluation
+            plugin_config=plugin_config, evaluation=evaluation, datashape=datashape
         )
         run_plugin = await evaluation_plugin_repository.create(run_plugin)
 

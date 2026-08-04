@@ -19,6 +19,7 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
+from aisc_backend.models import ProjectSetting
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
@@ -26,6 +27,22 @@ evaluation_repository = EvaluationRepository()
 evaluation_plugin_repository = EvaluationPluginRepository()
 observation_repository = BaseRepository(model=Observation)
 metric_repository = BaseRepository(model=Metric)
+
+
+@router.get("/projects/{project_pid}/settings", response=list[dict])
+async def get_project_settings(request, project_pid: uuid.UUID):
+    settings = [setting async for setting in ProjectSetting.objects.filter(project__pid=project_pid)]
+    return [
+        {
+            "pid": setting.pid,
+            "category": setting.category,
+            "key": setting.key,
+            "service_type": setting.service_type,
+            "encrypted_value": setting.encrypted_value,
+            "json_value": setting.json_value,
+        }
+        for setting in settings
+    ]
 
 
 @router.get("/evaluations/{evaluation_pid}", response=EvaluationDetailOutSchema)
