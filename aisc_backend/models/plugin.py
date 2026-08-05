@@ -43,12 +43,36 @@ class PluginConfig(Base):
         "Plugin", related_name="configs", on_delete=models.CASCADE
     )
     config = models.JSONField()
+    project_settings = models.ManyToManyField(
+        "ProjectSetting",
+        related_name="plugin_configs",
+        blank=True,
+        through="PluginConfigSetting",
+    )
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.plugin.name} config ({self.created_at})"
+
+
+class PluginConfigSetting(Base):
+    plugin_config = models.ForeignKey(
+        PluginConfig, on_delete=models.CASCADE, related_name="setting_mappings"
+    )
+    project_setting = models.ForeignKey(
+        "ProjectSetting", on_delete=models.CASCADE, related_name="config_mappings"
+    )
+    plugin_setting_key = models.CharField(max_length=255)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("plugin_config", "plugin_setting_key"),
+                name="unique_plugin_config_setting_key",
+            )
+        ]
 
 
 class EvaluationPluginInputFile(Base):
@@ -83,13 +107,6 @@ class EvaluationPlugin(Base):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-    )
-    datashape = models.ForeignKey(
-        "ProjectSetting",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="evaluation_plugins",
     )
 
     status = models.CharField(

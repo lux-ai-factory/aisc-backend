@@ -26,6 +26,7 @@ class ProjectRepository(BaseRepository[Project]):
                 "datasets",
                 "models",
                 "enabled_plugins",
+                "settings",
 
                 "enabled_plugins__current_config"
             )

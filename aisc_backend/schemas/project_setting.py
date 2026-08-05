@@ -12,7 +12,6 @@ class ProjectSettingInSchema(Schema):
     category: ProjectSettingCategory = ProjectSettingCategory.GENERAL
     key: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
     name: str = Field(min_length=1, max_length=255)
-    service_type: str = ""
     value: str = ""
     json_value: dict[str, Any] = {}
 
@@ -20,7 +19,6 @@ class ProjectSettingInSchema(Schema):
 class ProjectSettingUpdateSchema(Schema):
     key: str | None = Field(default=None, max_length=255, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
     name: str | None = None
-    service_type: str | None = None
     value: str | None = None
     json_value: dict[str, Any] | None = None
 
@@ -30,7 +28,6 @@ class ProjectSettingOutSchema(Schema):
     category: str
     key: str
     name: str
-    service_type: str
     masked_value: str
     json_value: dict[str, Any]
     created_at: datetime
@@ -39,7 +36,6 @@ class ProjectSettingOutSchema(Schema):
 
 class DeriveFeaturesSchema(Schema):
     dataset_pid: uuid.UUID
-    key: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
     name: str = Field(min_length=1, max_length=255)
 
 

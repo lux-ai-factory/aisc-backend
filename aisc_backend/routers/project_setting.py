@@ -21,6 +21,7 @@ from aisc_backend.schemas.project_setting import (
 from aisc_backend.services.datashape_validation import validate_dataframe_against_datashape
 from aisc_backend.services.feature_derivation import derive_features
 from aisc_backend.utils.encryption import encrypt_value
+from aisc_backend.services.project_setting_keys import create_setting_key
 from aisc_backend.models import Dataset
 
 router = Router(tags=["project settings"])
@@ -34,9 +35,8 @@ def setting_out(setting: ProjectSetting) -> dict[str, Any]:
         "category": setting.category,
         "key": setting.key,
         "name": setting.name,
-        "service_type": setting.service_type,
-        "masked_value": setting.masked_value if setting.category == ProjectSettingCategory.API_KEY else "",
-        "json_value": setting.json_value if setting.category != ProjectSettingCategory.API_KEY else {},
+        "masked_value": setting.masked_value if setting.category == ProjectSettingCategory.SECRETS else "",
+        "json_value": setting.json_value if setting.category != ProjectSettingCategory.SECRETS else {},
         "created_at": setting.created_at,
         "updated_at": setting.updated_at,
     }
@@ -61,18 +61,22 @@ async def list_settings(request, project_pid: uuid.UUID):
 async def create_setting(request, project_pid: uuid.UUID, data: ProjectSettingInSchema):
     project = await project_repository.get(project_pid)
     values = data.model_dump()
-    if data.category == ProjectSettingCategory.API_KEY:
+    values.pop("category", None)
+    values.pop("key", None)
+    try:
+        key = await create_setting_key(project, data.category, data.key)
+    except ValueError as error:
+        raise HttpError(409, str(error))
+    if data.category == ProjectSettingCategory.SECRETS:
         if not data.value:
             raise HttpError(400, "API key value is required")
         values["encrypted_value"] = encrypt_value(data.value)
-        values["json_value"] = {}
         values.pop("value", None)
         plaintext = data.value
         values["masked_value"] = plaintext[:4] + "..." + plaintext[-4:] if len(plaintext) > 8 else "..." + plaintext[-4:]
     else:
         values.pop("value", None)
-    values.pop("category", None)
-    setting = await settings_repository.create(ProjectSetting(project=project, category=data.category, **values))
+    setting = await settings_repository.create(ProjectSetting(project=project, category=data.category, key=key, **values))
     return setting_out(setting)
 
 
@@ -96,10 +100,14 @@ async def derive_setting(request, project_pid: uuid.UUID, data: DeriveFeaturesSc
     if not response:
         raise HttpError(404, "Dataset file not found")
     document = derive_features(response["Body"].read(), fmt, str(dataset.pid))
+    try:
+        key = await create_setting_key(project, ProjectSettingCategory.DATASHAPE, data.name)
+    except ValueError as error:
+        raise HttpError(409, str(error))
     setting = await settings_repository.create(ProjectSetting(
         project=project,
         category=ProjectSettingCategory.DATASHAPE,
-        key=data.key,
+        key=key,
         name=data.name,
         json_value=document,
     ))
@@ -110,9 +118,10 @@ async def derive_setting(request, project_pid: uuid.UUID, data: DeriveFeaturesSc
 async def update_setting(request, project_pid: uuid.UUID, setting_pid: uuid.UUID, data: ProjectSettingUpdateSchema):
     setting = await project_setting(project_pid, setting_pid)
     values = data.model_dump(exclude_unset=True)
+    values.pop("key", None)
     plaintext = values.pop("value", None)
     if plaintext is not None:
-        if setting.category != ProjectSettingCategory.API_KEY:
+        if setting.category != ProjectSettingCategory.SECRETS:
             raise HttpError(400, "value is only valid for API key settings")
         setting.encrypted_value = encrypt_value(plaintext)
         setting.masked_value = plaintext[:4] + "..." + plaintext[-4:] if len(plaintext) > 8 else "..." + plaintext[-4:]
