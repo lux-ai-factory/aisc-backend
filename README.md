@@ -34,6 +34,43 @@ As a plugin developer, you typically only need to:
 
 ---
 
+## Catalogue one-click install
+
+The backend exposes `POST /api/v1/catalogue/install` so a **Catalogue** UI can
+install a plugin `(package_name, version)` from a trusted index and attach it to a
+project. It is **off by default** — without the config below the platform behaves
+exactly as before, and the endpoint returns 404.
+
+**Flow / guards (in order):** feature flag off → 404 (invisible) · missing/wrong
+token → 401 · untrusted index → 403 · non-frozen version → 400 · then the package is
+installed from the configured registry and a `Plugin` row is idempotently
+get-or-created for the project (a second identical call adds no duplicate). The
+operation overrides the global Keycloak auth with a static bearer token (every other
+endpoint stays on Keycloak).
+
+### Deployment config (set these env vars where the backend gets its environment)
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `CATALOGUE_INSTALL_ENABLED` | Enable the endpoint (else 404) | `true` |
+| `CATALOGUE_INSTALL_TOKEN` | Static bearer token required from the caller | `<shared secret>` |
+| `CATALOGUE_TRUSTED_INDEXES` | Allowlist of trusted "simple" index URLs | `https://<catalogue>/devpi/root/public/+simple/` |
+| `BACKEND_CORS_ALLOWED_ORIGINS` | **Add** the Catalogue origin (browser call) | `...,https://<catalogue>` |
+
+> **Trust invariant (security):** `CATALOGUE_TRUSTED_INDEXES` must match the index the
+> plugin `Loader` installs from (`PACKAGE_REGISTRY_URL` + `PACKAGE_REGISTRY_INDEX`),
+> so the clicked index is the one actually installed. By default the allowlist is
+> derived from `PACKAGE_REGISTRY_*`; keep them consistent.
+>
+> **Token match:** `CATALOGUE_INSTALL_TOKEN` must equal the Catalogue's
+> `VITE_PLATFORM_INSTALL_TOKEN`.
+>
+> **Restart:** these are read at startup — restart the backend (and the eval worker)
+> **once** to activate. That is the only restart required.
+
+Existing local `PLUGIN_PATH` plugins and the plugin router are unaffected; this adds
+one isolated router and no migration.
+
 ## Choose your workflow
 
 There are two common ways to work with this repo. Pick the one that matches what you’re doing.
