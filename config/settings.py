@@ -255,3 +255,6 @@ _CATALOGUE_DEFAULT_INDEXES = (
 CATALOGUE_TRUSTED_INDEXES = env.list(
     'CATALOGUE_TRUSTED_INDEXES', default=_CATALOGUE_DEFAULT_INDEXES
 )
+# Static bearer token for the Catalogue install door (L4). Default empty: when the
+# flag is on but this is unset => misconfiguration => the endpoint refuses (401).
+CATALOGUE_INSTALL_TOKEN = env('CATALOGUE_INSTALL_TOKEN', '')

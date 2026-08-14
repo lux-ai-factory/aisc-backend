@@ -26,6 +26,7 @@ from aisc_backend.routers.dataset import router as dataset_router
 from aisc_backend.routers.model import router as model_router
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.plugin import router as plugin_router
+from aisc_backend.routers.catalogue_install import router as catalogue_install_router
 from aisc_backend.routers.task import router as task_router
 from aisc_backend.routers.file import router as file_router
 from aisc_backend.routers.stats import router as stats_router
@@ -59,6 +60,7 @@ v1_router.add_router("/files", file_router)
 v1_router.add_router("/stats", stats_router)
 v1_router.add_router("/me", me_router)
 v1_router.add_router("/audit", audit_router)
+v1_router.add_router("/catalogue", catalogue_install_router)
 
 api.add_router("/v1/", v1_router)
 api.add_router("/v1/internal", internal_router)
