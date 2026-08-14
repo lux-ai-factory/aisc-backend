@@ -241,3 +241,17 @@ PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
 PACKAGE_REGISTRY_USER = env('PACKAGE_REGISTRY_USER', '')
 PACKAGE_REGISTRY_PASSWORD = env('PACKAGE_REGISTRY_PASSWORD', '')
 PACKAGE_REGISTRY_INDEX = env('PACKAGE_REGISTRY_INDEX', '')
+
+# Catalogue one-click install (L3 — trust foundation). Additive, safe defaults.
+# Flag off by default: absent env => behaviour identical to before.
+CATALOGUE_INSTALL_ENABLED = env.bool('CATALOGUE_INSTALL_ENABLED', False)
+# Trusted "simple" indexes allowlist. Default derived from the existing package
+# registry when configured, else empty (nothing trusted).
+_CATALOGUE_DEFAULT_INDEXES = (
+    [f"{PACKAGE_REGISTRY_URL.rstrip('/')}/{PACKAGE_REGISTRY_INDEX.strip('/')}/+simple/"]
+    if PACKAGE_REGISTRY_URL and PACKAGE_REGISTRY_INDEX
+    else []
+)
+CATALOGUE_TRUSTED_INDEXES = env.list(
+    'CATALOGUE_TRUSTED_INDEXES', default=_CATALOGUE_DEFAULT_INDEXES
+)
