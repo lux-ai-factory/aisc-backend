@@ -145,3 +145,18 @@ class InstallBehaviourTests(TestCase):
         self.assertEqual(row.package_name, "agentdojo")
         self.assertEqual(row.version, "0.1.35")
         self.assertTrue(row.enabled)
+
+    @override_settings(CATALOGUE_INSTALL_ENABLED=True)
+    @patch(
+        "aisc_backend.routers.catalogue_install.plugin_loader.load_package",
+        side_effect=KeyError("Package 'agentdojo' not found."),
+    )
+    async def test_package_not_in_index_returns_502_not_500(self, mock_load):
+        # A catalogue tool with no backing package in the trusted index must yield a
+        # clean error (502), never an unhandled 500, and create no Plugin row.
+        project = await self._make_project()
+        resp = await client.post(
+            "/install", json=_payload(project_uuid=project.pid), headers=BEARER
+        )
+        self.assertEqual(resp.status_code, 502)
+        self.assertEqual(await Plugin.objects.acount(), 0)

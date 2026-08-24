@@ -106,7 +106,21 @@ async def catalogue_install(request, data: CatalogueInstallRequest):
     project = await project_repository.get(data.project_uuid, True)
 
     # 4) Install from the configured registry and enumerate the plugin classes.
-    plugins_package_dict = plugin_loader.load_package(data.package_name, data.version)
+    #    A missing package or a failed build must surface as a clean error, never a 500.
+    try:
+        plugins_package_dict = plugin_loader.load_package(data.package_name, data.version)
+    except KeyError:
+        raise HttpError(
+            502,
+            f"Package '{data.package_name}' (version {data.version}) is not available "
+            "from the trusted index.",
+        )
+    except Exception:
+        raise HttpError(
+            502,
+            f"Could not install '{data.package_name}' (version {data.version}) "
+            "from the trusted index.",
+        )
 
     # 5) Idempotent get-or-create per plugin class — same pattern as create_plugins.
     installed_plugins = []
