@@ -28,6 +28,7 @@ dependencies = [
     "uvicorn>=0.38.0",
     "whitenoise>=6.11.0",
     "jsonschema>=4.25.1",
+    "cryptography>=44.0.0",
     "aisc-plugin-manager>=0.2.5",
     "aisc-plugin-interface>=0.2.5",
     "httpx>=0.28.1",

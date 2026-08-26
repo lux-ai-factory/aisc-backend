@@ -13,7 +13,9 @@ class PluginRepository(BaseRepository[Plugin]):
     async def get_with_related(self, pid: uuid.UUID) -> Plugin:
         plugin = await (
             Plugin.objects
+            .select_related("project")
             .select_related("current_config")
+            .prefetch_related("current_config__setting_mappings__project_setting")
             .aget(pid=pid)
         )
         return plugin
@@ -28,6 +30,7 @@ class EvaluationPluginRepository(BaseRepository[EvaluationPlugin]):
             EvaluationPlugin.objects
             .select_related("plugin_config")
             .select_related("plugin_config__plugin")
+            .prefetch_related("plugin_config__setting_mappings__project_setting")
             .prefetch_related("input_files")
             .prefetch_related("artifacts")
             .aget(pid=pid)

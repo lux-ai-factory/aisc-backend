@@ -19,13 +19,58 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
+from aisc_backend.models import ProjectSetting
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
+
+
+class ProjectSettingsByPidRequest(Schema):
+    project_setting_selections: list[dict]
 
 evaluation_repository = EvaluationRepository()
 evaluation_plugin_repository = EvaluationPluginRepository()
 observation_repository = BaseRepository(model=Observation)
 metric_repository = BaseRepository(model=Metric)
+
+
+@router.get("/projects/settings/{project_pid}", response=list[dict])
+async def get_project_settings(request, project_pid: uuid.UUID):
+    settings = [setting async for setting in ProjectSetting.objects.filter(project__pid=project_pid)]
+    return [
+        {
+            "pid": setting.pid,
+            "category": setting.category,
+            "key": setting.key,
+            "encrypted_value": setting.encrypted_value,
+            "json_value": setting.json_value,
+        }
+        for setting in settings
+    ]
+
+
+@router.post("/projects/settings/{project_pid}/by-pid", response=list[dict])
+async def get_project_settings_by_pid(
+    request, project_pid: uuid.UUID, data: ProjectSettingsByPidRequest
+):
+    settings = [
+        setting async for setting in ProjectSetting.objects.filter(
+            project__pid=project_pid,
+            pid__in=[selection.get("project_setting_pid") for selection in data.project_setting_selections],
+        )
+    ]
+    by_pid = {str(setting.pid): setting for setting in settings}
+    return [
+        {
+            "pid": setting.pid,
+            "key": setting.key,
+            "plugin_setting_key": selection.get("plugin_setting_key"),
+            "category": setting.category,
+            "encrypted_value": setting.encrypted_value,
+            "json_value": setting.json_value,
+        }
+        for selection in data.project_setting_selections
+        if (setting := by_pid.get(str(selection.get("project_setting_pid")))) is not None
+    ]
 
 
 @router.get("/evaluations/{evaluation_pid}", response=EvaluationDetailOutSchema)
