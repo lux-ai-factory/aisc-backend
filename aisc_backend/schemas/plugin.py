@@ -23,6 +23,18 @@ class EvaluationPluginInputFileOutSchema(Schema):
         return obj.content_object
 
 class PluginConfigOutSchema(ModelSchema):
+    project_setting_selections: list[dict] = []
+
+    @staticmethod
+    def resolve_project_setting_selections(obj):
+        return [
+            {
+                "plugin_setting_key": mapping.plugin_setting_key,
+                "project_setting_pid": mapping.project_setting.pid,
+            }
+            for mapping in getattr(obj, "_prefetched_objects_cache", {}).get("setting_mappings", [])
+        ]
+
     class Meta:
         model = PluginConfig
         fields = ["id", "config", "created_at"]

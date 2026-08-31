@@ -1,5 +1,6 @@
 from django.db import models
 
+from .project_setting import ProjectSetting
 from .evaluation import Evaluation
 from .common import Base
 from .dataset import Dataset
@@ -49,6 +50,9 @@ class Project(Base):
                 plugin.name.lower(),
             ),
         )
+
+    def get_settings(self) -> list[ProjectSetting]:
+        return list(self.settings.all())
 
     def __str__(self):
         return f'{self.name}, status: {self.status}'
