@@ -6,3 +6,4 @@ from .metric import *
 from .observation import *
 from .measure import *
 from .plugin import *
+from .project_setting import *

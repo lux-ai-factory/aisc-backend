@@ -7,10 +7,13 @@ from ninja.files import UploadedFile
 
 from django.http import StreamingHttpResponse
 
+from asgiref.sync import sync_to_async
+
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.dataset_repository import DatasetRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
+from aisc_backend.audit.log import log_action
 
 router = Router(tags=["dataset"])
 
@@ -20,6 +23,7 @@ project_repository = ProjectRepository()
 
 class UploadDatasetFileResponse(Schema):
     file_name: str
+    file_size: int
 
 
 @router.put("/{dataset_pid}/data", response=UploadDatasetFileResponse)
@@ -40,9 +44,13 @@ async def upload_dataset_file(request, dataset_pid: uuid.UUID, file: File[Upload
         raise HttpError(500, "Failed to upload file")
 
     dataset.data = file.name
+    dataset.file_size = file.size
     await dataset_repository.save(dataset)
 
-    return UploadDatasetFileResponse(file_name=file.name)
+    await sync_to_async(log_action)(
+        request, action="upload", resource_type="dataset",
+        resource_id=str(dataset_pid), metadata={"filename": file.name, "filesize": file.size})
+    return UploadDatasetFileResponse(file_name=file.name, file_size=file.size)
 
 
 @router.get("/{dataset_pid}/data")
