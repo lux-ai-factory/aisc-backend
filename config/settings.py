@@ -14,6 +14,8 @@ from corsheaders.defaults import default_headers
 from environs import env
 from django.core.management.utils import get_random_secret_key
 
+empty_str_to_none = lambda v: v if v and v.strip() else None
+
 env.read_env()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -238,6 +240,6 @@ CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 PLUGIN_PATH = env('PLUGIN_PATH', '')
 PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
-PACKAGE_REGISTRY_USER = env('PACKAGE_REGISTRY_USER', '')
-PACKAGE_REGISTRY_PASSWORD = env('PACKAGE_REGISTRY_PASSWORD', '')
+PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
+PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))
 PACKAGE_REGISTRY_INDEX = env('PACKAGE_REGISTRY_INDEX', '')
