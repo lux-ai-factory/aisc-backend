@@ -1,5 +1,3 @@
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from .common import Base
@@ -43,11 +41,11 @@ class PluginConfig(Base):
         "Plugin", related_name="configs", on_delete=models.CASCADE
     )
     config = models.JSONField()
-    project_settings = models.ManyToManyField(
-        "ProjectSetting",
+    project_configs = models.ManyToManyField(
+        "ProjectConfig",
         related_name="plugin_configs",
         blank=True,
-        through="PluginConfigSetting",
+        through="PluginConfigProjectConfig",
     )
 
     class Meta:
@@ -57,32 +55,40 @@ class PluginConfig(Base):
         return f"{self.plugin.name} config ({self.created_at})"
 
 
-class PluginConfigSetting(Base):
+class PluginConfigProjectConfig(Base):
+    """Links a PluginConfig to a ProjectConfig it references during a run."""
+
     plugin_config = models.ForeignKey(
         PluginConfig, on_delete=models.CASCADE, related_name="setting_mappings"
     )
-    project_setting = models.ForeignKey(
-        "ProjectSetting", on_delete=models.CASCADE, related_name="config_mappings"
+    project_config = models.ForeignKey(
+        "ProjectConfig", on_delete=models.CASCADE, related_name="config_mappings"
     )
-    plugin_setting_key = models.CharField(max_length=255)
+    plugin_config_key = models.CharField(max_length=255)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=("plugin_config", "plugin_setting_key"),
-                name="unique_plugin_config_setting_key",
+                fields=("plugin_config", "plugin_config_key"),
+                name="unique_plugin_config_project_config_key",
             )
         ]
 
 
-class EvaluationPluginInputFile(Base):
-    evaluation_plugin = models.ForeignKey(
-        "EvaluationPlugin", related_name="input_files", on_delete=models.CASCADE
-    )
+class EvaluationInput(Base):
+    """An input bound to an evaluation plugin run.
 
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey("content_type", "object_id")
+    Points at an AIComponent that supplies the data. Only dataset/model/file
+    components carry a stored artifact; other component types expose their
+    input data through this same link.
+    """
+
+    evaluation_plugin = models.ForeignKey(
+        "EvaluationPlugin", related_name="evaluation_inputs", on_delete=models.CASCADE
+    )
+    component = models.ForeignKey(
+        "AIComponent", related_name="evaluation_inputs", on_delete=models.PROTECT
+    )
 
     class Meta:
         unique_together = ("evaluation_plugin", "name")
@@ -125,8 +131,8 @@ class EvaluationPlugin(Base):
             return (self.finished_at - self.started_at).total_seconds()
         return None
 
-    def get_input_files(self):
-        return self.input_files.all()
+    def get_inputs(self):
+        return self.evaluation_inputs.all()
 
     def get_artifacts(self):
         return self.artifacts.all()

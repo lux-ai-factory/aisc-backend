@@ -11,8 +11,6 @@ from django.db.models import (
     F,
 )
 from django.db.models.functions import Coalesce
-from django.contrib.contenttypes.models import ContentType
-from asgiref.sync import sync_to_async
 
 from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
 from aisc_backend.models.observation import Observation
@@ -20,11 +18,10 @@ from aisc_backend.models.measure import Measurement
 from aisc_backend.models.plugin import (
     Plugin,
     EvaluationPlugin,
-    EvaluationPluginInputFile,
+    EvaluationInput,
 )
 from aisc_backend.models.artifact import Artifact
-from aisc_backend.models.dataset import Dataset
-from aisc_backend.models.model import Model
+from aisc_backend.models.ai_system import AIComponent, AIComponentType
 
 logger = logging.getLogger(__name__)
 
@@ -92,34 +89,36 @@ class StatsRepository:
         )
         last_evaluation_date = last_obs["created_at"] if last_obs else None
 
-        # Datasets and models evaluated (via EvaluationPluginInputFile generic FK)
+        # Datasets and models evaluated (via EvaluationInput -> AIComponent)
         eval_plugins = EvaluationPlugin.objects.filter(
             evaluation__project__pid=project_pid
         )
-        input_files = EvaluationPluginInputFile.objects.filter(
+        input_files = EvaluationInput.objects.filter(
             evaluation_plugin__in=eval_plugins
         )
 
-        dataset_ct = await sync_to_async(ContentType.objects.get_for_model)(Dataset)
-        model_ct = await sync_to_async(ContentType.objects.get_for_model)(Model)
-
         datasets_evaluated = (
-            await input_files.filter(content_type=dataset_ct)
-            .values("object_id")
+            await input_files.filter(component__component_type=AIComponentType.DATASET)
+            .values("component")
             .distinct()
             .acount()
         )
 
         models_evaluated = (
-            await input_files.filter(content_type=model_ct)
-            .values("object_id")
+            await input_files.exclude(component__component_type=AIComponentType.DATASET)
+            .values("component")
             .distinct()
             .acount()
         )
 
         # Total datasets and models in project
-        total_datasets = await Dataset.objects.filter(project__pid=project_pid).acount()
-        total_models = await Model.objects.filter(project__pid=project_pid).acount()
+        total_datasets = await AIComponent.objects.filter(
+            system__project__pid=project_pid,
+            component_type=AIComponentType.DATASET,
+        ).acount()
+        total_models = await AIComponent.objects.filter(
+            system__project__pid=project_pid,
+        ).exclude(component_type=AIComponentType.DATASET).acount()
 
         # Plugins and artifacts
         active_plugins = await Plugin.objects.filter(project__pid=project_pid).acount()

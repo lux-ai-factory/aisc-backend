@@ -13,12 +13,12 @@ from aisc_plugin_manager import Loader
 from aisc_plugin_interface import MetricVisualization
 
 from aisc_backend.repositories import file_repository
-from aisc_backend.repositories.dataset_repository import DatasetRepository
+from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
 
-from aisc_backend.models import Plugin, PluginConfig, ProjectSetting, ProjectSettingCategory
+from aisc_backend.models import Plugin, PluginConfig, ProjectConfig, ProjectConfigCategory, AIComponent
 from aisc_backend.schemas.measure import MeasureOutSchema
 from aisc_backend.schemas.plugin import (
     PluginOutSchema,
@@ -36,8 +36,8 @@ plugin_repository = PluginRepository()
 project_repository = ProjectRepository()
 evaluation_repository = EvaluationRepository()
 measurement_repository = MeasurementRepository()
-dataset_repository = DatasetRepository()
 evaluation_plugin_repository = EvaluationPluginRepository()
+ai_component_repository = BaseRepository(model=AIComponent)
 
 
 class PluginConfigStateResponse(Schema):
@@ -45,56 +45,56 @@ class PluginConfigStateResponse(Schema):
     config: dict | None
     formSchema: dict
     uiSchema: dict
-    setting_definitions: list[dict]
-    project_setting_selections: list[dict] = []
-    project_settings: list[dict] = []
+    project_config_definitions: list[dict]
+    project_config_selections: list[dict] = []
+    project_configs: list[dict] = []
 
 
-def plugin_setting_state(project_setting_selections, definitions):
+def project_config_state(project_config_selections, definitions):
     return {
-        "setting_definitions": [definition.model_dump(mode="json") for definition in definitions],
-        "project_setting_selections": project_setting_selections,
+        "project_config_definitions": [definition.model_dump(mode="json") for definition in definitions],
+        "project_config_selections": project_config_selections,
     }
 
 
-async def save_plugin_setting_mappings(plugin_config, project_id, selections):
-    from aisc_backend.models import PluginConfigSetting
+async def save_project_config_mappings(plugin_config, project_id, selections):
+    from aisc_backend.models import PluginConfigProjectConfig
 
-    await PluginConfigSetting.objects.filter(plugin_config=plugin_config).adelete()
+    await PluginConfigProjectConfig.objects.filter(plugin_config=plugin_config).adelete()
     for selection in selections:
-        plugin_setting_key = selection.get("plugin_setting_key")
-        project_setting_pid = selection.get("project_setting_pid")
-        if not plugin_setting_key or not project_setting_pid:
+        plugin_config_key = selection.get("plugin_config_key")
+        project_config_pid = selection.get("project_config_pid")
+        if not plugin_config_key or not project_config_pid:
             continue
         try:
-            setting = await ProjectSetting.objects.aget(
+            setting = await ProjectConfig.objects.aget(
                 project_id=project_id,
-                pid=project_setting_pid,
+                pid=project_config_pid,
             )
-        except ProjectSetting.DoesNotExist:
-            raise HttpError(400, "Selected project setting does not belong to this project")
-        await PluginConfigSetting.objects.acreate(
+        except ProjectConfig.DoesNotExist:
+            raise HttpError(400, "Selected project config does not belong to this project")
+        await PluginConfigProjectConfig.objects.acreate(
             plugin_config=plugin_config,
-            project_setting=setting,
-            plugin_setting_key=plugin_setting_key,
+            project_config=setting,
+            plugin_config_key=plugin_config_key,
         )
 
 
-def project_setting_option(setting: ProjectSetting) -> dict:
+def project_config_option(setting: ProjectConfig) -> dict:
     return {
         "pid": setting.pid,
         "key": setting.key,
         "name": setting.name,
         "category": setting.category,
-        "masked_value": setting.masked_value if setting.category == ProjectSettingCategory.SECRETS else "",
-        "json_value": setting.json_value if setting.category != ProjectSettingCategory.SECRETS else {},
+        "masked_value": setting.masked_value if setting.category == ProjectConfigCategory.SECRETS else "",
+        "json_value": setting.json_value if setting.category != ProjectConfigCategory.SECRETS else {},
     }
 
 
-async def project_setting_options(project_id) -> list[dict]:
+async def project_config_options(project_id) -> list[dict]:
     return [
-        project_setting_option(setting)
-        async for setting in ProjectSetting.objects.filter(project_id=project_id)
+        project_config_option(setting)
+        async for setting in ProjectConfig.objects.filter(project_id=project_id)
     ]
 
 
@@ -145,11 +145,11 @@ async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
     return input_definitions
 
 
-@router.get("/{plugin_pid}/setting_definitions", response=list[dict])
-async def get_plugin_setting_definitions(request, plugin_pid: uuid.UUID):
+@router.get("/{plugin_pid}/project_config_definitions", response=list[dict])
+async def get_plugin_project_config_definitions(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
-    return [definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions]
+    return [definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions]
 
 
 class CreatePluginsRequest(Schema):
@@ -300,7 +300,7 @@ async def update_plugin_enabled(
 )
 async def get_plugin_config_history(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
-    return [c async for c in plugin.configs.prefetch_related("setting_mappings__project_setting").all()]
+    return [c async for c in plugin.configs.prefetch_related("setting_mappings__project_config").all()]
 
 
 @router.post(
@@ -321,7 +321,7 @@ async def restore_plugin_config(
 
 class UpdatePluginConfigRequest(Schema):
     config: dict
-    project_setting_selections: list[dict] = []
+    project_config_selections: list[dict] = []
 
 @router.post("/{plugin_pid}/config", response=PluginConfigStateResponse)
 async def update_plugin_config_state(
@@ -336,8 +336,8 @@ async def update_plugin_config_state(
     plugin_config = PluginConfig(plugin=project_plugin, config=data.config)
     await plugin_config.asave()
 
-    await save_plugin_setting_mappings(
-        plugin_config, project_plugin.project_id, data.project_setting_selections
+    await save_project_config_mappings(
+        plugin_config, project_plugin.project_id, data.project_config_selections
     )
     project_plugin.current_config = plugin_config
     await plugin_repository.save(project_plugin)
@@ -349,10 +349,10 @@ async def update_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=ui_schema,
-        **plugin_setting_state(
-            data.project_setting_selections, plugin_obj.setting_definitions
+        **project_config_state(
+            data.project_config_selections, plugin_obj.project_config_definitions
         ),
-        project_settings=await project_setting_options(project_plugin.project_id),
+        project_configs=await project_config_options(project_plugin.project_id),
     )
 
     await sync_to_async(log_action)(
@@ -372,9 +372,9 @@ async def update_plugin_config_state(
 
     response = PluginConfigStateResponse(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
-        setting_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions],
-        project_setting_selections=data.project_setting_selections,
-        project_settings=await project_setting_options(project_plugin.project_id),
+        project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
+        project_config_selections=data.project_config_selections,
+        project_configs=await project_config_options(project_plugin.project_id),
     )
 
     return response
@@ -442,10 +442,10 @@ async def get_project_plugin_config_state(
     if project_plugin.current_config:
         current_setting_selections = [
             {
-                "plugin_setting_key": mapping.plugin_setting_key,
-                "project_setting_pid": mapping.project_setting.pid,
+                "plugin_config_key": mapping.plugin_config_key,
+                "project_config_pid": mapping.project_config.pid,
             }
-            async for mapping in project_plugin.current_config.setting_mappings.select_related("project_setting").all()
+            async for mapping in project_plugin.current_config.setting_mappings.select_related("project_config").all()
         ]
 
     response = PluginConfigStateResponse(
@@ -453,11 +453,11 @@ async def get_project_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=ui_schema,
-        **plugin_setting_state(
+        **project_config_state(
             current_setting_selections,
-            plugin_obj.setting_definitions,
+            plugin_obj.project_config_definitions,
         ),
-        project_settings=await project_setting_options(project_plugin.project_id),
+        project_configs=await project_config_options(project_plugin.project_id),
     )
 
     return response
@@ -470,7 +470,7 @@ async def get_project_plugin_config_state(
 async def parse_plugin_config_state_from_dataset(
         request, plugin_pid: uuid.UUID, dataset_uuid: uuid.UUID
 ):
-    dataset = await dataset_repository.get(dataset_uuid)
+    dataset = await ai_component_repository.get(dataset_uuid)
 
     response = file_repository.get_object(
         bucket_name=StorageContainer.Datasets, object_name=dataset.data
@@ -486,7 +486,7 @@ async def parse_plugin_config_state_from_dataset(
 
     response = PluginConfigStateResponse(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
-        setting_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.setting_definitions],
+        project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
     )
 
     return response

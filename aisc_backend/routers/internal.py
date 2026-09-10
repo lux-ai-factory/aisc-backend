@@ -19,13 +19,13 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
-from aisc_backend.models import ProjectSetting
+from aisc_backend.models import ProjectConfig
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
 
-class ProjectSettingsByPidRequest(Schema):
-    project_setting_selections: list[dict]
+class ProjectConfigsByPidRequest(Schema):
+    project_config_selections: list[dict]
 
 evaluation_repository = EvaluationRepository()
 evaluation_plugin_repository = EvaluationPluginRepository()
@@ -34,8 +34,8 @@ metric_repository = BaseRepository(model=Metric)
 
 
 @router.get("/projects/settings/{project_pid}", response=list[dict])
-async def get_project_settings(request, project_pid: uuid.UUID):
-    settings = [setting async for setting in ProjectSetting.objects.filter(project__pid=project_pid)]
+async def get_project_configs(request, project_pid: uuid.UUID):
+    settings = [setting async for setting in ProjectConfig.objects.filter(project__pid=project_pid)]
     return [
         {
             "pid": setting.pid,
@@ -49,13 +49,13 @@ async def get_project_settings(request, project_pid: uuid.UUID):
 
 
 @router.post("/projects/settings/{project_pid}/by-pid", response=list[dict])
-async def get_project_settings_by_pid(
-    request, project_pid: uuid.UUID, data: ProjectSettingsByPidRequest
+async def get_project_configs_by_pid(
+    request, project_pid: uuid.UUID, data: ProjectConfigsByPidRequest
 ):
     settings = [
-        setting async for setting in ProjectSetting.objects.filter(
+        setting async for setting in ProjectConfig.objects.filter(
             project__pid=project_pid,
-            pid__in=[selection.get("project_setting_pid") for selection in data.project_setting_selections],
+            pid__in=[selection.get("project_config_pid") for selection in data.project_config_selections],
         )
     ]
     by_pid = {str(setting.pid): setting for setting in settings}
@@ -63,19 +63,45 @@ async def get_project_settings_by_pid(
         {
             "pid": setting.pid,
             "key": setting.key,
-            "plugin_setting_key": selection.get("plugin_setting_key"),
+            "plugin_config_key": selection.get("plugin_config_key"),
             "category": setting.category,
             "encrypted_value": setting.encrypted_value,
             "json_value": setting.json_value,
         }
-        for selection in data.project_setting_selections
-        if (setting := by_pid.get(str(selection.get("project_setting_pid")))) is not None
+        for selection in data.project_config_selections
+        if (setting := by_pid.get(str(selection.get("project_config_pid")))) is not None
     ]
 
 
 @router.get("/evaluations/{evaluation_pid}", response=EvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
     return await evaluation_repository.get_including(evaluation_pid, include)
+
+
+@router.get("/evaluations/{evaluation_pid}/inputs", response=dict)
+async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
+    """Fetch the component input data (including decrypted secrets) for a
+    worker to bind each evaluation plugin's inputs to the derived components."""
+    evaluation = await evaluation_repository.get(evaluation_pid)
+    if evaluation is None:
+        raise HttpError(404, "Evaluation not found")
+
+    result = {}
+    async for evaluation_plugin in evaluation.evaluation_plugins.all():
+        entries = []
+        async for inp in evaluation_plugin.evaluation_inputs.select_related("component__secret").all():
+            component = inp.component
+            entries.append({
+                "name": inp.name,
+                "component_type": component.component_type,
+                "data": component.data,
+                "json_value": component.json_value,
+                "endpoint_url": component.endpoint_url,
+                "secret_encrypted_value": component.secret.encrypted_value if component.secret_id else None,
+            })
+        result[str(evaluation_plugin.pid)] = entries
+    return result
+
 
 @router.get("/evaluations/{evaluation_pid}/plugins/status", response=dict)
 async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
@@ -89,7 +115,6 @@ async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
         "has_failed_plugins": has_failed_plugins,
         "total_plugins": total_plugins,
     }
-
 @router.put("/evaluations/{evaluation_pid}", response=str)
 async def update_evaluation_status(
     request, evaluation_pid: uuid.UUID, status: EvaluationStatus

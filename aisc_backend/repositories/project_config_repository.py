@@ -1,23 +1,23 @@
 import uuid
 
-from aisc_backend.models import ProjectSetting
+from aisc_backend.models import ProjectConfig
 from aisc_backend.repositories.base_repository import BaseRepository
 
 
-class ProjectSettingRepository(BaseRepository[ProjectSetting]):
+class ProjectConfigRepository(BaseRepository[ProjectConfig]):
     def __init__(self):
-        super().__init__(ProjectSetting)
+        super().__init__(ProjectConfig)
 
     async def get(
         self,
         pid: uuid.UUID,
         get_related: bool = False,
         project_pid: uuid.UUID | None = None,
-    ) -> ProjectSetting:
+    ) -> ProjectConfig:
         if get_related:
             return await self.get_with_related(pid, project_pid)
 
-        queryset = ProjectSetting.objects
+        queryset = ProjectConfig.objects
         if project_pid is not None:
             queryset = queryset.filter(project__pid=project_pid)
         return await queryset.aget(pid=pid)
@@ -26,14 +26,14 @@ class ProjectSettingRepository(BaseRepository[ProjectSetting]):
         self,
         pid: uuid.UUID,
         project_pid: uuid.UUID | None = None,
-    ) -> ProjectSetting:
-        queryset = ProjectSetting.objects.select_related("project")
+    ) -> ProjectConfig:
+        queryset = ProjectConfig.objects.select_related("project")
         if project_pid is not None:
             queryset = queryset.filter(project__pid=project_pid)
         return await queryset.aget(pid=pid)
 
-    async def get_by_project(self, project_pid: uuid.UUID) -> list[ProjectSetting]:
-        return [setting async for setting in ProjectSetting.objects.filter(project__pid=project_pid)]
+    async def get_by_project(self, project_pid: uuid.UUID) -> list[ProjectConfig]:
+        return [setting async for setting in ProjectConfig.objects.filter(project__pid=project_pid)]
 
-    async def get_by_category(self, project_pid: uuid.UUID, category: str) -> list[ProjectSetting]:
-        return [setting async for setting in ProjectSetting.objects.filter(project__pid=project_pid, category=category)]
+    async def get_by_category(self, project_pid: uuid.UUID, category: str) -> list[ProjectConfig]:
+        return [setting async for setting in ProjectConfig.objects.filter(project__pid=project_pid, category=category)]

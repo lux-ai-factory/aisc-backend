@@ -18,11 +18,10 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
 
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__plugin")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__setting_mappings__project_setting")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__setting_mappings__project_config")
 
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_object")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_type")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__artifacts")
 
     return evaluation_queryset

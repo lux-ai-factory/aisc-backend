@@ -15,7 +15,7 @@ class PluginRepository(BaseRepository[Plugin]):
             Plugin.objects
             .select_related("project")
             .select_related("current_config")
-            .prefetch_related("current_config__setting_mappings__project_setting")
+            .prefetch_related("current_config__setting_mappings__project_config")
             .aget(pid=pid)
         )
         return plugin
@@ -30,8 +30,8 @@ class EvaluationPluginRepository(BaseRepository[EvaluationPlugin]):
             EvaluationPlugin.objects
             .select_related("plugin_config")
             .select_related("plugin_config__plugin")
-            .prefetch_related("plugin_config__setting_mappings__project_setting")
-            .prefetch_related("input_files")
+            .prefetch_related("plugin_config__setting_mappings__project_config")
+            .prefetch_related("evaluation_inputs")
             .prefetch_related("artifacts")
             .aget(pid=pid)
         )
