@@ -10,6 +10,14 @@ class Plugin(Base):
     version = models.CharField(max_length=50)
     display_name = models.CharField(max_length=255)
 
+    # The catalogue entry this distribution was installed from. Discovery lives
+    # in the catalogue, so this is how an enabled plugin is traced back to the
+    # entry, its tags and its controls. Null for rows that predate the mapping
+    # or that came from a deep link, which is an absent origin, not an empty
+    # one. Not unique: two entries may wrap the same distribution, and the same
+    # entry may be installed into several projects.
+    catalogue_slug = models.CharField(max_length=255, null=True, blank=True)
+
     project = models.ForeignKey(
         "Project", related_name="enabled_plugins", on_delete=models.CASCADE
     )

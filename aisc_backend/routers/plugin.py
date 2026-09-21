@@ -156,6 +156,9 @@ class CreatePluginsRequest(Schema):
     package_name: str
     version: str
     project_uuid: uuid.UUID
+    # Set when the install came from the catalogue. Optional so a deep link or
+    # a direct API call still works; it is then recorded as no origin at all.
+    catalogue_slug: str | None = None
 
 @router.post("", response=list[PluginOutSchema])
 async def create_plugins(request, data: CreatePluginsRequest):
@@ -181,12 +184,19 @@ async def create_plugins(request, data: CreatePluginsRequest):
 
         if existing is not None:
             project_plugin = existing
+            # An older row may not know where it came from. Learn it, but never
+            # unlearn it: an install without an origin says nothing about the
+            # origin already recorded.
+            if data.catalogue_slug and not project_plugin.catalogue_slug:
+                project_plugin.catalogue_slug = data.catalogue_slug
+                await sync_to_async(project_plugin.save)()
         else:
             project_plugin = Plugin(
                 name=plugin_name,
                 display_name=plugin_obj.display_name,
                 package_name=data.package_name,
                 version=data.version,
+                catalogue_slug=data.catalogue_slug,
                 project=project,
                 enabled=True,
             )
@@ -202,6 +212,7 @@ async def create_plugins(request, data: CreatePluginsRequest):
     await sync_to_async(log_action)(
         request, action="install", resource_type="plugin", resource_id=data.package_name,
         metadata={"version": data.version, "projectPid": str(data.project_uuid),
+                  "catalogueSlug": data.catalogue_slug,
                   "plugins": [p.name for p in created_plugins]})
 
     return created_plugins
