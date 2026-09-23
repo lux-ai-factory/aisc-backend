@@ -105,7 +105,7 @@ class StatsRepository:
         )
 
         models_evaluated = (
-            await input_files.exclude(component__component_type=AIComponentType.DATASET)
+            await input_files.filter(component__component_type=AIComponentType.MODEL)
             .values("component")
             .distinct()
             .acount()
@@ -118,7 +118,8 @@ class StatsRepository:
         ).acount()
         total_models = await AIComponent.objects.filter(
             system__project__pid=project_pid,
-        ).exclude(component_type=AIComponentType.DATASET).acount()
+            component_type=AIComponentType.MODEL
+        ).acount()
 
         # Plugins and artifacts
         active_plugins = await Plugin.objects.filter(project__pid=project_pid).acount()
