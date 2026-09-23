@@ -6,13 +6,6 @@ from .common import Base
 class ProjectConfigCategory(models.TextChoices):
     SECRETS = "secrets", "Secrets / Credentials"
     VARIABLES = "variables", "Variables (primitive / JSON)"
-    DATASHAPE = "datashape", "DataShape / Feature Definition"
-    API_ENDPOINT = "api_endpoint", "API Endpoint"
-
-
-class EndpointType(models.TextChoices):
-    OPENAI_COMPATIBLE = "openai_compatible", "OpenAI-compatible"
-    REST = "rest", "REST"
 
 
 class ProjectConfig(Base):
@@ -31,12 +24,6 @@ class ProjectConfig(Base):
     encrypted_value = models.TextField(blank=True, default="")
     masked_value = models.CharField(max_length=255, blank=True, default="")
     json_value = models.JSONField(blank=True, default=dict)
-
-    # API_ENDPOINT category only
-    endpoint_type = models.CharField(
-        max_length=50, choices=EndpointType.choices, blank=True, default=""
-    )
-    url = models.CharField(max_length=500, blank=True, default="")
 
     class Meta:
         constraints = [
