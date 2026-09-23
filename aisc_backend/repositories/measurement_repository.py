@@ -83,3 +83,6 @@ class MeasurementRepository(BaseRepository[Measurement]):
             queryset = queryset.annotate(**agg_map)
 
         return [item async for item in queryset]
+
+    async def bulk_create(self, instances: list[Measurement]) -> list[Measurement]:
+        return await Measurement.objects.abulk_create(instances)

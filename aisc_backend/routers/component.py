@@ -8,18 +8,20 @@ from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from aisc_backend.audit.log import log_action
-from aisc_backend.models import AIComponent, AIComponentType, ProjectConfig, ProjectConfigCategory
+from aisc_backend.models import AIComponent, AIComponentType
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
-from aisc_backend.repositories.base_repository import BaseRepository
+from aisc_backend.repositories.ai_component_repository import AIComponentRepository
+from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.schemas.ai_system import AIComponentInSchema, AIComponentOutSchema
 from aisc_backend.utils.encryption import decrypt_value
-from aisc_plugin_interface import list_openai_models, ModelListingError
+from aisc_plugin_interface import LLMConfig, list_openai_models, ModelListingError
 from config.settings import MODEL_LISTING_SSL_VERIFY
 
 router = Router(tags=["component"])
 
-component_repository = BaseRepository(model=AIComponent)
+ai_component_repository = AIComponentRepository()
+project_config_repository = ProjectConfigRepository()
 
 
 class UploadComponentFileResponse(Schema):
@@ -35,11 +37,7 @@ def storage_container_for(component: AIComponent) -> str:
 
 @router.get("/{component_pid}", response=AIComponentOutSchema)
 async def get_component(request, component_pid: uuid.UUID):
-    component = await (
-        AIComponent.objects.select_related("source_dataset")
-        .filter(pid=component_pid)
-        .afirst()
-    )
+    component = await ai_component_repository.get_with_source_dataset(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
     return component
@@ -47,28 +45,24 @@ async def get_component(request, component_pid: uuid.UUID):
 
 @router.patch("/{component_pid}", response=AIComponentOutSchema)
 async def update_component(request, component_pid: uuid.UUID, data: AIComponentInSchema):
-    component = await component_repository.get(component_pid)
+    component = await ai_component_repository.get(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
 
-    values = data.model_dump(exclude_unset=True)
-    if "name" in values:
-        component.name = values["name"]
-    if "description" in values:
-        component.description = values["description"]
-    if "json_value" in values:
-        component.json_value = values["json_value"]
-    if values.get("source_dataset_pid"):
-        source = await component_repository.get(values["source_dataset_pid"])
+    if data.name is not None:
+        component.name = data.name
+    if data.description is not None:
+        component.description = data.description
+    if data.json_value is not None:
+        component.json_value = data.json_value
+    if data.source_dataset_pid:
+        source = await ai_component_repository.get(data.source_dataset_pid)
         if source is None or source.component_type != AIComponentType.DATASET:
             raise HttpError(400, "source_dataset must be a dataset component")
         component.source_dataset = source
 
-    component = await component_repository.save(component)
-    component = await (
-        AIComponent.objects.select_related("source_dataset")
-        .filter(pid=component.pid).afirst()
-    )
+    component = await ai_component_repository.save(component)
+    component = await ai_component_repository.get_with_source_dataset(component.pid)
     await sync_to_async(log_action)(
         request, action="update", resource_type="component",
         resource_id=str(component_pid), metadata={"name": component.name})
@@ -77,10 +71,10 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
 
 @router.delete("/{component_pid}", response={204: None})
 async def delete_component(request, component_pid: uuid.UUID):
-    component = await component_repository.get(component_pid)
+    component = await ai_component_repository.get(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
-    await component_repository.delete(component)
+    await ai_component_repository.delete(component)
     return 204, None
 
 
@@ -89,7 +83,7 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
-    component = await component_repository.get(component_pid)
+    component = await ai_component_repository.get(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
     if not component.is_file_backed:
@@ -107,7 +101,7 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     component.data = file.name
     component.file_size = file.size
     component.storage_container = container
-    await component_repository.save(component)
+    await ai_component_repository.save(component)
 
     await sync_to_async(log_action)(
         request, action="upload", resource_type="component",
@@ -125,36 +119,28 @@ async def get_component_models(request, component_pid: uuid.UUID):
     failure, returns an empty list plus an error message so the UI can fall
     back to a free-text model input.
     """
-    component = await (
-        AIComponent.objects.select_related("system__project")
-        .filter(pid=component_pid)
-        .afirst()
-    )
+    component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
     if component.component_type != AIComponentType.LLM:
         raise HttpError(400, "Model listing is only available for llm components")
 
-    config = component.json_value or {}
-    endpoint_url = config.get("endpoint_url") or ""
-    secret_key = config.get("secret_key") or ""
-    if not endpoint_url:
+    config = LLMConfig.model_validate(component.json_value or {})
+    if not config.endpoint_url:
         raise HttpError(400, "LLM component has no endpoint_url configured")
-    if not secret_key:
+    if not config.secret_key:
         raise HttpError(400, "LLM component has no API key secret configured")
 
-    secret = await ProjectConfig.objects.filter(
-        project=component.system.project,
-        key=secret_key,
-        category=ProjectConfigCategory.SECRETS,
-    ).afirst()
+    secret = await project_config_repository.get_secret_by_key(
+        component.system.project.pid, config.secret_key
+    )
     if secret is None or not secret.encrypted_value:
         raise HttpError(400, "Configured API key secret not found")
 
     try:
         api_key = decrypt_value(secret.encrypted_value)
         models = list_openai_models(
-            endpoint_url,
+            config.endpoint_url,
             api_key,
             verify_ssl=MODEL_LISTING_SSL_VERIFY,
         )
@@ -168,7 +154,7 @@ async def get_component_models(request, component_pid: uuid.UUID):
 @router.get("/{component_pid}/data")
 async def get_component_file(request, component_pid: uuid.UUID):
     try:
-        component = await component_repository.get(component_pid)
+        component = await ai_component_repository.get(component_pid)
         if not component:
             raise HttpError(404, f"Component {component_pid} not found")
 

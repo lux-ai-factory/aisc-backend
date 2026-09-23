@@ -57,3 +57,29 @@ class ProjectConfigOutSchema(Schema):
     json_value: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectConfigSelectionSchema(Schema):
+    plugin_config_key: str
+    project_config_pid: uuid.UUID
+
+
+class ProjectConfigOptionSchema(Schema):
+    pid: uuid.UUID
+    key: str
+    name: str
+    category: str
+    masked_value: str = ""
+    json_value: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_row(cls, project_config) -> "ProjectConfigOptionSchema":
+        is_secret = project_config.category == ProjectConfigCategory.SECRETS
+        return cls(
+            pid=project_config.pid,
+            key=project_config.key,
+            name=project_config.name,
+            category=project_config.category,
+            masked_value=project_config.masked_value if is_secret else "",
+            json_value={} if is_secret else project_config.json_value,
+        )

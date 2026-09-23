@@ -1,29 +1,26 @@
 import uuid
 
+from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend.models.common import StorageContainer
-from aisc_plugin_interface.models.evaluation_input import InputDefinition
-
-from aisc_backend.repositories.plugin_repository import PluginRepository, EvaluationPluginRepository
 from aisc_backend.audit.log import log_action
-from asgiref.sync import sync_to_async
-from aisc_plugin_manager import Loader
-from aisc_plugin_interface import MetricVisualization
-
+from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
+from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
+from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
+from aisc_backend.repositories.plugin_repository import PluginRepository, EvaluationPluginRepository
+from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
-
-from aisc_backend.models import Plugin, PluginConfig, ProjectConfig, ProjectConfigCategory, AIComponent
 from aisc_backend.schemas.measure import MeasureOutSchema
-from aisc_backend.schemas.plugin import (
-    PluginOutSchema,
-    PluginConfigOutSchema,
-)
+from aisc_backend.schemas.plugin import PluginOutSchema, PluginConfigOutSchema
+from aisc_backend.schemas.project_config import ProjectConfigOptionSchema, ProjectConfigSelectionSchema
+from aisc_plugin_manager import Loader
+from aisc_plugin_interface import MetricVisualization
+from aisc_plugin_interface.models.evaluation_input import InputDefinition
 from config.settings import PLUGIN_PATH, PACKAGE_REGISTRY_URL, PACKAGE_REGISTRY_INDEX, PACKAGE_REGISTRY_USER, \
     PACKAGE_REGISTRY_PASSWORD
 
@@ -37,7 +34,9 @@ project_repository = ProjectRepository()
 evaluation_repository = EvaluationRepository()
 measurement_repository = MeasurementRepository()
 evaluation_plugin_repository = EvaluationPluginRepository()
-ai_component_repository = BaseRepository(model=AIComponent)
+ai_component_repository = AIComponentRepository()
+project_config_repository = ProjectConfigRepository()
+plugin_config_repository = BaseRepository(model=PluginConfig)
 
 
 class PluginConfigStateResponse(Schema):
@@ -46,57 +45,9 @@ class PluginConfigStateResponse(Schema):
     formSchema: dict
     uiSchema: dict
     project_config_definitions: list[dict]
-    project_config_selections: list[dict] = []
-    project_configs: list[dict] = []
+    project_config_selections: list[ProjectConfigSelectionSchema] = []
+    project_configs: list[ProjectConfigOptionSchema] = []
     description: str = ""
-
-
-def project_config_state(project_config_selections, definitions):
-    return {
-        "project_config_definitions": [definition.model_dump(mode="json") for definition in definitions],
-        "project_config_selections": project_config_selections,
-    }
-
-
-async def save_project_config_mappings(plugin_config, project_id, selections):
-    from aisc_backend.models import PluginConfigProjectConfig
-
-    await PluginConfigProjectConfig.objects.filter(plugin_config=plugin_config).adelete()
-    for selection in selections:
-        plugin_config_key = selection.get("plugin_config_key")
-        project_config_pid = selection.get("project_config_pid")
-        if not plugin_config_key or not project_config_pid:
-            continue
-        try:
-            setting = await ProjectConfig.objects.aget(
-                project_id=project_id,
-                pid=project_config_pid,
-            )
-        except ProjectConfig.DoesNotExist:
-            raise HttpError(400, "Selected project config does not belong to this project")
-        await PluginConfigProjectConfig.objects.acreate(
-            plugin_config=plugin_config,
-            project_config=setting,
-            plugin_config_key=plugin_config_key,
-        )
-
-
-def project_config_option(setting: ProjectConfig) -> dict:
-    return {
-        "pid": setting.pid,
-        "key": setting.key,
-        "name": setting.name,
-        "category": setting.category,
-        "masked_value": setting.masked_value if setting.category == ProjectConfigCategory.SECRETS else "",
-        "json_value": setting.json_value if setting.category != ProjectConfigCategory.SECRETS else {},
-    }
-
-
-async def project_config_options(project_id) -> list[dict]:
-    return [
-        project_config_option(setting)
-        async for setting in ProjectConfig.objects.filter(project_id=project_id)
-    ]
 
 
 class PackageAvailableSchema(Schema):
@@ -158,10 +109,9 @@ class CreatePluginsRequest(Schema):
     version: str
     project_uuid: uuid.UUID
 
+
 @router.post("", response=list[PluginOutSchema])
 async def create_plugins(request, data: CreatePluginsRequest):
-    from asgiref.sync import sync_to_async
-
     project = await project_repository.get(data.project_uuid, True)
 
     plugins_package_dict = plugin_loader.load_package(data.package_name, data.version)
@@ -171,14 +121,9 @@ async def create_plugins(request, data: CreatePluginsRequest):
         # Look up ANY Plugin row for this (package, version, name, project) —
         # including soft-disabled ones — so the toggle re-uses the existing
         # row and the historical eval data stays attached.
-        existing = await sync_to_async(
-            lambda: Plugin.objects.filter(
-                project=project,
-                package_name=data.package_name,
-                version=data.version,
-                name=plugin_name,
-            ).first()
-        )()
+        existing = await plugin_repository.find_by_identity(
+            project, data.package_name, data.version, plugin_name
+        )
 
         if existing is not None:
             project_plugin = existing
@@ -198,7 +143,7 @@ async def create_plugins(request, data: CreatePluginsRequest):
     if created_plugins and all(not p.enabled for p in created_plugins):
         for p in created_plugins:
             p.enabled = True
-            await sync_to_async(p.save)()
+            await plugin_repository.save(p)
 
     await sync_to_async(log_action)(
         request, action="install", resource_type="plugin", resource_id=data.package_name,
@@ -216,16 +161,12 @@ class RefreshPluginRequest(Schema):
 
 @router.post("/refresh", response=list[PluginOutSchema])
 async def refresh_plugins(request, data: RefreshPluginRequest):
-    from asgiref.sync import sync_to_async
-
     plugins_package_dict = plugin_loader.refresh_package(data.package_name, data.version)
 
     project = await project_repository.get(data.project_uuid, True)
 
-    existing = await plugin_repository.filter(
-        package_name=data.package_name,
-        version=data.version,
-        project__pid=data.project_uuid,
+    existing = await plugin_repository.list_by_package(
+        data.project_uuid, data.package_name, data.version
     )
     existing_by_name = {p.name: p for p in existing}
 
@@ -234,7 +175,7 @@ async def refresh_plugins(request, data: RefreshPluginRequest):
         if plugin_name in existing_by_name:
             project_plugin = existing_by_name[plugin_name]
             project_plugin.display_name = plugin_obj.display_name
-            await sync_to_async(project_plugin.save)()
+            await plugin_repository.save(project_plugin)
         else:
             project_plugin = Plugin(
                 name=plugin_name,
@@ -256,23 +197,20 @@ class DeletePluginsRequest(Schema):
     version: str
     project_uuid: uuid.UUID
 
+
 @router.delete("", response={204: None})
 async def delete_plugin(request, data: DeletePluginsRequest):
-    from asgiref.sync import sync_to_async
-
     # Soft-disable instead of deleting. Keeps the Plugin row + every
     # downstream link (PluginConfig, EvaluationPlugin, Artifact) intact so
     # the existing evaluation history remains visible. Re-toggling the
     # plugin on flips `enabled` back to True without losing any data.
-    plugins = await plugin_repository.filter(
-        package_name=data.package_name,
-        version=data.version,
-        project__pid=data.project_uuid,
+    plugins = await plugin_repository.list_by_package(
+        data.project_uuid, data.package_name, data.version
     )
     for plugin in plugins:
         if plugin.enabled:
             plugin.enabled = False
-            await sync_to_async(plugin.save)()
+            await plugin_repository.save(plugin)
     await sync_to_async(log_action)(
         request, action="disable", resource_type="plugin", resource_id=data.package_name,
         metadata={"version": data.version, "projectPid": str(data.project_uuid)})
@@ -281,6 +219,7 @@ async def delete_plugin(request, data: DeletePluginsRequest):
 
 class UpdatePluginEnabledRequest(Schema):
     enabled: bool
+
 
 @router.patch("/{plugin_pid}/enabled", response=PluginOutSchema)
 async def update_plugin_enabled(
@@ -301,7 +240,7 @@ async def update_plugin_enabled(
 )
 async def get_plugin_config_history(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
-    return [c async for c in plugin.configs.prefetch_related("setting_mappings__project_config").all()]
+    return await plugin_repository.configs_with_mappings(plugin)
 
 
 @router.post(
@@ -312,17 +251,21 @@ async def restore_plugin_config(
         request, plugin_pid: uuid.UUID, config_id: int
 ):
     plugin = await plugin_repository.get(plugin_pid)
-    config = await PluginConfig.objects.aget(id=config_id, plugin=plugin)
+    try:
+        config = await plugin_repository.get_config(plugin, config_id)
+    except PluginConfig.DoesNotExist:
+        raise HttpError(404, f"Plugin config {config_id} not found")
 
     plugin.current_config = config
-    await plugin.asave()
+    await plugin_repository.save(plugin)
 
     return plugin
 
 
 class UpdatePluginConfigRequest(Schema):
     config: dict
-    project_config_selections: list[dict] = []
+    project_config_selections: list[ProjectConfigSelectionSchema] = []
+
 
 @router.post("/{plugin_pid}/config", response=PluginConfigStateResponse)
 async def update_plugin_config_state(
@@ -335,11 +278,14 @@ async def update_plugin_config_state(
         raise HttpError(400, "Config is required")
 
     plugin_config = PluginConfig(plugin=project_plugin, config=data.config)
-    await plugin_config.asave()
+    plugin_config = await plugin_config_repository.save(plugin_config)
 
-    await save_project_config_mappings(
-        plugin_config, project_plugin.project_id, data.project_config_selections
-    )
+    try:
+        await project_config_repository.save_plugin_config_mappings(
+            plugin_config, project_plugin.project.pid, data.project_config_selections
+        )
+    except ProjectConfig.DoesNotExist:
+        raise HttpError(400, "Selected project config does not belong to this project")
     project_plugin.current_config = plugin_config
     await plugin_repository.save(project_plugin)
 
@@ -350,10 +296,12 @@ async def update_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=ui_schema,
-        **project_config_state(
-            data.project_config_selections, plugin_obj.project_config_definitions
-        ),
-        project_configs=await project_config_options(project_plugin.project_id),
+        project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
+        project_config_selections=data.project_config_selections,
+        project_configs=[
+            ProjectConfigOptionSchema.from_row(project_config)
+            for project_config in await project_config_repository.get_by_project(project_plugin.project.pid)
+        ],
         description=plugin_obj.help_text,
     )
 
@@ -364,7 +312,7 @@ async def update_plugin_config_state(
 
 
 @router.post("/{plugin_pid}/config/state", response=PluginConfigStateResponse)
-async def update_plugin_config_state(
+async def preview_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
     project_plugin = await plugin_repository.get_with_related(plugin_pid)
@@ -376,7 +324,10 @@ async def update_plugin_config_state(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         project_config_selections=data.project_config_selections,
-        project_configs=await project_config_options(project_plugin.project_id),
+        project_configs=[
+            ProjectConfigOptionSchema.from_row(project_config)
+            for project_config in await project_config_repository.get_by_project(project_plugin.project.pid)
+        ],
         description=plugin_obj.help_text,
     )
 
@@ -401,11 +352,7 @@ async def get_plugin_evaluation_results(
     metrics = plugin_obj.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
-    observation = (
-        await evaluation.observations.filter(tool=str(plugin))
-        .order_by("-created_at")
-        .afirst()
-    )
+    observation = await evaluation_repository.get_latest_observation(evaluation, str(plugin))
 
     measurements = await measurement_repository.filter(name__in=metrics, observation=observation)
 
@@ -443,12 +390,13 @@ async def get_project_plugin_config_state(
 
     current_setting_selections = []
     if project_plugin.current_config:
+        mappings = await plugin_repository.get_setting_mappings(project_plugin.current_config)
         current_setting_selections = [
-            {
-                "plugin_config_key": mapping.plugin_config_key,
-                "project_config_pid": mapping.project_config.pid,
-            }
-            async for mapping in project_plugin.current_config.setting_mappings.select_related("project_config").all()
+            ProjectConfigSelectionSchema(
+                plugin_config_key=mapping.plugin_config_key,
+                project_config_pid=mapping.project_config.pid,
+            )
+            for mapping in mappings
         ]
 
     response = PluginConfigStateResponse(
@@ -456,11 +404,12 @@ async def get_project_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=ui_schema,
-        **project_config_state(
-            current_setting_selections,
-            plugin_obj.project_config_definitions,
-        ),
-        project_configs=await project_config_options(project_plugin.project_id),
+        project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
+        project_config_selections=current_setting_selections,
+        project_configs=[
+            ProjectConfigOptionSchema.from_row(project_config)
+            for project_config in await project_config_repository.get_by_project(project_plugin.project.pid)
+        ],
         description=plugin_obj.help_text,
     )
 
@@ -475,6 +424,8 @@ async def parse_plugin_config_state_from_dataset(
         request, plugin_pid: uuid.UUID, dataset_uuid: uuid.UUID
 ):
     dataset = await ai_component_repository.get(dataset_uuid)
+    if not dataset:
+        raise HttpError(404, f"Component {dataset_uuid} not found")
 
     response = file_repository.get_object(
         bucket_name=StorageContainer.Datasets, object_name=dataset.data
