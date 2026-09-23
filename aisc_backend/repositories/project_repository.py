@@ -1,9 +1,6 @@
 import uuid
 
-from django.db.models import Prefetch
-
 from aisc_backend.models import Project
-from aisc_backend.models.ai_system import AISystem
 from aisc_backend.models.project import ProjectStatus
 from aisc_backend.repositories.base_repository import BaseRepository
 
@@ -26,14 +23,9 @@ class ProjectRepository(BaseRepository[Project]):
         project = await (
             Project.objects
             .prefetch_related(
-                Prefetch(
-                    "aisystem",
-                    queryset=AISystem.objects.prefetch_related(
-                        "components",
-                        "components__source_dataset",
-                    ),
-                    to_attr="_aisystem",
-                ),
+                "aisystem",
+                "aisystem__components",
+                "aisystem__components__source_dataset",
                 "enabled_plugins",
                 "configs",
 
