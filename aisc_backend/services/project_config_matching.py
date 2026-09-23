@@ -1,5 +1,3 @@
-from typing import Any
-
 from aisc_plugin_interface import ConfigCategory, ProjectConfigDefinition
 
 from aisc_backend.models import ProjectConfig
@@ -15,7 +13,6 @@ def _compatible(setting: ProjectConfig, definition: ProjectConfigDefinition) -> 
 async def validate_plugin_settings(
     project,
     plugin_name: str,
-    config: dict[str, Any],
     definitions: list[ProjectConfigDefinition],
     selected_settings: list[ProjectConfig] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
@@ -31,7 +28,6 @@ async def validate_plugin_settings(
         if definition.category.value == "datashape":
             continue
         compatible = [setting for setting in settings if _compatible(setting, definition)]
-        referenced_key = definition.key
         if not compatible:
             missing.append({"plugin": plugin_name, "setting": definition.name, "key": definition.key, "reason": "required setting is not configured"})
     return {"missing": missing, "invalid": invalid, "ambiguous": ambiguous}

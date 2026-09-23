@@ -33,7 +33,7 @@ class ProjectConfigRepository(BaseRepository[ProjectConfig]):
         return await queryset.aget(pid=pid)
 
     async def get_by_project(self, project_pid: uuid.UUID) -> list[ProjectConfig]:
-        return [setting async for setting in ProjectConfig.objects.filter(project__pid=project_pid)]
+        return [project_config async for project_config in ProjectConfig.objects.filter(project__pid=project_pid)]
 
     async def get_by_category(self, project_pid: uuid.UUID, category: str) -> list[ProjectConfig]:
-        return [setting async for setting in ProjectConfig.objects.filter(project__pid=project_pid, category=category)]
+        return [project_config async for project_config in ProjectConfig.objects.filter(project__pid=project_pid, category=category)]
