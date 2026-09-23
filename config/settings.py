@@ -206,6 +206,13 @@ KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
 
+# --- Model listing TLS ---
+# Controls TLS certificate verification when listing models from an
+# OpenAI-compatible endpoint. Set to "False" to skip verification (allow
+# self-signed certificates, e.g. a locally deployed LLM inference server).
+# When unset, verification is skipped automatically for private-network hosts.
+MODEL_LISTING_SSL_VERIFY = env.bool("MODEL_LISTING_SSL_VERIFY", default=True)
+
 # --- immudb audit ledger (read by aisc_backend.audit.clerk) ---
 # Where the immudb server is. Host runs: localhost:3322; inside docker: immudb:3322.
 IMMUDB_URL = env("IMMUDB_URL", default="localhost:3322")

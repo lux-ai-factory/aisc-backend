@@ -22,6 +22,7 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
 
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component__source_dataset")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__artifacts")
 
     return evaluation_queryset

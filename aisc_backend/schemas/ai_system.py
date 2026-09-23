@@ -17,21 +17,18 @@ class AIComponentPidOutSchema(ModelSchema):
 
 
 class AIComponentOutSchema(ModelSchema):
-    secret_pid: uuid.UUID | None = Field(default=None, alias="secret.pid")
     source_dataset_pid: uuid.UUID | None = Field(default=None, alias="source_dataset.pid")
 
     class Meta:
         model = AIComponent
         fields = ["pid", "name", "description", "component_type", "data",
-                  "file_size", "endpoint_url", "json_value"]
+                  "file_size", "json_value"]
 
 
 class AIComponentInSchema(Schema):
     name: str | None = None
     description: str | None = None
     component_type: str | None = None
-    endpoint_url: str | None = None
-    secret_pid: uuid.UUID | None = None
     source_dataset_pid: uuid.UUID | None = None
     json_value: dict | None = None
 

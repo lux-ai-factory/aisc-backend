@@ -11,6 +11,7 @@ class EvaluationInputOutSchema(Schema):
     name: str
     input_type: str
     input_file: AIComponentOutSchema
+    value: dict = Field(default={})
 
     @staticmethod
     def resolve_input_type(obj):

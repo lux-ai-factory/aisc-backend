@@ -47,6 +47,7 @@ evaluation_plugin_repository = EvaluationPluginRepository()
 class EvaluationPluginInputInSchema(Schema):
     pid: uuid.UUID
     name: str
+    value: dict | None = None
 
 
 class EvaluationPluginInSchema(Schema):
@@ -109,12 +110,13 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 if not component:
                     raise HttpError(400, f"Component {input_data.pid} not found")
 
-                input_file = EvaluationInput(
+                evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,
                     name=input_data.name,
                     component=component,
+                    value=input_data.value or {},
                 )
-                await input_file.asave()
+                await evaluation_input.asave()
 
         evaluation_plugins.append(run_plugin)
 

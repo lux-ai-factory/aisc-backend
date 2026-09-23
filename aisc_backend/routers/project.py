@@ -7,7 +7,15 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 
-from aisc_backend.models import EvaluationStatus, AIComponent, AISystem, AIComponentType, ProjectConfig, ProjectConfigCategory
+from aisc_backend.models import (
+    EvaluationStatus,
+    Evaluation,
+    AIComponent,
+    AISystem,
+    AIComponentType,
+    ProjectConfig,
+    ProjectConfigCategory,
+)
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
@@ -109,7 +117,7 @@ async def get_project_aisystem(request, pid: uuid.UUID):
     project = await project_repository.get(pid, True)
     system = await (
         AISystem.objects.filter(project=project)
-        .prefetch_related("components", "components__secret",
+        .prefetch_related("components",
                           "components__source_dataset")
         .afirst()
     )
@@ -125,15 +133,6 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
     project = await project_repository.get(pid)
     system = await get_or_create_aisystem(project)
 
-    secret = None
-    if data.secret_pid:
-        secret = await ProjectConfig.objects.filter(
-            project=project, pid=data.secret_pid,
-            category=ProjectConfigCategory.SECRETS,
-        ).afirst()
-        if secret is None:
-            raise HttpError(400, "Selected secret does not belong to this project")
-
     source_dataset = None
     json_value = data.json_value or {}
     if data.source_dataset_pid:
@@ -143,12 +142,21 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
         if data.component_type == AIComponentType.DATASHAPE and not json_value:
             json_value = await derive_datashape(source_dataset)
 
+    if data.component_type == AIComponentType.LLM:
+        secret_key = json_value.get("secret_key") or ""
+        if secret_key:
+            secret_exists = await ProjectConfig.objects.filter(
+                project=project,
+                key=secret_key,
+                category=ProjectConfigCategory.SECRETS,
+            ).aexists()
+            if not secret_exists:
+                raise HttpError(400, "Configured API key secret does not exist in this project")
+
     component = AIComponent(
         name=data.name,
         description=data.description or "",
         component_type=data.component_type or AIComponentType.MODEL,
-        endpoint_url=data.endpoint_url or "",
-        secret=secret,
         source_dataset=source_dataset,
         json_value=json_value,
         system=system,
@@ -196,6 +204,34 @@ async def get_project_evaluations(
         exclude = {"status__in": exclude_status}
     evaluations = await evaluation_repository.filter_with_related(filter, exclude)
     return evaluations
+
+
+@router.get("/{pid}/evaluation-inputs-template", response=dict)
+async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
+    """Return the most recent evaluation's input selections per plugin, so the
+    evaluation form can prefill inputs from a previous run."""
+    project = await project_repository.get(pid)
+    latest = await (
+        Evaluation.objects.filter(project=project).order_by("-created_at").afirst()
+    )
+    if latest is None:
+        return {}
+
+    template: dict[str, dict[str, dict]] = {}
+    async for evaluation_plugin in (
+        latest.evaluation_plugins.select_related("plugin_config__plugin").all()
+    ):
+        plugin_config = evaluation_plugin.plugin_config
+        if plugin_config is None or plugin_config.plugin_id is None:
+            continue
+        plugin_name = plugin_config.plugin.name
+        entries = template.setdefault(plugin_name, {})
+        async for inp in evaluation_plugin.evaluation_inputs.select_related("component").all():
+            entries[inp.name] = {
+                "component_pid": str(inp.component.pid),
+                "value": inp.value,
+            }
+    return template
 
 
 class ProjectPluginConfigResponse(Schema):

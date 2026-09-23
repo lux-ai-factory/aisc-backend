@@ -19,7 +19,7 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
-from aisc_backend.models import ProjectConfig
+from aisc_backend.models import ProjectConfig, ProjectConfigCategory
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
@@ -89,15 +89,29 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
     result = {}
     async for evaluation_plugin in evaluation.evaluation_plugins.all():
         entries = []
-        async for inp in evaluation_plugin.evaluation_inputs.select_related("component__secret").all():
+        async for inp in evaluation_plugin.evaluation_inputs.select_related("component__system__project").all():
             component = inp.component
+            config = component.json_value or {}
+            endpoint_url = config.get("endpoint_url") if component.component_type == "llm" else None
+            secret_key = config.get("secret_key") if component.component_type == "llm" else None
+            secret_encrypted_value = None
+            if secret_key:
+                secret_row = await ProjectConfig.objects.filter(
+                    project=component.system.project,
+                    key=secret_key,
+                    category=ProjectConfigCategory.SECRETS,
+                ).afirst()
+                if secret_row is not None:
+                    secret_encrypted_value = secret_row.encrypted_value
             entries.append({
                 "name": inp.name,
                 "component_type": component.component_type,
                 "data": component.data,
                 "json_value": component.json_value,
-                "endpoint_url": component.endpoint_url,
-                "secret_encrypted_value": component.secret.encrypted_value if component.secret_id else None,
+                "value": inp.value,
+                "endpoint_url": endpoint_url,
+                "secret_key": secret_key,
+                "secret_encrypted_value": secret_encrypted_value,
             })
         result[str(evaluation_plugin.pid)] = entries
     return result

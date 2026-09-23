@@ -1,15 +1,14 @@
 from django.db import models
 
 from .common import Base, HasData
-from .project_config import ProjectConfig
 
 
 class AIComponentType(models.TextChoices):
     DATASET = "dataset", "Dataset"
     MODEL = "model", "Model / file-backed artifact"
     LLM = "llm", "LLM (OpenAI-compatible)"
-    REST = "rest", "REST endpoint"
     DATASHAPE = "datashape", "DataShape (derived from a dataset)"
+    RESOURCE = "resource", "Resource / generic reference"
 
 
 class AISystem(Base):
@@ -37,7 +36,7 @@ class AIComponent(HasData):
 
     `component_type` dispatches to type-specific behaviour. Only
     dataset/model/file-backed components carry a stored artifact (the `HasData`
-    fields); llm/rest components expose their data as an `EvaluationInput`.
+    fields); the other types carry their configuration in `json_value`.
     """
 
     system = models.ForeignKey(
@@ -47,19 +46,15 @@ class AIComponent(HasData):
         max_length=50, choices=AIComponentType.choices, default=AIComponentType.MODEL
     )
 
-    # openai-compatible / endpoint-backed components
-    endpoint_url = models.CharField(max_length=500, blank=True, default="")
-    secret = models.ForeignKey(
-        "ProjectConfig", related_name="components", on_delete=models.SET_NULL,
-        null=True, blank=True,
-    )
-
     # datashape components: which dataset component they were derived from,
     # plus the derived datashape document.
     source_dataset = models.ForeignKey(
         "self", related_name="derived_datashapes", on_delete=models.SET_NULL,
         null=True, blank=True,
     )
+    # Type-specific configuration, serialised per component type (e.g. a
+    # DataShape for datashape, an LLMConfig for llm, a ResourceConfig for
+    # resource).
     json_value = models.JSONField(blank=True, default=dict)
 
     @property

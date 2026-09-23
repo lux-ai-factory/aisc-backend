@@ -13,6 +13,9 @@ from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.schemas.ai_system import AIComponentInSchema, AIComponentOutSchema
+from aisc_backend.utils.encryption import decrypt_value
+from aisc_plugin_interface import list_openai_models, ModelListingError
+from config.settings import MODEL_LISTING_SSL_VERIFY
 
 router = Router(tags=["component"])
 
@@ -33,7 +36,7 @@ def storage_container_for(component: AIComponent) -> str:
 @router.get("/{component_pid}", response=AIComponentOutSchema)
 async def get_component(request, component_pid: uuid.UUID):
     component = await (
-        AIComponent.objects.select_related("secret", "source_dataset")
+        AIComponent.objects.select_related("source_dataset")
         .filter(pid=component_pid)
         .afirst()
     )
@@ -53,17 +56,8 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
         component.name = values["name"]
     if "description" in values:
         component.description = values["description"]
-    if "endpoint_url" in values:
-        component.endpoint_url = values["endpoint_url"]
     if "json_value" in values:
         component.json_value = values["json_value"]
-    if values.get("secret_pid"):
-        secret = await ProjectConfig.objects.filter(
-            pid=values["secret_pid"], category=ProjectConfigCategory.SECRETS
-        ).afirst()
-        if secret is None:
-            raise HttpError(400, "Not found: secret does not exist")
-        component.secret = secret
     if values.get("source_dataset_pid"):
         source = await component_repository.get(values["source_dataset_pid"])
         if source is None or source.component_type != AIComponentType.DATASET:
@@ -72,7 +66,7 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
 
     component = await component_repository.save(component)
     component = await (
-        AIComponent.objects.select_related("secret", "source_dataset")
+        AIComponent.objects.select_related("source_dataset")
         .filter(pid=component.pid).afirst()
     )
     await sync_to_async(log_action)(
@@ -121,6 +115,54 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
         metadata={"filename": file.name, "filesize": file.size,
                   "component_type": component.component_type})
     return UploadComponentFileResponse(file_name=file.name, file_size=file.size)
+
+
+@router.get("/{component_pid}/models", response=dict)
+async def get_component_models(request, component_pid: uuid.UUID):
+    """List the models exposed by an llm component's OpenAI-compatible endpoint.
+
+    The API key is decrypted server-side and never sent to the client. On
+    failure, returns an empty list plus an error message so the UI can fall
+    back to a free-text model input.
+    """
+    component = await (
+        AIComponent.objects.select_related("system__project")
+        .filter(pid=component_pid)
+        .afirst()
+    )
+    if not component:
+        raise HttpError(404, f"Component {component_pid} not found")
+    if component.component_type != AIComponentType.LLM:
+        raise HttpError(400, "Model listing is only available for llm components")
+
+    config = component.json_value or {}
+    endpoint_url = config.get("endpoint_url") or ""
+    secret_key = config.get("secret_key") or ""
+    if not endpoint_url:
+        raise HttpError(400, "LLM component has no endpoint_url configured")
+    if not secret_key:
+        raise HttpError(400, "LLM component has no API key secret configured")
+
+    secret = await ProjectConfig.objects.filter(
+        project=component.system.project,
+        key=secret_key,
+        category=ProjectConfigCategory.SECRETS,
+    ).afirst()
+    if secret is None or not secret.encrypted_value:
+        raise HttpError(400, "Configured API key secret not found")
+
+    try:
+        api_key = decrypt_value(secret.encrypted_value)
+        models = list_openai_models(
+            endpoint_url,
+            api_key,
+            verify_ssl=MODEL_LISTING_SSL_VERIFY,
+        )
+        return {"models": models, "error": None}
+    except ModelListingError as exc:
+        return {"models": [], "error": str(exc)}
+    except Exception as exc:  # pragma: no cover - defensive
+        return {"models": [], "error": str(exc)}
 
 
 @router.get("/{component_pid}/data")

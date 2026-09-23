@@ -89,6 +89,7 @@ class EvaluationInput(Base):
     component = models.ForeignKey(
         "AIComponent", related_name="evaluation_inputs", on_delete=models.PROTECT
     )
+    value = models.JSONField(blank=True, default=dict)
 
     class Meta:
         unique_together = ("evaluation_plugin", "name")

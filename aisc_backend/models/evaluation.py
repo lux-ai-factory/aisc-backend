@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 
+from .common import CreatedAtModel
 from .observation import Observation
 from .plugin import EvaluationPlugin
 
@@ -14,7 +15,7 @@ class EvaluationStatus(models.TextChoices):
     Custom = "Custom", "Custom"
 
 
-class Evaluation(models.Model):
+class Evaluation(CreatedAtModel):
     pid = models.UUIDField(default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=255, choices=EvaluationStatus.choices)
 

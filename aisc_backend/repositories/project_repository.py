@@ -30,7 +30,6 @@ class ProjectRepository(BaseRepository[Project]):
                     "aisystem",
                     queryset=AISystem.objects.prefetch_related(
                         "components",
-                        "components__secret",
                         "components__source_dataset",
                     ),
                     to_attr="_aisystem",
