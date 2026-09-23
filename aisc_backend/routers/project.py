@@ -87,7 +87,7 @@ async def get_project_details(request, pid: uuid.UUID):
 
 
 async def derive_datashape(source_dataset: AIComponent) -> dict:
-    """Best-effort derivation of a datashape document from a dataset component."""
+    """Best-effort derivation of a full data shape from a dataset component."""
     from pathlib import Path
     from aisc_backend.repositories import file_repository
     from aisc_backend.services.feature_derivation import derive_features

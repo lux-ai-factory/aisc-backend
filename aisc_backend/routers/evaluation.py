@@ -81,7 +81,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 async for mapping in plugin.current_config.setting_mappings.select_related("project_config").all()
             ]
             setting_errors = await validate_plugin_settings(
-                project, plugin.name, plugin.current_config.config, plugin_obj.project_config_definitions,
+                project, plugin.name, plugin_obj.project_config_definitions,
                 selected_settings,
             )
             for key in validation_errors:
