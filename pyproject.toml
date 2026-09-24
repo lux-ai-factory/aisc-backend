@@ -36,7 +36,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-#aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.2.7" }
-aisc-plugin-manager = { path = "../../shared/plugin-manager", editable = true }
-aisc-plugin-interface = { path = "../../shared/plugin-interface", editable = true }
-
+aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.2.7" }
