@@ -12,7 +12,7 @@ resolution-markers = [
 
 [[package]]
 name = "aisc-backend"
-version = "0.2.4"
+version = "0.3.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aisc-plugin-interface" },
@@ -38,8 +38,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aisc-plugin-interface", specifier = ">=0.2.6" },
-    { name = "aisc-plugin-manager", git = "https://github.com/lux-ai-factory/aisc-plugin-manager?tag=v0.2.7" },
+    { name = "aisc-plugin-interface", specifier = ">=0.3.0" },
+    { name = "aisc-plugin-manager", git = "https://github.com/lux-ai-factory/aisc-plugin-manager?tag=v0.3.0" },
     { name = "boto3", specifier = "==1.42.7" },
     { name = "celery", extras = ["redis"], specifier = ">=5.6.3" },
     { name = "cryptography", specifier = ">=50.0.1" },
@@ -61,21 +61,21 @@ requires-dist = [
 
 [[package]]
 name = "aisc-plugin-interface"
-version = "0.2.6"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3b/3b/7b1a553c486d7cfdd41867659ee19aa73b6c2251b9425ac3ed7eb7127f92/aisc_plugin_interface-0.2.6.tar.gz", hash = "sha256:762e888593cefb9e3715e19c3de9aba38f09af2c3e13fa148b4c0ad5c34c3464", size = 15931, upload-time = "2026-08-31T09:25:05.112Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/88/0d8e08c11e3b3bcfac68c8180b5df9f9cda53c1a666c4c2afec7348f73b8/aisc_plugin_interface-0.3.0.tar.gz", hash = "sha256:fc8d1115bbad7a4202d03c106c4ab084107b02dbb1b31fcf0881159e54aba4ac", size = 18617, upload-time = "2026-09-24T14:05:32.006Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/b7/f2018d43bdc255d29ebca5e4ee053f7dae138777df0da7540a75c1e11df9/aisc_plugin_interface-0.2.6-py3-none-any.whl", hash = "sha256:880c715a55353475e4a4f044ea51179d0afe3602541ab2e297910979f97bd8fe", size = 23038, upload-time = "2026-08-31T09:25:04.11Z" },
+    { url = "https://files.pythonhosted.org/packages/04/78/c19bb8bd82f0903e22bc616a1fbd3e0fec86a909c36382da586f13e6e88c/aisc_plugin_interface-0.3.0-py3-none-any.whl", hash = "sha256:7d9f6de9ddbc1ed4f978c557e66a37a03a58b167b773aff48609c91759799aab", size = 28275, upload-time = "2026-09-24T14:05:30.847Z" },
 ]
 
 [[package]]
 name = "aisc-plugin-manager"
-version = "0.2.7"
-source = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager?tag=v0.2.7#bbbdbe34b22bdfe91beb2b8a73228a8800042c1f" }
+version = "0.3.0"
+source = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager?tag=v0.3.0#cbc993b7ecc43db4aefa16ea5811f968ae49ae20" }
 dependencies = [
     { name = "aisc-plugin-interface" },
     { name = "httpx" },
