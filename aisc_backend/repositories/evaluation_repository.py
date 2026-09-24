@@ -2,7 +2,8 @@ import uuid
 from typing import Any
 
 from aisc_backend.models import Evaluation
-from aisc_backend.repositories.base_repository import BaseRepository, T
+from aisc_backend.models.observation import Observation
+from aisc_backend.repositories.base_repository import BaseRepository
 
 
 def build_evaluation_queryset(include: str = "", include_all: bool = False):
@@ -18,11 +19,11 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
 
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__plugin")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__setting_mappings__project_setting")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__setting_mappings__project_config")
 
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_object")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__input_files__content_type")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component__source_dataset")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__artifacts")
 
     return evaluation_queryset
@@ -62,3 +63,34 @@ class EvaluationRepository(BaseRepository[Evaluation]):
         evaluation_queryset = evaluation_queryset.prefetch_related("observations")
 
         return await evaluation_queryset.aget(pid=evaluation_pid)
+
+    async def latest_for_project(self, project) -> Evaluation | None:
+        return await (
+            Evaluation.objects.filter(project=project)
+            .order_by("-created_at")
+            .prefetch_related(
+                "evaluation_plugins__plugin_config__plugin",
+                "evaluation_plugins__evaluation_inputs__component",
+            )
+            .afirst()
+        )
+
+    async def get_with_plugin_inputs(self, evaluation_pid: uuid.UUID) -> Evaluation:
+        return await (
+            Evaluation.objects
+            .prefetch_related("evaluation_plugins")
+            .prefetch_related("evaluation_plugins__evaluation_inputs__component__system__project")
+            .aget(pid=evaluation_pid)
+        )
+
+    async def get_latest_observation(self, evaluation: Evaluation, tool: str) -> Observation | None:
+        return await (
+            evaluation.observations.filter(tool=tool)
+            .order_by("-created_at")
+            .afirst()
+        )
+
+    async def plugin_status(self, evaluation: Evaluation) -> tuple[bool, int]:
+        has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
+        total_plugins = await evaluation.evaluation_plugins.acount()
+        return has_failed_plugins, total_plugins

@@ -14,6 +14,8 @@ from corsheaders.defaults import default_headers
 from environs import env
 from django.core.management.utils import get_random_secret_key
 
+empty_str_to_none = lambda v: v if v and v.strip() else None
+
 env.read_env()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -206,6 +208,13 @@ KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
 
+# --- Model listing TLS ---
+# Controls TLS certificate verification when listing models from an
+# OpenAI-compatible endpoint. Set to "False" to skip verification (allow
+# self-signed certificates, e.g. a locally deployed LLM inference server).
+# When unset, verification is skipped automatically for private-network hosts.
+MODEL_LISTING_SSL_VERIFY = env.bool("MODEL_LISTING_SSL_VERIFY", default=True)
+
 # --- immudb audit ledger (read by aisc_backend.audit.clerk) ---
 # Where the immudb server is. Host runs: localhost:3322; inside docker: immudb:3322.
 IMMUDB_URL = env("IMMUDB_URL", default="localhost:3322")
@@ -238,6 +247,6 @@ CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 PLUGIN_PATH = env('PLUGIN_PATH', '')
 PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
-PACKAGE_REGISTRY_USER = env('PACKAGE_REGISTRY_USER', '')
-PACKAGE_REGISTRY_PASSWORD = env('PACKAGE_REGISTRY_PASSWORD', '')
+PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
+PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))
 PACKAGE_REGISTRY_INDEX = env('PACKAGE_REGISTRY_INDEX', '')

@@ -1,8 +1,7 @@
 from ninja import ModelSchema, Field
 
 from aisc_backend.models.project import Project
-from aisc_backend.schemas.dataset import DatasetOutSchema
-from aisc_backend.schemas.model import ModelOutSchema
+from aisc_backend.schemas.ai_system import AIComponentOutSchema
 from aisc_backend.schemas.plugin import PluginOutSchema
 
 
@@ -18,8 +17,7 @@ class ProjectOutSchema(ModelSchema):
         fields = ["name", "pid"]
 
 class ProjectDetailsOutSchema(ModelSchema):
-    datasets: list[DatasetOutSchema] = Field([], alias="get_datasets")
-    models: list[ModelOutSchema] = Field([], alias="get_models")
+    components: list[AIComponentOutSchema] = Field([], alias="get_components")
     plugins: list[PluginOutSchema] = Field([], alias="get_plugins")
 
     class Meta:

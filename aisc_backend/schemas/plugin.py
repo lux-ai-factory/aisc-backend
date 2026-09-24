@@ -1,37 +1,37 @@
 import uuid
-from typing import Union
 
 from ninja import ModelSchema, Schema
 from pydantic import Field
 
 from aisc_backend.models import Plugin, EvaluationPlugin, PluginConfig
-from aisc_backend.schemas.dataset import DatasetOutSchema
-from aisc_backend.schemas.model import ModelOutSchema
+from aisc_backend.schemas.ai_system import AIComponentOutSchema
+from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 
 
-class EvaluationPluginInputFileOutSchema(Schema):
+class EvaluationInputOutSchema(Schema):
     name: str
     input_type: str
-    input_file: Union[DatasetOutSchema, ModelOutSchema]
+    input_file: AIComponentOutSchema
+    value: dict = Field(default={})
 
     @staticmethod
     def resolve_input_type(obj):
-        return obj.content_type.model
+        return obj.component.component_type
 
     @staticmethod
     def resolve_input_file(obj):
-        return obj.content_object
+        return obj.component
 
 class PluginConfigOutSchema(ModelSchema):
-    project_setting_selections: list[dict] = []
+    project_config_selections: list[ProjectConfigSelectionSchema] = Field(default=[])
 
     @staticmethod
-    def resolve_project_setting_selections(obj):
+    def resolve_project_config_selections(obj):
         return [
-            {
-                "plugin_setting_key": mapping.plugin_setting_key,
-                "project_setting_pid": mapping.project_setting.pid,
-            }
+            ProjectConfigSelectionSchema(
+                plugin_config_key=mapping.plugin_config_key,
+                project_config_pid=mapping.project_config.pid,
+            )
             for mapping in getattr(obj, "_prefetched_objects_cache", {}).get("setting_mappings", [])
         ]
 
@@ -56,7 +56,7 @@ class EvaluationPluginOutSchema(ModelSchema):
     display_name: str = Field(alias="plugin_config.plugin.display_name")
     plugin_pid: uuid.UUID = Field(alias="plugin_config.plugin.pid")
     plugin_config: PluginConfigOutSchema | None = Field(default=None, alias="plugin_config")
-    input_files: list[EvaluationPluginInputFileOutSchema] = Field(default=[], alias="input_files")
+    evaluation_inputs: list[EvaluationInputOutSchema] = Field(default=[], alias="evaluation_inputs")
 
     class Meta:
         model = EvaluationPlugin
