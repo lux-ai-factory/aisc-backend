@@ -3,20 +3,17 @@ import uuid
 
 from pathlib import Path
 from asgiref.sync import sync_to_async
-from django.contrib.contenttypes.models import ContentType
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend.models import EvaluationPlugin, Dataset, EvaluationPluginInputFile
+from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.metric import Metric
 
 from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
-from aisc_backend.models.model import Model
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository
-from aisc_backend.repositories.dataset_repository import DatasetRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
@@ -28,21 +25,19 @@ from aisc_backend.schemas.evaluation import (
     EvaluationOutSchema,
 )
 from aisc_backend.schemas.measure import MeasurementAggregationResponse, \
-    MeasurementAggregationRequest, DimensionKeysResponse, DimensionValuesResponse, MetricNamesResponse, \
-    DimensionKeysRequest, DimensionValuesRequest, MetricNamesRequest
+    MeasurementAggregationRequest, DimensionKeysResponse, DimensionValuesResponse, \
+    DimensionKeysRequest, DimensionValuesRequest, MetricNamesResponse, MetricNamesRequest
 from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
 from aisc_backend.audit.log import log_action
-from aisc_plugin_interface import InputType
 from aisc_backend.routers.plugin import plugin_loader
-from aisc_backend.services.project_setting_matching import validate_plugin_settings
+from aisc_backend.services.project_config_matching import validate_plugin_settings
 
 router = Router(tags=["evaluation"])
 
 evaluation_repository = EvaluationRepository()
 project_repository = ProjectRepository()
-dataset_repository = DatasetRepository()
-model_repository = BaseRepository(model=Model)
+ai_component_repository = BaseRepository(model=AIComponent)
 observation_repository = BaseRepository(model=Observation)
 measurement_repository = MeasurementRepository()
 metric_repository = BaseRepository(model=Metric)
@@ -52,7 +47,7 @@ evaluation_plugin_repository = EvaluationPluginRepository()
 class EvaluationPluginInputInSchema(Schema):
     pid: uuid.UUID
     name: str
-    input_type: InputType
+    value: dict | None = None
 
 
 class EvaluationPluginInSchema(Schema):
@@ -82,11 +77,11 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
             plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
             selected_settings = [
-                mapping.project_setting
-                async for mapping in plugin.current_config.setting_mappings.select_related("project_setting").all()
+                mapping.project_config
+                async for mapping in plugin.current_config.setting_mappings.select_related("project_config").all()
             ]
             setting_errors = await validate_plugin_settings(
-                project, plugin.name, plugin.current_config.config, plugin_obj.setting_definitions,
+                project, plugin.name, plugin_obj.project_config_definitions,
                 selected_settings,
             )
             for key in validation_errors:
@@ -108,32 +103,20 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
         )
         run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
-        # Link the input files
+        # Link the input components
         if plugin_to_run.inputs:
             for input_data in plugin_to_run.inputs:
-                # Determine content type and model
-                if input_data.input_type == InputType.DATASET:
-                    content_model = Dataset
-                elif input_data.input_type == InputType.MODEL:
-                    content_model = Model
-                else:
-                    continue
+                component = await ai_component_repository.get(input_data.pid)
+                if not component:
+                    raise HttpError(400, f"Component {input_data.pid} not found")
 
-                # Get the actual object (Dataset or Model) from DB
-                # NOTE: Ensure you have access to a repository or use the model's objects
-                content_obj = await content_model.objects.aget(pid=input_data.pid)
-                content_type = await sync_to_async(
-                    ContentType.objects.get_for_model
-                )(content_model)
-                # Create the link
-                input_file = EvaluationPluginInputFile(
+                evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,
-                    name=input_data.name,  # This matches the key in the @input decorator
-                    content_type=content_type,
-                    object_id=content_obj.id,
-                    content_object=content_obj,
+                    name=input_data.name,
+                    component=component,
+                    value=input_data.value or {},
                 )
-                await input_file.asave()
+                await evaluation_input.asave()
 
         evaluation_plugins.append(run_plugin)
 

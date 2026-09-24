@@ -1,39 +1,57 @@
 import uuid
 from typing import Any
 
+from pathlib import Path
+from aisc_backend.repositories import file_repository
+from aisc_backend.services.feature_derivation import derive_features
+
 from asgiref.sync import sync_to_async
 from ninja import Router, Schema, Query
 from ninja.errors import HttpError
+from pydantic import Field
 
 from aisc_backend.audit.log import log_action
 
-from aisc_backend.models import EvaluationStatus, Dataset
+from aisc_backend.models import (
+    EvaluationStatus,
+    AIComponent,
+    AIComponentType,
+)
 from aisc_backend.models.common import StorageContainer
-from aisc_backend.models.model import Model
-from aisc_backend.repositories.base_repository import BaseRepository
-from aisc_backend.repositories.dataset_repository import DatasetRepository
+from aisc_backend.repositories.ai_component_repository import AISystemRepository, AIComponentRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
-from aisc_backend.repositories.measurement_repository import  MeasurementRepository
-from aisc_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
+from aisc_backend.repositories.measurement_repository import MeasurementRepository
+from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
+from aisc_backend.schemas.ai_system import (
+    AISystemDetailOutSchema,
+    AIComponentOutSchema,
+    AIComponentInSchema,
+)
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasurementAggregationResponse, MeasurementAggregationRequest, \
     DimensionKeysResponse, DimensionValuesResponse
-from aisc_backend.schemas.model import ModelOutSchema, ModelInSchema
 from aisc_backend.schemas.project import (
     ProjectOutSchema,
     ProjectInSchema,
     ProjectDetailsOutSchema,
 )
+from aisc_plugin_interface import LLMConfig
 
 
 router = Router(tags=["project"])
 
 project_repository = ProjectRepository()
-dataset_repository = DatasetRepository()
-model_repository = BaseRepository(model=Model)
+ai_system_repository = AISystemRepository()
+ai_component_repository = AIComponentRepository()
+project_config_repository = ProjectConfigRepository()
 evaluation_repository = EvaluationRepository()
 measurement_repository = MeasurementRepository()
+
+
+class EvaluationInputTemplateEntrySchema(Schema):
+    component_pid: uuid.UUID
+    value: dict = Field(default_factory=dict)
 
 
 @router.post("", response=ProjectOutSchema)
@@ -72,44 +90,87 @@ async def get_project_details(request, pid: uuid.UUID):
     return await project_repository.get(pid, True)
 
 
-@router.post("/{pid}/datasets", response=DatasetOutSchema)
-async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema):
-    project = await project_repository.get(pid)
-
-    dataset = await dataset_repository.save(
-        Dataset(
-            **data.model_dump(),
-            project=project,
-            storage_container=StorageContainer.Datasets,
+async def derive_datashape(source_dataset: AIComponent) -> dict:
+    """Best-effort derivation of a full data shape from a dataset component."""
+    try:
+        response = file_repository.get_object(
+            bucket_name=StorageContainer.Datasets, object_name=source_dataset.data
         )
-    )
+        file_content = response["Body"].read()
+        suffix = Path(source_dataset.data).suffix.lower()
+        fmt = suffix.removeprefix(".")
+        if fmt not in ("csv", "parquet") or not source_dataset.data:
+            return {}
+        if not response:
+            return {}
+        return derive_features(file_content, fmt, str(source_dataset.pid))
+    except Exception:
+        return {}
 
-    # AUDIT: who added which dataset to which project (webapp action; best-effort)
-    await sync_to_async(log_action)(
-        request, action="create", resource_type="dataset",
-        resource_id=str(getattr(dataset, "pid", "")),
-        metadata={"projectPid": str(pid), "name": getattr(dataset, "name", None)})
-    return dataset
+
+@router.get("/{pid}/aisystem", response=AISystemDetailOutSchema)
+async def get_project_aisystem(request, pid: uuid.UUID):
+    project = await project_repository.get(pid, True)
+    system = await ai_system_repository.get_with_components(project)
+    if system is None:
+        await ai_system_repository.get_or_create_for_project(project)
+        system = await ai_system_repository.get_with_components(project)
+    return system
 
 
-@router.post("/{pid}/models", response=ModelOutSchema)
-async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
+@router.post("/{pid}/components", response=AIComponentOutSchema)
+async def create_project_component(request, pid: uuid.UUID, data: AIComponentInSchema):
+    if not data.name or not data.name.strip():
+        raise HttpError(400, "Component name is required")
     project = await project_repository.get(pid)
+    system = await ai_system_repository.get_or_create_for_project(project)
 
-    model = Model(
-        **data.model_dump(),
-        project=project,
-        public=True,
-        storage_container=StorageContainer.Models,
+    source_dataset = None
+    json_value = data.json_value or {}
+    if data.source_dataset_pid:
+        source_dataset = await ai_component_repository.get(data.source_dataset_pid)
+        if source_dataset is None or source_dataset.component_type != AIComponentType.DATASET:
+            raise HttpError(400, "source_dataset must be a dataset component")
+        if data.component_type == AIComponentType.DATASHAPE and not json_value:
+            json_value = await derive_datashape(source_dataset)
+
+    if data.component_type == AIComponentType.LLM:
+        secret_key = LLMConfig.model_validate(json_value).secret_key
+        if secret_key and not await project_config_repository.secret_exists(project.pid, secret_key):
+            raise HttpError(400, "Configured API key secret does not exist in this project")
+
+    component = AIComponent(
+        name=data.name,
+        description=data.description or "",
+        component_type=data.component_type or AIComponentType.MODEL,
+        source_dataset=source_dataset,
+        json_value=json_value,
+        system=system,
+        storage_container=(
+            StorageContainer.Datasets
+            if data.component_type == AIComponentType.DATASET
+            else StorageContainer.Models
+        ),
     )
-    saved = await model_repository.save(model)
-    # AUDIT: who registered which model under which project (webapp action; best-effort)
+    saved = await ai_component_repository.save(component)
     await sync_to_async(log_action)(
-        request, action="create", resource_type="model",
+        request, action="create", resource_type="component",
         resource_id=str(getattr(saved, "pid", "")),
-        metadata={"projectPid": str(pid), "name": getattr(saved, "name", None)})
+        metadata={"projectPid": str(pid), "name": getattr(saved, "name", None),
+                  "component_type": getattr(saved, "component_type", None)})
     return saved
 
+
+@router.post("/{pid}/datasets", response=AIComponentOutSchema)
+async def create_project_dataset(request, pid: uuid.UUID, data: AIComponentInSchema):
+    data.component_type = AIComponentType.DATASET
+    return await create_project_component(request, pid, data)
+
+
+@router.post("/{pid}/models", response=AIComponentOutSchema)
+async def create_project_model(request, pid: uuid.UUID, data: AIComponentInSchema):
+    data.component_type = AIComponentType.MODEL
+    return await create_project_component(request, pid, data)
 
 
 @router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
@@ -130,9 +191,28 @@ async def get_project_evaluations(
     return evaluations
 
 
-class ProjectPluginConfigResponse(Schema):
-    name: str
-    dataset_pid: uuid.UUID
+@router.get("/{pid}/evaluation-inputs-template", response=dict[str, dict[str, EvaluationInputTemplateEntrySchema]])
+async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
+    """Return the most recent evaluation's input selections per plugin, so the
+    evaluation form can prefill inputs from a previous run."""
+    project = await project_repository.get(pid)
+    latest = await evaluation_repository.latest_for_project(project)
+    if latest is None:
+        return {}
+
+    template: dict[str, dict[str, EvaluationInputTemplateEntrySchema]] = {}
+    for evaluation_plugin in list(latest.evaluation_plugins.all()):
+        plugin_config = evaluation_plugin.plugin_config
+        if plugin_config is None or plugin_config.plugin_id is None:
+            continue
+        plugin_name = plugin_config.plugin.name
+        entries = template.setdefault(plugin_name, {})
+        for inp in list(evaluation_plugin.evaluation_inputs.all()):
+            entries[inp.name] = EvaluationInputTemplateEntrySchema(
+                component_pid=inp.component.pid,
+                value=inp.value,
+            )
+    return template
 
 
 @router.get("/{pid}/plugins/{plugin_name}/config", response=dict | None)
@@ -144,6 +224,7 @@ async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
     if not plugin:
         raise HttpError(404, f"Project {pid} has no plugin {plugin_name}")
     return plugin.config
+
 
 @router.post("/{pid}/measurements/aggregate", response=MeasurementAggregationResponse)
 async def aggregate_project_measurements(
@@ -158,6 +239,7 @@ async def aggregate_project_measurements(
     )
     return {"results": results}
 
+
 @router.get("/{pid}/measurements/dimension-keys", response=DimensionKeysResponse)
 async def get_project_dimension_keys(request, pid: uuid.UUID):
     project = await project_repository.get(pid)
@@ -166,6 +248,7 @@ async def get_project_dimension_keys(request, pid: uuid.UUID):
     )
     keys = await measurement_repository.get_unique_dimension_keys(queryset)
     return {"keys": keys}
+
 
 @router.get("/{pid}/measurements/dimension-values/{key}", response=DimensionValuesResponse)
 async def get_project_dimension_values(request, pid: uuid.UUID, key: str):

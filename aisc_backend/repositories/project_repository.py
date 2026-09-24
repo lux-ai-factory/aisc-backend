@@ -23,10 +23,11 @@ class ProjectRepository(BaseRepository[Project]):
         project = await (
             Project.objects
             .prefetch_related(
-                "datasets",
-                "models",
+                "aisystem",
+                "aisystem__components",
+                "aisystem__components__source_dataset",
                 "enabled_plugins",
-                "settings",
+                "configs",
 
                 "enabled_plugins__current_config"
             )
