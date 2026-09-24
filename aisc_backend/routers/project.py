@@ -1,6 +1,10 @@
 import uuid
 from typing import Any
 
+from pathlib import Path
+from aisc_backend.repositories import file_repository
+from aisc_backend.services.feature_derivation import derive_features
+
 from asgiref.sync import sync_to_async
 from ninja import Router, Schema, Query
 from ninja.errors import HttpError
@@ -88,20 +92,18 @@ async def get_project_details(request, pid: uuid.UUID):
 
 async def derive_datashape(source_dataset: AIComponent) -> dict:
     """Best-effort derivation of a full data shape from a dataset component."""
-    from pathlib import Path
-    from aisc_backend.repositories import file_repository
-    from aisc_backend.services.feature_derivation import derive_features
-
     try:
+        response = file_repository.get_object(
+            bucket_name=StorageContainer.Datasets, object_name=source_dataset.data
+        )
+        file_content = response["Body"].read()
         suffix = Path(source_dataset.data).suffix.lower()
         fmt = suffix.removeprefix(".")
         if fmt not in ("csv", "parquet") or not source_dataset.data:
             return {}
-        response = await sync_to_async(file_repository.get_object)(
-            source_dataset.storage_container, source_dataset.data)
         if not response:
             return {}
-        return derive_features(response["Body"].read(), fmt, str(source_dataset.pid))
+        return derive_features(file_content, fmt, str(source_dataset.pid))
     except Exception:
         return {}
 
