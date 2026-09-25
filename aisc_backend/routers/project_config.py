@@ -60,9 +60,9 @@ async def available_project_config(request, project_pid: uuid.UUID):
 
 @router.patch("/{project_pid}/{project_config_pid}", response=ProjectConfigOutSchema)
 async def update_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID, data: ProjectConfigUpdateSchema):
-    project_config = await project_config_repository.get(project_config_pid)
-    if project_config.project != project_pid:
-        raise HttpError(400, f"Project config not associated with project id")
+    project_config = await project_config_repository.get(
+        project_config_pid, project_pid=project_pid
+    )
     if data.name is not None:
         project_config.name = data.name
     if data.value is not None:
