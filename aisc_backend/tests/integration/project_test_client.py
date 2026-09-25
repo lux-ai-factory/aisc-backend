@@ -2,11 +2,8 @@ import uuid
 
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import FeatureType
 from aisc_backend.routers.project import router
 from aisc_backend.schemas.ai_system import AIComponentOutSchema, AIComponentInSchema
-from aisc_backend.schemas.datashape import DataShapeInSchema, DataShapeOutSchema
-from aisc_backend.schemas.feature import FeatureInSchema
 from aisc_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
 
 client = TestAsyncClient(router)
@@ -14,7 +11,7 @@ client = TestAsyncClient(router)
 
 async def create_project(name: str) -> ProjectOutSchema:
     data = ProjectInSchema(name=name)
-    response = await client.post('', json=data.dict())
+    response = await client.post('', json=data.model_dump())
     project = ProjectOutSchema.model_construct(**response.data)
     return project
 
@@ -25,54 +22,48 @@ async def get_projects() -> list[ProjectOutSchema]:
     return projects
 
 
-async def patch_project(pid: uuid.UUID, name:str, frequency: str, window_size: str) -> ProjectOutSchema:
-    data = ProjectInSchema(name=name, frequency=frequency, window_size=window_size)
-    response = await client.patch(f'/{pid}', json=data.dict())
+async def patch_project(pid: uuid.UUID, name: str) -> ProjectOutSchema:
+    data = ProjectInSchema(name=name)
+    response = await client.patch(f'/{pid}', json=data.model_dump())
     project = ProjectOutSchema.model_construct(**response.data)
     return project
 
 
 async def create_project_dataset(pid: uuid.UUID, dataset_name: str) -> AIComponentOutSchema:
     data = AIComponentInSchema(name=dataset_name, component_type='dataset')
-    response = await client.post(f'/{pid}/components', json=data.dict())
+    response = await client.post(f'/{pid}/components', json=data.model_dump())
     dataset = AIComponentOutSchema.model_construct(**response.data)
     return dataset
 
 
 async def create_project_model(pid: uuid.UUID, model_name: str, dataset_pid: uuid.UUID) -> AIComponentOutSchema:
     data = AIComponentInSchema(name=model_name, component_type='model')
-    response = await client.post(f'/{pid}/components', json=data.dict())
+    response = await client.post(f'/{pid}/components', json=data.model_dump())
     model = AIComponentOutSchema.model_construct(**response.data)
     return model
 
 
-async def patch_project_datashape(pid: uuid.UUID, datashape: DataShapeOutSchema) -> DataShapeOutSchema:
-    features_in: list[FeatureInSchema] = []
-    for f in datashape.features:
-        feature = FeatureInSchema(name=f['name'], min_value=f['min_value'], max_value=f['max_value'],
-                                  feature_type=f['feature_type'])
-        features_in.append(feature)
-
-    date_feature = next(f for f in features_in if f.feature_type == FeatureType.Date)
-    target_feature = next(f for f in features_in if f.feature_type == FeatureType.Integer and f.max_value == 1)
-
-    features_in = [f for f in features_in if f not in (date_feature, target_feature)]
-
-    data = DataShapeInSchema(features=features_in, date=date_feature, target=target_feature)
-    response = await client.patch(f'/{pid}/datashape', json=data.dict())
-    datashape = DataShapeOutSchema.model_construct(**response.data)
+async def create_project_datashape(pid: uuid.UUID, source_dataset_pid: uuid.UUID) -> AIComponentOutSchema:
+    data = AIComponentInSchema(
+        name="datashape",
+        component_type="datashape",
+        source_dataset_pid=source_dataset_pid,
+    )
+    response = await client.post(f'/{pid}/components', json=data.model_dump())
+    datashape = AIComponentOutSchema.model_construct(**response.data)
     return datashape
 
-
-async def get_project_datashape(pid: uuid.UUID) -> DataShapeOutSchema:
-    response = await client.get(f'/{pid}/datashape')
-    datashape = DataShapeOutSchema.model_construct(**response.data)
-    return datashape
 
 async def get_project_details(pid: uuid.UUID) -> ProjectDetailsOutSchema:
     response = await client.get(f'/{pid}')
-    project = ProjectDetailsOutSchema.model_construct(**response.data)
-    return project
+    data = response.data
+    components = [AIComponentOutSchema.model_construct(**c) for c in data.get("components", [])]
+    plugins = data.get("plugins", [])
+    return ProjectDetailsOutSchema.model_construct(
+        **{k: v for k, v in data.items() if k not in ("components", "plugins")},
+        components=components,
+        plugins=plugins,
+    )
 
 
 async def get_project_by_name(name: str) -> ProjectOutSchema:
