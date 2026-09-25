@@ -2,9 +2,9 @@
 UNIT tests for the /audit endpoint (aisc_backend.routers.audit) — NO live services.
 
 ninja TestClient(audit_router) with clerk.write_event mocked. AUTH_ENABLED is False in tests (dev bypass),
-but ninja's HttpBearer still requires an Authorization header to be PRESENT (it 401s on a missing header
-before the bypass runs) — real callers always forward the user's token, so we send a dummy bearer here.
-With AUTH_ENABLED False the token isn't verified and request.auth becomes True -> actor = "unknown".
+so even a MISSING Authorization header passes (Keycloak-less mode: KeycloakAuth.__call__ lets
+header-less requests through when verification is disabled) and request.auth becomes True
+-> actor = "unknown". Callers that do have a token still forward it; it just isn't verified.
 
 We assert the BODY maps to the clerk call and that identity is NEVER taken from the body.
 
@@ -65,9 +65,20 @@ class AuditEndpointUnitTest(SimpleTestCase):
         self.assertEqual(kw["metadata"], {})
         self.assertEqual(kw["outcome"], "ok")
 
-    def test_missing_token_is_rejected(self):
-        # No Authorization header at all -> ninja HttpBearer 401s (the door still needs a token presented).
+    def test_missing_token_allowed_when_auth_disabled(self):
+        # No Authorization header at all + AUTH_ENABLED False (Keycloak-less mode)
+        # -> KeycloakAuth.__call__ lets it through; actor falls back to "unknown".
         resp = self.client.post("", json={"action": "x", "resource_type": "y", "source_app": "controls"})
+        self.assertEqual(resp.status_code, 200)
+        kw = self.mock_clerk.write_event.call_args.kwargs
+        self.assertEqual(kw["actor"], "unknown")
+
+    def test_missing_token_rejected_when_auth_enabled(self):
+        # No Authorization header at all + AUTH_ENABLED True -> still 401
+        # (delegated to ninja's HttpBearer).
+        with mock.patch.object(kc_auth, 'AUTH_ENABLED', True):
+            resp = self.client.post("", json={"action": "x", "resource_type": "y",
+                                              "source_app": "controls"})
         self.assertEqual(resp.status_code, 401)
 
     def test_get_audit_returns_verify_and_events(self):
