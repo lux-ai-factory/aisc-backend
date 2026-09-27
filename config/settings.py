@@ -14,6 +14,11 @@ from corsheaders.defaults import default_headers
 from environs import env
 from django.core.management.utils import get_random_secret_key
 
+from aisc_backend import deployment
+
+deployment.check_environment()
+AISC_DEPLOYMENT = deployment.mode()
+
 empty_str_to_none = lambda v: v if v and v.strip() else None
 
 env.read_env()
