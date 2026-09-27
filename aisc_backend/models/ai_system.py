@@ -22,6 +22,9 @@ class AISystem(Base):
         "Project", related_name="aisystem", on_delete=models.CASCADE
     )
 
+    class Meta:
+        db_table = "ai_system"
+
     def get_components(self) -> list["AIComponent"]:
         # Use the prefetched cache when available (async-safe); otherwise this
         # must be called outside an async context or after prefetching.
@@ -56,6 +59,9 @@ class AIComponent(HasData):
     # DataShape for datashape, an LLMConfig for llm, a ResourceConfig for
     # resource).
     json_value = models.JSONField(blank=True, default=dict)
+
+    class Meta:
+        db_table = "ai_component"
 
     @property
     def is_file_backed(self) -> bool:

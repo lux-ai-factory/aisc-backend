@@ -8,6 +8,14 @@ class Plugin(Base):
     version = models.CharField(max_length=50)
     display_name = models.CharField(max_length=255)
 
+    # The catalogue entry this distribution was installed from. Discovery lives
+    # in the catalogue, so this is how an enabled plugin is traced back to the
+    # entry, its tags and its controls. Null for rows that predate the mapping
+    # or that came from a deep link, which is an absent origin, not an empty
+    # one. Not unique: two entries may wrap the same distribution, and the same
+    # entry may be installed into several projects.
+    catalogue_slug = models.CharField(max_length=255, null=True, blank=True)
+
     project = models.ForeignKey(
         "Project", related_name="enabled_plugins", on_delete=models.CASCADE
     )
@@ -30,6 +38,7 @@ class Plugin(Base):
         return self.current_config is not None
 
     class Meta:
+        db_table = "plugin"
         unique_together = ("name", "project", "version", "package_name")
 
     def __str__(self):
@@ -49,6 +58,7 @@ class PluginConfig(Base):
     )
 
     class Meta:
+        db_table = "plugin_config"
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -67,6 +77,7 @@ class PluginConfigProjectConfig(Base):
     plugin_config_key = models.CharField(max_length=255)
 
     class Meta:
+        db_table = "plugin_config_project_config"
         constraints = [
             models.UniqueConstraint(
                 fields=("plugin_config", "plugin_config_key"),
@@ -92,6 +103,7 @@ class EvaluationInput(Base):
     value = models.JSONField(blank=True, default=dict)
 
     class Meta:
+        db_table = "evaluation_input"
         unique_together = ("evaluation_plugin", "name")
 
 
@@ -137,3 +149,6 @@ class EvaluationPlugin(Base):
 
     def get_artifacts(self):
         return self.artifacts.all()
+
+    class Meta:
+        db_table = "evaluation_plugin"
