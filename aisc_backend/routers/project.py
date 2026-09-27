@@ -138,7 +138,15 @@ async def get_projects(request, platform_project_id: uuid.UUID | None = None):
 
 @router.get("/by-name/{name}", response=ProjectOutSchema)
 async def get_project_by_name(request, name):
-    return await project_repository.get_one(name=name)
+    if not deployment.is_configurator():
+        return await project_repository.get_one(name=name)
+    # A name is often a customer's: a stranger, and a name nobody has, get the same 404.
+    found = await project_repository.filter(name=name)
+    if not found:
+        raise HttpError(404, "no such project")
+    project = found[0]
+    await sync_to_async(membership.require)(request, project.platform_project_id)
+    return project
 
 
 @router.get("/{pid}", response=ProjectDetailsOutSchema)

@@ -380,6 +380,8 @@ class EvaluationResultOutSchema(Schema):
 async def get_plugin_evaluation_results(
         request, evaluation_plugin_pid: uuid.UUID, evaluation_uuid: uuid.UUID
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_evaluation)(request, evaluation_uuid)
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
     plugin = evaluation_plugin.plugin_config.plugin
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)

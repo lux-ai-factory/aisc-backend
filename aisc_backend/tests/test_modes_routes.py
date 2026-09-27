@@ -202,3 +202,43 @@ class StartingARun(TestCase):
         pid = projectdb.normalise(A_PID)
         self.assertEqual(args, [pid, projectdb.normalise(evaluation_pid),
                                 projectdb.run_ticket(pid, projectdb.normalise(evaluation_pid))])
+
+
+class TheRoutesTheEnumerationMissed(SignedIn):
+    """A project by its name, and a plugin's result in one evaluation: in the Configurator a
+    stranger is told there is no such thing, a member reads it."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from aisc_backend.models import Evaluation, EvaluationStatus, Project, ProjectStatus
+
+        cls.project = Project.objects.create(name="theirs", status=ProjectStatus.Created,
+                                             platform_project_id=A_PID)
+        cls.evaluation = Evaluation.objects.create(project=cls.project, status=EvaluationStatus.Pending)
+
+    def as_role(self, role):
+        return mock.patch("aisc_backend.auth.membership.role_in_project", return_value=role)
+
+    def headers(self):
+        return {"Authorization": f"Bearer {self.token()}"}
+
+    @configurator_run
+    async def test_a_stranger_does_not_find_a_project_by_its_name(self):
+        client = TestAsyncClient(projects_router)
+        with self.as_role(None):
+            refused = await client.get("/by-name/theirs", headers=self.headers())
+        with self.as_role("viewer"):
+            member = await client.get("/by-name/theirs", headers=self.headers())
+            missing = await client.get("/by-name/nobody-has-this", headers=self.headers())
+        self.assertEqual(refused.status_code, 404)
+        self.assertEqual(member.status_code, 200, member.content)
+        self.assertEqual(missing.status_code, 404)
+
+    @configurator_run
+    async def test_a_stranger_does_not_read_a_result_by_its_ids(self):
+        from aisc_backend.routers.plugin import router as plugin_router
+
+        with self.as_role(None):
+            refused = await TestAsyncClient(plugin_router).get(
+                f"/{uuid.uuid4()}/evaluations/{self.evaluation.pid}/result", headers=self.headers())
+        self.assertEqual(refused.status_code, 404)

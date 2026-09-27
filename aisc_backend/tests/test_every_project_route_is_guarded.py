@@ -63,12 +63,16 @@ def looks_project_scoped(path: str) -> bool:
              "{model_pid}", "{file_name}", "{plugin_pid}", "{setting_pid}",
              # the AI system's parts and the project's configs, since the
              # AISystem merge: a component or a config belongs to one project
-             "{component_pid}", "{project_config_pid}")
+             "{component_pid}", "{project_config_pid}",
+             # a plugin's result within one evaluation, and a project by its name
+             "{evaluation_plugin_pid}", "{evaluation_uuid}", "{name}")
     if any(token in path for token in owned):
         return True
     # A listing with no id in it is project-scoped when it lists rows that
     # belong to projects.
-    return path in ("/api/v1/evaluations", "/api/v1/datasets", "/api/v1/models")
+    # Starting a run names its project in the body, not the path.
+    return path in ("/api/v1/evaluations", "/api/v1/evaluations/task",
+                    "/api/v1/datasets", "/api/v1/models")
 
 
 @configurator_only

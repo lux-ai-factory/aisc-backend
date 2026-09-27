@@ -306,10 +306,22 @@ class TheOneShotMigrates(SimpleTestCase):
             self.fail("I7.6: aisc_backend/management/commands/migrate_projects.py is missing")
         self.assertRegex(path.read_text(), r"pg_advisory(_xact)?_lock")
 
-    def test_i7_6_the_image_no_longer_migrates_platform(self):
-        text = (BACKEND / "Dockerfile").read_text()
-        self.assertNotRegex(text, r"manage\.py migrate(?!_projects)\b",
-                            "I7.6: aisc-backend no longer runs manage.py migrate on platform")
+    def test_i7_6_the_configurator_migrates_through_the_one_shot(self):
+        """Ruling 21: the image is shared with standalone, whose start runs `manage.py migrate`
+        (master's Dockerfile, kept), so this no longer pins the Dockerfile. In the Configurator
+        the engine's migrations run through the compose one-shot aisc-backend-migrate, which
+        runs `migrate_projects` over every project database; `default` is the dummy backend
+        there (I7.1), so a plain `migrate` has no database to write. That the Configurator's
+        compose runs the one-shot and not a plain migrate is Task 9's compose-level check."""
+        result = settings_probe(
+            "from django.conf import settings\n"
+            "from django.core.management import get_commands\n"
+            "out = [settings.PROJECT_DATABASES, settings.DATABASES['default']['ENGINE'],"
+            " get_commands().get('migrate_projects')]")
+        if not result["ok"]:
+            self.fail(f"I7.6: the probe failed: {result['error']}")
+        self.assertEqual(result["out"], [True, "django.db.backends.dummy", "aisc_backend"],
+                         "I7.6: a deployed Configurator has project databases and migrate_projects")
 
 
 # ── I7.2, I7.3: the door ──
