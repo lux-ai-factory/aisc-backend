@@ -22,6 +22,7 @@ from aisc_backend.models import (
     EvaluationStatus,
     AIComponent,
     AIComponentType,
+    AISystem,
 )
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories.ai_component_repository import AISystemRepository, AIComponentRepository
@@ -180,10 +181,16 @@ async def get_project_aisystem(request, pid: uuid.UUID):
     if deployment.is_configurator():
         await sync_to_async(membership.for_project_pid)(request, pid)
     project = await project_repository.get(pid, True)
-    system = await ai_system_repository.get_with_components(project)
+
+    def with_components():
+        return (AISystem.objects.filter(project=project)
+                .prefetch_related("components", "components__source_dataset")
+                .afirst())
+
+    system = await with_components()
     if system is None:
         await ai_system_repository.get_or_create_for_project(project)
-        system = await ai_system_repository.get_with_components(project)
+        system = await with_components()
     return system
 
 
