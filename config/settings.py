@@ -111,6 +111,60 @@ DATABASES = {
         "PORT": env("DB_PORT", ""),
     }
 }
+DATABASE_ROUTERS = []
+PROJECT_DATABASE_TEMPLATE = None
+# One database per project: the Configurator on Postgres (Ruling 7: read through
+# _deployment_env, so a value set in .env counts). Standalone is always one database.
+PROJECT_DATABASES = deployment.project_databases(_deployment_env)
+DB_SCHEMA = env("DB_SCHEMA", "")
+
+
+def _single_database() -> dict:
+    """The one database of a laptop or a test run (config/settings_single_database.py).
+
+    A search path is a Postgres idea; the sqlite the test runner builds has no
+    schemas and rejects the option outright.
+    """
+    engine = env("DB_ENGINE", "django.db.backends.sqlite3")
+    options = (
+        {"options": f"-c search_path={DB_SCHEMA},core"}
+        if DB_SCHEMA and "postgresql" in engine
+        else {}
+    )
+    return {
+        "ENGINE": engine,
+        "NAME": env("DB_NAME", BASE_DIR / "db.db"),
+        "USER": env("DB_USER", ""),
+        "PASSWORD": env("DB_PASSWORD", ""),
+        "HOST": env("DB_HOST", ""),
+        "PORT": env("DB_PORT", ""),
+        "OPTIONS": options,
+    }
+
+
+if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+    # The Configurator owns projects and sign-in: no login of our own (migration
+    # 0023 dropped its tables, and Django's accounts, sessions and admin with them,
+    # so their apps must not come back and remake them), one database per project
+    # behind the door, memberships from the platform.
+    _NO_LOGIN_APPS = ("django.contrib.admin", "django.contrib.auth", "django.contrib.sessions",
+                      "django.contrib.messages")
+    INSTALLED_APPS = [a for a in INSTALLED_APPS
+                      if a not in _NO_LOGIN_APPS and not a.startswith(("allauth", "ninja_jwt"))]
+    # The door right after CORS, as on the definitive branch (isolation I7.2: every
+    # /api/* call names its project in X-AISC-Project).
+    MIDDLEWARE = [m for m in MIDDLEWARE
+                  if "allauth" not in m and not m.startswith(("django.contrib.sessions.",
+                                                               "django.contrib.auth.",
+                                                               "django.contrib.messages."))]
+    MIDDLEWARE.insert(MIDDLEWARE.index("corsheaders.middleware.CorsMiddleware") + 1,
+                      "aisc_backend.project_door.ProjectDoor")
+    TEMPLATES[0]["OPTIONS"]["context_processors"] = [
+        c for c in TEMPLATES[0]["OPTIONS"]["context_processors"]
+        if not c.startswith(("django.contrib.auth.", "django.contrib.messages."))]
+    if PROJECT_DATABASES:
+        from aisc_backend.projectdb import configurator_databases
+        DATABASES, DATABASE_ROUTERS, PROJECT_DATABASE_TEMPLATE = configurator_databases(env)
 
 
 # Password validation
@@ -169,6 +223,9 @@ if ENABLE_SSL_PROXY:
 CORS_ALLOW_CREDENTIALS = True
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 CORS_ALLOWED_ORIGINS = env.list('BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+    # Isolation I7.4: the SPA names its project in this header on every call.
+    CORS_ALLOW_HEADERS = (*default_headers, "x-aisc-project")
 CRSF_TRUSTED_ORIGINS = env.list('BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
 
 

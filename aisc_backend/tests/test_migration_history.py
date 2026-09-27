@@ -1,12 +1,14 @@
 import importlib
+import unittest
 from unittest import mock
 
+from django.conf import settings
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
 
 SEAN_LAST = ("aisc_backend", "0014_ai_system_and_project_config_squashed")
-OUR_LAST = ("aisc_backend", "0024_the_database_is_the_project")
+OUR_LAST = ("aisc_backend", "0025_engine_deployment_marker")
 
 
 class OneHistory(TransactionTestCase):
@@ -44,6 +46,7 @@ class OneHistory(TransactionTestCase):
         self.assertEqual(new.get_model("aisc_backend", "Project").objects.count(), 1)
         self.assertEqual(new.get_model("aisc_backend", "Plugin").objects.count(), 1)
 
+    @unittest.skipUnless(settings.AISC_DEPLOYMENT == "standalone", "standalone run only")
     def test_standalone_keeps_the_login_tables(self):
         # the configurator-only table drop (0023) must not run here
         tables = connection.introspection.table_names()

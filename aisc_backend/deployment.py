@@ -60,3 +60,26 @@ def is_configurator() -> bool:
 
 def is_standalone() -> bool:
     return not is_configurator()
+
+
+MARKER_TABLE = "engine_deployment"
+
+
+def made_in(connection) -> str | None:
+    """The mode this database was made in (migration 0025 writes it), or None when the database
+    has no marker yet (not migrated so far, or the row was removed)."""
+    if MARKER_TABLE not in connection.introspection.table_names():
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT mode FROM {connection.ops.quote_name(MARKER_TABLE)}")
+        row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def assert_database_mode(connection) -> None:
+    """A database made by one mode is never run by the other: their schemas differ (0023 drops
+    the login tables in configurator only), so the engine stops instead of running on it."""
+    from django.conf import settings
+    made, now = made_in(connection), settings.AISC_DEPLOYMENT
+    if made is not None and made != now:
+        raise ImproperlyConfigured(f"this database was made by a {made} engine; this engine is {now}")

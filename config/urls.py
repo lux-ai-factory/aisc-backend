@@ -15,7 +15,6 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.contrib import admin
 from django.urls import path, include
 
 from ninja import Router
@@ -37,6 +36,7 @@ from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from aisc_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
+from aisc_backend import deployment
 
 # Deny-by-default: KeycloakAuth() is the API-wide default, so EVERY endpoint requires a valid token.
 # (KeycloakAuth lets everyone through while AUTH_ENABLED is False, so dev is unaffected; in prod with
@@ -64,8 +64,17 @@ api.add_router("/v1/", v1_router)
 api.add_router("/v1/internal", internal_router)
 
 
-urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("_allauth/", include("allauth.headless.urls")),
+if deployment.is_standalone():
+    # Sean's login: the admin site and allauth. The Configurator signs people in at its gateway.
+    from django.contrib import admin
+
+    urlpatterns = [
+        path("admin/", admin.site.urls),
+        path("_allauth/", include("allauth.headless.urls")),
+    ]
+else:
+    urlpatterns = []
+
+urlpatterns += [
     path("api/", api.urls),
 ]
