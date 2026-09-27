@@ -87,15 +87,19 @@ class Migration0023Exists(TestCase):
         self.assertIn(("aisc_backend", MIGRATION_0022), loader.disk_migrations[key].dependencies)
 
     def test_s1_0023_is_the_leaf(self):
-        # Nothing after 0023 changes the data model. The one migration allowed
-        # on top of it drops the tables of the login the engine no longer has
-        # (0024), none of which is an engine model.
+        # Nothing after 0023 changes the data model. The migrations allowed on
+        # top of it: 0024 drops the tables of the login the engine no longer
+        # has, none of which is an engine model; 0025 (isolation I7.7, I7.12)
+        # only adds the evaluation's key to project.system in a project database.
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"),
-                         [("aisc_backend", "0024_no_login_of_its_own")])
+                         [("aisc_backend", "0025_the_database_is_the_project")])
         parents = loader.graph.node_map[("aisc_backend", "0024_no_login_of_its_own")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
                          {("aisc_backend", MIGRATION_0023)})
+        parents = loader.graph.node_map[("aisc_backend", "0025_the_database_is_the_project")].parents
+        self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
+                         {("aisc_backend", "0024_no_login_of_its_own")})
 
     def test_s1_3_0023_applied_on_sqlite_without_core(self):
         # S1.3: on sqlite 0023 succeeds and skips every core-related statement.

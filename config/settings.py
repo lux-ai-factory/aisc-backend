@@ -48,6 +48,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
+    # Isolation I7.2: every /api/* call names its project (X-AISC-Project); the
+    # door checks the caller may enter it, then opens that project's database.
+    'aisc_backend.project_door.ProjectDoor',
 
     'django.middleware.security.SecurityMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -79,35 +82,77 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# There is one database for the whole platform and this service owns a schema
-# in it. DB_SCHEMA is that schema; `core` is on the search path after it because
-# the engine reads the platform's projects and systems and points at them, and
-# writes neither. Left unset (a laptop, the test runner) nothing is imposed and
-# the default search path applies.
+# Isolation 2026-09-25 (01-specs.md I7.1): every project has its own database,
+# `project_<pid without hyphens>`, and the engine's tables live in its schema
+# `engine` there. On Postgres the engine therefore has no database of its own:
+#
+# - `default` is Django's dummy backend, so a query that was not routed to an
+#   admitted project fails instead of landing somewhere;
+# - `platform` is a raw-SQL connection to the platform database, search_path
+#   `core`, read only by the membership check and the project-name lookup;
+# - one alias per project database, registered on first use from
+#   PROJECT_DATABASE_TEMPLATE by aisc_backend.projectdb, whose router sends every
+#   ORM read, write and migration to the alias admitted for the current request.
+#
+# DB_NAME names only the platform database. On sqlite (a laptop, the unit test
+# runner) there is one database, as before: see _single_database() and
+# config/settings_single_database.py.
 DB_SCHEMA = env("DB_SCHEMA", "")
 _db_engine = env("DB_ENGINE", "django.db.backends.sqlite3")
-# A search path is a Postgres idea; the sqlite the test runner builds has no
-# schemas and rejects the option outright.
-_db_options = (
-    {"options": f"-c search_path={DB_SCHEMA},core"}
-    if DB_SCHEMA and "postgresql" in _db_engine
-    else {}
-)
+PROJECT_DATABASES = "postgresql" in _db_engine
 
-DATABASES = {
-    'default': {
+
+def _single_database() -> dict:
+    """The one database of a laptop or a test run (the layout before isolation).
+
+    A search path is a Postgres idea; the sqlite the test runner builds has no
+    schemas and rejects the option outright.
+    """
+    options = (
+        {"options": f"-c search_path={DB_SCHEMA},core"}
+        if DB_SCHEMA and "postgresql" in _db_engine
+        else {}
+    )
+    return {
         "ENGINE": _db_engine,
         "NAME": env("DB_NAME", BASE_DIR / "db.db"),
         "USER": env("DB_USER", ""),
         "PASSWORD": env("DB_PASSWORD", ""),
         "HOST": env("DB_HOST", ""),
         "PORT": env("DB_PORT", ""),
-        "OPTIONS": _db_options,
+        "OPTIONS": options,
     }
-}
 
 
-
+if PROJECT_DATABASES:
+    DATABASES = {
+        "default": {"ENGINE": "django.db.backends.dummy"},
+        "platform": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("DB_NAME", "platform"),
+            "USER": env("DB_USER", ""),
+            "PASSWORD": env("DB_PASSWORD", ""),
+            "HOST": env("DB_HOST", ""),
+            "PORT": env("DB_PORT", ""),
+            "OPTIONS": {"options": "-c search_path=core"},
+            "CONN_MAX_AGE": 0,
+        },
+    }
+    # Copied for each project database, with NAME = project_<hex>.
+    PROJECT_DATABASE_TEMPLATE = {
+        "ENGINE": "django.db.backends.postgresql",
+        "USER": env("DB_USER", ""),
+        "PASSWORD": env("DB_PASSWORD", ""),
+        "HOST": env("DB_HOST", ""),
+        "PORT": env("DB_PORT", ""),
+        "OPTIONS": {"options": f"-c search_path={DB_SCHEMA or 'engine'}"},
+        "CONN_MAX_AGE": 0,
+    }
+    DATABASE_ROUTERS = ["aisc_backend.projectdb.ProjectDatabaseRouter"]
+else:
+    DATABASES = {"default": _single_database()}
+    PROJECT_DATABASE_TEMPLATE = None
+    DATABASE_ROUTERS = []
 
 
 # Internationalization
@@ -139,6 +184,8 @@ if ENABLE_SSL_PROXY:
 CORS_ALLOW_CREDENTIALS = True
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 CORS_ALLOWED_ORIGINS = env.list('BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+# Isolation I7.4: the SPA names its project in this header on every call.
+CORS_ALLOW_HEADERS = (*default_headers, "x-aisc-project")
 CRSF_TRUSTED_ORIGINS = env.list('BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
 
 

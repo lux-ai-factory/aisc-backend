@@ -2,8 +2,10 @@
 
 The engine's project row is this service's side of a platform project. Who may
 see it, and who may change it, is the platform's answer: it writes
-`core.project_member`, this reads it in the same database. No second copy to
-disagree with, and no HTTP call to fail.
+`core.project_member` in the platform database, this reads it there, through
+the `platform` alias (isolation I7.1: the engine's own rows are in the project's
+database, membership stays in the platform's). No second copy to disagree with,
+and no HTTP call to fail.
 
 Authentication says who is asking; this says what they are to this project.
 """
@@ -11,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from django.db import connection
+from django.db import DEFAULT_DB_ALIAS, connections
 from ninja.errors import HttpError
 
 from aisc_backend.auth import keycloak
@@ -28,19 +30,26 @@ ADMIN_ROLE = "admin"
 _RANK = {"viewer": 0, "editor": 1, "owner": 2}
 
 
+def _platform():
+    """The platform database: its own alias on project databases, else the one database."""
+    return connections["platform"] if "platform" in connections.settings else connections[DEFAULT_DB_ALIAS]
+
+
 def role_in_project(platform_project_id, subject: str) -> str | None:
     """What this person is to this platform project, or None.
 
     None when there is no such membership, and also when there is no `core` to
     read: the sqlite database the test runner builds has none. That is safe
     because the checks below are only made while authentication is on, and a
-    deployment with authentication on has the one database.
+    deployment with authentication on reads the platform database. A failure to
+    read it propagates (the door answers 503).
     """
     if platform_project_id is None or not subject:
         return None
-    if connection.vendor != "postgresql":
+    platform = _platform()
+    if platform.vendor != "postgresql":
         return None
-    with connection.cursor() as cursor:
+    with platform.cursor() as cursor:
         cursor.execute("SELECT to_regclass('core.project_member') IS NOT NULL")
         if not cursor.fetchone()[0]:
             return None

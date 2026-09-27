@@ -43,7 +43,8 @@ SEAN_FILES_2026_09_23 = [
     "aisc_backend/tests/routers/test_evaluation_inputs_template.py",
     "aisc_backend/tests/routers/test_project_config_router.py",
     "aisc_backend/tests/routers/test_project_evaluations_serialization.py",
-    "config/settings.py",
+    # config/settings.py left the list with isolation I7.1/I7.2/I7.12: its Database
+    # block now routes every query to a project database (see 03-coding-plan E1).
     "env.development",
     "pyproject.toml",
 ]

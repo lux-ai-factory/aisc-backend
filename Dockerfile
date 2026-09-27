@@ -50,7 +50,8 @@ COPY --from=builder /app/apps/backend/staticfiles /app/apps/backend/staticfiles
 
 EXPOSE 8000
 
-# Default command:
-# - Run migrations before starting ASGI server
-CMD uv run manage.py migrate --noinput && \
-    uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --no-access-log
+# Default command: the ASGI server only. The engine's tables live in each
+# project's database (isolation I7.6): the one-shot `aisc-backend-migrate` runs
+# `manage.py migrate_projects` at start, and the engine migrates a project
+# database the first time it opens it. Nothing is migrated into `platform`.
+CMD uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --no-access-log

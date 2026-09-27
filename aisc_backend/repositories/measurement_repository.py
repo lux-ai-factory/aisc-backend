@@ -2,7 +2,7 @@ from typing import Any, List, Dict
 
 from django.db.models import Func, F
 from django.db.models import Count, Min, Max, Avg, QuerySet
-from django.db import connection
+from django.db import connections
 
 from aisc_backend.models import Measurement
 from aisc_backend.repositories.base_repository import BaseRepository
@@ -19,7 +19,9 @@ class MeasurementRepository(BaseRepository[Measurement]):
     async def get_unique_dimension_keys(self, base_queryset) -> list[str]:
         # Exclude measurements where dimensions is null
         base_queryset = base_queryset.exclude(dimensions__isnull=True)
-        if connection.vendor == 'postgresql':
+        # The database the queryset reads (the admitted project's), not `default`,
+        # which is the dummy backend on project databases (isolation I7.1).
+        if connections[base_queryset.db].vendor == 'postgresql':
             queryset = base_queryset.annotate(
                 key=Func(F('dimensions'), function='jsonb_object_keys')
             ).values_list('key', flat=True).distinct()

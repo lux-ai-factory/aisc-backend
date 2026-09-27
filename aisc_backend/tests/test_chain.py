@@ -1,8 +1,10 @@
 """The engine's step of the pipeline chain (scripts/test-pipeline-chain.sh, 03 WP12).
 
 A plain unittest.TestCase, not Django's: then `manage.py test` makes no test
-database and the ORM works on the chain's throwaway `platform` database (F14c).
-Skipped unless CHAIN_JSON names the chain's shared state.
+database (F14c). Since the isolation (I19.2) the ORM works on the chain project's own
+database, admitted the way the door admits a request (projectdb.alias_for, open_alias,
+the `admitted` context), with the deployed settings (DB_NAME=platform names only the
+platform database). Skipped unless CHAIN_JSON names the chain's shared state.
 
 Step 4: the engine project of the chain's platform project, a plugin installed
 from the catalogue (catalogue_slug), and an evaluation created through the ORM,
@@ -26,12 +28,27 @@ CHAIN_JSON = os.environ.get("CHAIN_JSON")
 class ChainStep4(unittest.TestCase):
 
     def test_chain_step4_plugin_and_stamped_evaluation(self):
+        from django.db import connections
+
+        from aisc_backend import projectdb
+
+        state = json.loads(Path(CHAIN_JSON).read_text())
+        alias = projectdb.open_alias(projectdb.alias_for(state["project_pid"]))
+        token = projectdb.admitted.set(alias)
+        pid_token = projectdb.admitted_pid.set(projectdb.normalise(state["project_pid"]))
+        try:
+            self._step4(state)
+        finally:
+            projectdb.admitted_pid.reset(pid_token)
+            projectdb.admitted.reset(token)
+            connections[alias].close()
+
+    def _step4(self, state):
         from aisc_backend.models import (
             Direct, Evaluation, EvaluationStatus, Measurement, Observation, Plugin, Project,
             ProjectStatus,
         )
 
-        state = json.loads(Path(CHAIN_JSON).read_text())
         platform_project = uuid.UUID(state["project_pid"])
         project, _ = Project.objects.get_or_create(
             platform_project_id=platform_project,

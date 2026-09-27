@@ -1,15 +1,18 @@
 """WP9 of pipeline-2026-09-23: a test records the system version it ran under.
 
-engine.evaluation.system_id (frozen column, FK to core.system(pid)) gets the pid of
-the latest core.system row of the project (highest `number`) when the evaluation
-is created with system_id NULL. Per amendment A1 this is done by new, non-Sean
+engine.evaluation.system_id (frozen column) gets the pid of the latest card
+version of the project (highest `number`) when the evaluation is created with
+system_id NULL. Since isolation 2026-09-25 (I7.8) the versions are the rows of
+`project.system` in the project's own database (FK added by 0025), so the
+latest is the highest number in that table; another project's versions live in
+another database. Per amendment A1 this is done by new, non-Sean
 code (a pre_save signal on Evaluation plus
 aisc_backend/repositories/system_version_repository.latest_system_pid), never by
 an edit of routers/evaluation.py or models/evaluation.py (see
 test_frozen_sean_files.py).
 
-The Postgres tests make a minimal core.system (pid, project_id, number: the WP2
-shape) inside the test transaction; they skip on sqlite. Run them against a
+The Postgres tests make a minimal project.system (pid, number) inside the test
+transaction; they skip on sqlite. Run them against a
 throwaway Postgres, never the live DB.
 
 Rules covered: S9.2, S9.3 (and the WP9 interface of latest_system_pid).
@@ -54,23 +57,23 @@ def _latest_system_pid(test):
 
 def _postgres_only(test):
     if connection.vendor != "postgresql":
-        test.skipTest("needs Postgres with core.system (run against a throwaway Postgres)")
+        test.skipTest("needs Postgres with project.system (run against a throwaway Postgres)")
 
 
-def _make_core_system():
+def _make_project_system():
     with connection.cursor() as cursor:
-        cursor.execute("CREATE SCHEMA IF NOT EXISTS core")
-        cursor.execute("CREATE TABLE IF NOT EXISTS core.system ("
-                       " pid uuid PRIMARY KEY, project_id uuid NOT NULL,"
-                       " number integer NOT NULL CHECK (number > 0),"
-                       " UNIQUE (project_id, number))")
+        cursor.execute("CREATE SCHEMA IF NOT EXISTS project")
+        cursor.execute("CREATE TABLE IF NOT EXISTS project.system ("
+                       " pid uuid PRIMARY KEY,"
+                       " number integer NOT NULL CHECK (number > 0) UNIQUE)")
 
 
 def _add_version(platform_project, number) -> uuid.UUID:
+    """A card version in this database; the project argument is ignored (one project per database)."""
     pid = uuid.uuid4()
     with connection.cursor() as cursor:
-        cursor.execute("INSERT INTO core.system (pid, project_id, number) VALUES (%s, %s, %s)",
-                       [str(pid), str(platform_project), number])
+        cursor.execute("INSERT INTO project.system (pid, number) VALUES (%s, %s)",
+                       [str(pid), number])
     return pid
 
 
@@ -116,30 +119,36 @@ class LatestSystemPid(TestCase):
         latest_system_pid = _latest_system_pid(self)
         self.assertIsNone(await latest_system_pid(uuid.uuid4()))
 
-    async def test_s9_3_none_when_core_system_is_absent(self):
+    async def test_s9_3_none_when_project_system_is_absent(self):
         _postgres_only(self)
         latest_system_pid = _latest_system_pid(self)
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT to_regclass('core.system') IS NULL")
-            if not cursor.fetchone()[0]:
-                self.skipTest("this test DB already has core.system")
+        from asgiref.sync import sync_to_async
+
+        def absent():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT to_regclass('project.system') IS NULL")
+                return cursor.fetchone()[0]
+
+        if not await sync_to_async(absent)():
+            self.skipTest("this test DB already has project.system")
         self.assertIsNone(await latest_system_pid(uuid.uuid4()))
 
     def test_s9_2_highest_number_wins(self):
         _postgres_only(self)
         latest_system_pid = _latest_system_pid(self)
-        _make_core_system()
+        _make_project_system()
         platform_project = uuid.uuid4()
         _add_version(platform_project, 1)
         v2 = _add_version(platform_project, 2)
-        _add_version(uuid.uuid4(), 7)  # another project's version is never picked
+        # Another project's versions live in another database (isolation I7.8), so
+        # there is no other project's row here to be picked.
         from asgiref.sync import async_to_sync
         self.assertEqual(async_to_sync(latest_system_pid)(platform_project), v2)
 
     def test_s9_3_none_when_the_project_has_no_version(self):
         _postgres_only(self)
         latest_system_pid = _latest_system_pid(self)
-        _make_core_system()
+        _make_project_system()
         from asgiref.sync import async_to_sync
         self.assertIsNone(async_to_sync(latest_system_pid)(uuid.uuid4()))
 
@@ -149,7 +158,7 @@ class EvaluationCarriesTheLatestVersion(TestCase):
 
     def test_s9_2_new_evaluation_gets_the_latest_version_and_keeps_it(self):
         _postgres_only(self)
-        _make_core_system()
+        _make_project_system()
         platform_project = uuid.uuid4()
         project = Project.objects.create(name="MCAS", status=ProjectStatus.Ready,
                                          platform_project_id=platform_project)
@@ -168,7 +177,7 @@ class EvaluationCarriesTheLatestVersion(TestCase):
 
     def test_s9_2_an_explicit_system_id_is_kept(self):
         _postgres_only(self)
-        _make_core_system()
+        _make_project_system()
         platform_project = uuid.uuid4()
         project = Project.objects.create(name="MCAS", status=ProjectStatus.Ready,
                                          platform_project_id=platform_project)
@@ -182,7 +191,7 @@ class EvaluationCarriesTheLatestVersion(TestCase):
     async def test_s9_2_started_through_the_route(self):
         _postgres_only(self)
         from asgiref.sync import sync_to_async
-        await sync_to_async(_make_core_system)()
+        await sync_to_async(_make_project_system)()
         platform_project = uuid.uuid4()
         project = await Project.objects.acreate(name="MCAS", status=ProjectStatus.Ready,
                                                 platform_project_id=platform_project)
@@ -200,7 +209,7 @@ class EvaluationCarriesTheLatestVersion(TestCase):
 
     def test_s9_3_no_version_gives_null(self):
         _postgres_only(self)
-        _make_core_system()
+        _make_project_system()
         project = Project.objects.create(name="MCAS", status=ProjectStatus.Ready,
                                          platform_project_id=uuid.uuid4())
         evaluation = Evaluation.objects.create(status=EvaluationStatus.Pending, project=project)
