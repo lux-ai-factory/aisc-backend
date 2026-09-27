@@ -7,6 +7,9 @@ entry, its tags or its controls. Installs that did not come from the catalogue
 (a deep link, a hand-made request) store no origin at all rather than a guess.
 """
 
+import unittest.mock as mock
+
+from aisc_backend.auth import keycloak
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -18,6 +21,23 @@ from aisc_backend.routers.plugin import router as plugin_router
 
 project_repository = ProjectRepository()
 client = TestAsyncClient(plugin_router)
+
+#: These tests are about the routes, not about Keycloak, and they send a token
+#: that is not meant to verify. The switch is pinned off for the module so the
+#: suite behaves the same wherever it runs: the container it is run in has
+#: AUTH_ENABLED=true, and without this it would pass locally and fail there.
+_auth_off = None
+
+
+def setUpModule():
+    global _auth_off
+    _auth_off = mock.patch.object(keycloak, "AUTH_ENABLED", False)
+    _auth_off.start()
+
+
+def tearDownModule():
+    _auth_off.stop()
+
 
 
 class FakePlugin:
@@ -37,7 +57,12 @@ class CreatePluginsCatalogueOriginTestCase(TestCase):
             "aisc_backend.routers.plugin.plugin_loader.load_package",
             side_effect=one_plugin_package,
         ):
-            return await client.post("", json=body)
+            # Installing takes the admin role. AUTH_ENABLED is off in the
+            # suite, so the token is not verified and no role is read; what the
+            # header does is get past the deny-by-default bearer check.
+            return await client.post(
+                "", json=body, headers={"Authorization": "Bearer development"}
+            )
 
     async def test_records_the_catalogue_entry_it_was_installed_from(self):
         project = await project_repository.create("test")

@@ -15,15 +15,13 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.contrib import admin
 from django.urls import path, include
 
 from ninja import Router
 
 from aisc_backend.routers.app import router as app_router
 from aisc_backend.routers.project import router as project_router
-from aisc_backend.routers.dataset import router as dataset_router
-from aisc_backend.routers.model import router as model_router
+from aisc_backend.routers.component import router as component_router
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.plugin import router as plugin_router
 from aisc_backend.routers.task import router as task_router
@@ -32,7 +30,7 @@ from aisc_backend.routers.stats import router as stats_router
 from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
 from aisc_backend.routers.internal import router as internal_router
-from aisc_backend.routers.project_setting import router as project_setting_router
+from aisc_backend.routers.project_config import router as project_config_router
 
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
@@ -51,8 +49,7 @@ v1_router = Router()
 v1_router.add_router("/app", app_router)
 # Our endpoints
 v1_router.add_router("/projects", project_router)
-v1_router.add_router("/datasets", dataset_router)
-v1_router.add_router("/models", model_router)
+v1_router.add_router("/components", component_router)
 v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)
 v1_router.add_router("/tasks", task_router)
@@ -60,14 +57,12 @@ v1_router.add_router("/files", file_router)
 v1_router.add_router("/stats", stats_router)
 v1_router.add_router("/me", me_router)
 v1_router.add_router("/audit", audit_router)
-v1_router.add_router("/project/settings", project_setting_router)
+v1_router.add_router("/project/settings", project_config_router)
 
 api.add_router("/v1/", v1_router)
 api.add_router("/v1/internal", internal_router)
 
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("_allauth/", include("allauth.headless.urls")),
     path("api/", api.urls),
 ]

@@ -10,9 +10,10 @@ class ProjectRepository(BaseRepository[Project]):
     def __init__(self):
         super().__init__(Project)
 
-    async def create(self, name: str) -> Project:
+    async def create(self, name: str, platform_project_id=None) -> Project:
         project = Project(
             name=name,
+            platform_project_id=platform_project_id,
             status=ProjectStatus.Created
         )
         await project.asave()
@@ -23,10 +24,11 @@ class ProjectRepository(BaseRepository[Project]):
         project = await (
             Project.objects
             .prefetch_related(
-                "datasets",
-                "models",
+                "aisystem",
+                "aisystem__components",
+                "aisystem__components__source_dataset",
                 "enabled_plugins",
-                "settings",
+                "configs",
 
                 "enabled_plugins__current_config"
             )

@@ -32,40 +32,28 @@ DEBUG = env.bool("DEBUG", False)
 # Application definition
 
 INSTALLED_APPS = [
-     # Django core
-    'django.contrib.admin',
-    'django.contrib.auth',
+     # Django core. No accounts, sessions or admin site: people sign in once, at
+     # the gateway, and the API reads who they are from its token (KeycloakAuth).
+     # contenttypes stays because migration 0004 depends on it.
     'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
 
     # Third party
     'corsheaders',
-    'allauth',
-    'allauth.account',
-    'allauth.headless',
-    'ninja_jwt',
 
     # Local
     'aisc_backend'
 ]
 
-SITE_ID = 1
-
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
 
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
-    'allauth.account.middleware.AccountMiddleware',
     'ninja.compatibility.files.fix_request_files_middleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
@@ -80,8 +68,6 @@ TEMPLATES = [
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
             ],
         },
     },
@@ -93,43 +79,35 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# There is one database for the whole platform and this service owns a schema
+# in it. DB_SCHEMA is that schema; `core` is on the search path after it because
+# the engine reads the platform's projects and systems and points at them, and
+# writes neither. Left unset (a laptop, the test runner) nothing is imposed and
+# the default search path applies.
+DB_SCHEMA = env("DB_SCHEMA", "")
+_db_engine = env("DB_ENGINE", "django.db.backends.sqlite3")
+# A search path is a Postgres idea; the sqlite the test runner builds has no
+# schemas and rejects the option outright.
+_db_options = (
+    {"options": f"-c search_path={DB_SCHEMA},core"}
+    if DB_SCHEMA and "postgresql" in _db_engine
+    else {}
+)
+
 DATABASES = {
     'default': {
-        "ENGINE": env("DB_ENGINE", "django.db.backends.sqlite3"),
+        "ENGINE": _db_engine,
         "NAME": env("DB_NAME", BASE_DIR / "db.db"),
         "USER": env("DB_USER", ""),
         "PASSWORD": env("DB_PASSWORD", ""),
         "HOST": env("DB_HOST", ""),
         "PORT": env("DB_PORT", ""),
+        "OPTIONS": _db_options,
     }
 }
 
 
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
-
-AUTHENTICATION_BACKENDS = [
-    # Needed to login by username in Django admin, regardless of `allauth`
-    'django.contrib.auth.backends.ModelBackend',
-
-    # `allauth` specific authentication methods, such as login by email
-    'allauth.account.auth_backends.AuthenticationBackend',
-]
 
 
 # Internationalization
@@ -170,33 +148,6 @@ CRSF_TRUSTED_ORIGINS = env.list('BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_O
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# --- allauth (headless) ---
-ACCOUNT_LOGIN_METHODS =  {'email'}
-ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
-ACCOUNT_EMAIL_VERIFICATION = "mandatory"   # must verify before using app
-
-HEADLESS_ONLY = True                       # disable server-rendered pages
-HEADLESS_FRONTEND_URLS = {
-    "account_confirm_email": "/account/verify-email/{key}",
-    "account_reset_password": "/account/password/reset",
-    "account_signup": "/account/signup",
-}
-# show OpenAPI spec for headless endpoints (handy in dev)
-HEADLESS_SERVE_SPECIFICATION = True
-HEADLESS_SPECIFICATION_TEMPLATE_NAME = "headless/spec/swagger_cdn.html"
-
-# custom token strategy class to additionally return JWT on allauth login
-HEADLESS_TOKEN_STRATEGY = "config.jwt.SessionAndJWTStrategy"
-
-# Dev email: print verification/reset emails to console
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-
-
-# --- Ninja JWT ---
-NINJA_JWT = {
-    "ACCESS_TOKEN_LIFETIME": 30 * 60,
-    "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600
-}
 
 # --- Keycloak auth (read by aisc_backend.auth.keycloak) ---
 # AUTH_ENABLED gates the Keycloak bearer auth; while False the API behaves as before.
@@ -205,6 +156,13 @@ AUTH_ENABLED = env.bool("AUTH_ENABLED", default=False)
 KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
+
+# --- Model listing TLS ---
+# Controls TLS certificate verification when listing models from an
+# OpenAI-compatible endpoint. Set to "False" to skip verification (allow
+# self-signed certificates, e.g. a locally deployed LLM inference server).
+# When unset, verification is skipped automatically for private-network hosts.
+MODEL_LISTING_SSL_VERIFY = env.bool("MODEL_LISTING_SSL_VERIFY", default=True)
 
 # --- immudb audit ledger (read by aisc_backend.audit.clerk) ---
 # Where the immudb server is. Host runs: localhost:3322; inside docker: immudb:3322.

@@ -16,3 +16,6 @@ class Artifact(HasData):
 
     def __str__(self):
         return f'{self.name}'
+
+    class Meta:
+        db_table = "artifact"

@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 
+from .common import CreatedAtModel
 from .observation import Observation
 from .plugin import EvaluationPlugin
 
@@ -14,7 +15,7 @@ class EvaluationStatus(models.TextChoices):
     Custom = "Custom", "Custom"
 
 
-class Evaluation(models.Model):
+class Evaluation(CreatedAtModel):
     pid = models.UUIDField(default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=255, choices=EvaluationStatus.choices)
 
@@ -24,6 +25,12 @@ class Evaluation(models.Model):
 
     task = models.UUIDField(default=None, null=True, blank=True)
 
+    # The system this evaluation ran against (core.system.pid). It belongs here
+    # rather than on the model, because a measurement never references a model:
+    # what is run, and what is reported on, is an evaluation. Null when the
+    # system was never named on the platform.
+    system_id = models.UUIDField(null=True, blank=True, db_index=True)
+
     def get_observations(self) -> list[Observation]:
         return list(self.observations.all())
 
@@ -32,3 +39,6 @@ class Evaluation(models.Model):
 
     def __str__(self):
         return f"{self.pid} ({self.status})"
+
+    class Meta:
+        db_table = "evaluation"

@@ -87,6 +87,11 @@ class KeycloakVerifyTokenTest(SimpleTestCase):
         self.assertEqual(result["preferred_username"], "tester")
 
     def test_require_role_admin_blocks_primary_user(self):
+        """With 403, not 401: the token verified, so the caller has already said
+        who they are and signing in again cannot change the answer."""
+        from ninja.errors import HttpError
+
         token = self._make_token(roles=["primary-user"])
-        result = keycloak.require_role("admin").authenticate(mock.Mock(), token)
-        self.assertIsNone(result)
+        with self.assertRaises(HttpError) as raised:
+            keycloak.require_role("admin").authenticate(mock.Mock(), token)
+        self.assertEqual(raised.exception.status_code, 403)

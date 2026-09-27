@@ -1,3 +1,4 @@
+from asgiref.sync import sync_to_async
 import uuid
 from typing import Any
 
@@ -6,20 +7,35 @@ from ninja import Router, Schema, Query
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
+# A project belongs to the people in it: the platform writes that down and
+# this reads it. Nothing here decides membership, it only enforces it.
+from aisc_backend.auth import membership
+from aisc_backend.auth.keycloak import KeycloakAuth
+from aisc_backend.platform_projects import platform_project_name
 
-from aisc_backend.models import EvaluationStatus, Dataset
+from aisc_backend.models import (
+    EvaluationStatus,
+    Evaluation,
+    AIComponent,
+    AISystem,
+    AIComponentType,
+    ProjectConfig,
+    ProjectConfigCategory,
+)
 from aisc_backend.models.common import StorageContainer
-from aisc_backend.models.model import Model
 from aisc_backend.repositories.base_repository import BaseRepository
-from aisc_backend.repositories.dataset_repository import DatasetRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.repositories.measurement_repository import  MeasurementRepository
-from aisc_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
+from aisc_backend.schemas.ai_system import (
+    AISystemDetailOutSchema,
+    AISystemOutSchema,
+    AIComponentOutSchema,
+    AIComponentInSchema,
+)
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasurementAggregationResponse, MeasurementAggregationRequest, \
     DimensionKeysResponse, DimensionValuesResponse
-from aisc_backend.schemas.model import ModelOutSchema, ModelInSchema
 from aisc_backend.schemas.project import (
     ProjectOutSchema,
     ProjectInSchema,
@@ -27,28 +43,34 @@ from aisc_backend.schemas.project import (
 )
 
 
-router = Router(tags=["project"])
+# The bearer check is the API-wide default as well; naming it here too is what
+# makes `request.auth` the verified claims for this router on its own, which is
+# what the membership below reads. (The `me` router does the same.)
+router = Router(tags=["project"], auth=KeycloakAuth())
 
 project_repository = ProjectRepository()
-dataset_repository = DatasetRepository()
-model_repository = BaseRepository(model=Model)
+ai_system_repository = BaseRepository(model=AISystem)
+ai_component_repository = BaseRepository(model=AIComponent)
 evaluation_repository = EvaluationRepository()
 measurement_repository = MeasurementRepository()
 
 
 @router.post("", response=ProjectOutSchema)
 async def create_project(request, data: ProjectInSchema):
-    project = await project_repository.create(data.name)
+    await sync_to_async(membership.require)(request, data.platform_project_id, "editor")
+    project = await project_repository.create(data.name, data.platform_project_id)
     # AUDIT: who created which project (best-effort; never breaks the create)
     await sync_to_async(log_action)(
         request, action="create", resource_type="project",
-        resource_id=str(project.pid), metadata={"name": project.name})
+        resource_id=str(project.pid), metadata={"name": project.name,
+                                                "platformProjectPid": str(project.platform_project_id or "")})
     return project
 
 
 @router.patch("/{pid}", response=ProjectOutSchema)
 async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
     project = await project_repository.get(pid)
+    await sync_to_async(membership.require)(request, project.platform_project_id, "editor")
     updated = await project_repository.patch(project, data)
     # AUDIT: who renamed which project, and to what
     await sync_to_async(log_action)(
@@ -57,9 +79,53 @@ async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
     return updated
 
 
+@router.post("/for-platform/{platform_project_id}", response=ProjectOutSchema)
+async def project_for_platform(request, platform_project_id: uuid.UUID):
+    """This engine's row for a platform project, making it the first time.
+
+    There is no workspace to create here. The project is chosen once, on the
+    launcher; opening the engine inside it means working on it, so the first
+    visit makes the row, every visit after finds it, and nobody is asked to
+    name anything. The name shown is the platform's own.
+    """
+    from asgiref.sync import sync_to_async
+
+    # Entering the engine inside a project is work on that project, so it takes
+    # an editor. It is not a way into one: a stranger is told there is no such
+    # project, the same as everywhere else.
+    await sync_to_async(membership.require)(request, platform_project_id, "editor")
+
+    existing = await project_repository.filter(platform_project_id=platform_project_id)
+    if existing:
+        return existing[0]
+
+    name = await sync_to_async(platform_project_name)(platform_project_id)
+    project = await project_repository.create(
+        name or f"project-{str(platform_project_id)[:8]}", platform_project_id
+    )
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="project",
+        resource_id=str(project.pid),
+        metadata={"name": project.name, "platformProjectPid": str(platform_project_id)})
+    return project
+
+
 @router.get("", response=list[ProjectOutSchema])
-async def get_projects(request):
-    return await project_repository.get_all()
+async def get_projects(request, platform_project_id: uuid.UUID | None = None):
+    """The workspaces of one platform project, or all of them.
+
+    The project is chosen once, on the launcher, and every module then works
+    inside it, so the app asks for that project's workspaces. Without one the
+    engine is still a usable application on its own and shows what it has.
+    """
+    found = (
+        await project_repository.get_all()
+        if platform_project_id is None
+        else await project_repository.filter(platform_project_id=platform_project_id)
+    )
+    # Only the ones this caller is in. The engine used to answer with every
+    # project it had, whoever asked.
+    return await sync_to_async(membership.visible)(request, found)
 
 
 @router.get("/by-name/{name}", response=ProjectOutSchema)
@@ -69,46 +135,118 @@ async def get_project_by_name(request, name):
 
 @router.get("/{pid}", response=ProjectDetailsOutSchema)
 async def get_project_details(request, pid: uuid.UUID):
-    return await project_repository.get(pid, True)
+    project = await project_repository.get(pid, True)
+    await sync_to_async(membership.require)(request, project.platform_project_id)
+    return project
 
 
-@router.post("/{pid}/datasets", response=DatasetOutSchema)
-async def create_project_dataset(request, pid: uuid.UUID, data: DatasetInSchema):
-    project = await project_repository.get(pid)
+async def get_or_create_aisystem(project):
+    """Return (or create) the project's single AISystem."""
+    system = await AISystem.objects.filter(project=project).afirst()
+    if system is None:
+        system = AISystem(project=project, name=f"{project.name} system",
+                          description="")
+        system = await ai_system_repository.save(system)
+    return system
 
-    dataset = await dataset_repository.save(
-        Dataset(
-            **data.model_dump(),
-            project=project,
-            storage_container=StorageContainer.Datasets,
-        )
+
+async def derive_datashape(source_dataset: AIComponent) -> dict:
+    """Best-effort derivation of a datashape document from a dataset component."""
+    from pathlib import Path
+    from aisc_backend.repositories import file_repository
+    from aisc_backend.services.feature_derivation import derive_features
+
+    try:
+        suffix = Path(source_dataset.data).suffix.lower()
+        fmt = suffix.removeprefix(".")
+        if fmt not in ("csv", "parquet") or not source_dataset.data:
+            return {}
+        response = await sync_to_async(file_repository.get_object)(
+            source_dataset.storage_container, source_dataset.data)
+        if not response:
+            return {}
+        return derive_features(response["Body"].read(), fmt, str(source_dataset.pid))
+    except Exception:
+        return {}
+
+
+@router.get("/{pid}/aisystem", response=AISystemDetailOutSchema)
+async def get_project_aisystem(request, pid: uuid.UUID):
+    await sync_to_async(membership.for_project_pid)(request, pid)
+    project = await project_repository.get(pid, True)
+    system = await (
+        AISystem.objects.filter(project=project)
+        .prefetch_related("components",
+                          "components__source_dataset")
+        .afirst()
     )
-
-    # AUDIT: who added which dataset to which project (webapp action; best-effort)
-    await sync_to_async(log_action)(
-        request, action="create", resource_type="dataset",
-        resource_id=str(getattr(dataset, "pid", "")),
-        metadata={"projectPid": str(pid), "name": getattr(dataset, "name", None)})
-    return dataset
+    if system is None:
+        system = await get_or_create_aisystem(project)
+    return system
 
 
-@router.post("/{pid}/models", response=ModelOutSchema)
-async def create_project_model(request, pid: uuid.UUID, data: ModelInSchema):
+@router.post("/{pid}/components", response=AIComponentOutSchema)
+async def create_project_component(request, pid: uuid.UUID, data: AIComponentInSchema):
+    await sync_to_async(membership.for_project_pid)(request, pid, "editor")
+    if not data.name or not data.name.strip():
+        raise HttpError(400, "Component name is required")
     project = await project_repository.get(pid)
+    system = await get_or_create_aisystem(project)
 
-    model = Model(
-        **data.model_dump(),
-        project=project,
-        public=True,
-        storage_container=StorageContainer.Models,
+    source_dataset = None
+    json_value = data.json_value or {}
+    if data.source_dataset_pid:
+        source_dataset = await ai_component_repository.get(data.source_dataset_pid)
+        if source_dataset is None or source_dataset.component_type != AIComponentType.DATASET:
+            raise HttpError(400, "source_dataset must be a dataset component")
+        if data.component_type == AIComponentType.DATASHAPE and not json_value:
+            json_value = await derive_datashape(source_dataset)
+
+    if data.component_type == AIComponentType.LLM:
+        secret_key = json_value.get("secret_key") or ""
+        if secret_key:
+            secret_exists = await ProjectConfig.objects.filter(
+                project=project,
+                key=secret_key,
+                category=ProjectConfigCategory.SECRETS,
+            ).aexists()
+            if not secret_exists:
+                raise HttpError(400, "Configured API key secret does not exist in this project")
+
+    component = AIComponent(
+        name=data.name,
+        description=data.description or "",
+        component_type=data.component_type or AIComponentType.MODEL,
+        source_dataset=source_dataset,
+        json_value=json_value,
+        system=system,
+        storage_container=(
+            StorageContainer.Datasets
+            if data.component_type == AIComponentType.DATASET
+            else StorageContainer.Models
+        ),
     )
-    saved = await model_repository.save(model)
-    # AUDIT: who registered which model under which project (webapp action; best-effort)
+    saved = await ai_component_repository.save(component)
     await sync_to_async(log_action)(
-        request, action="create", resource_type="model",
+        request, action="create", resource_type="component",
         resource_id=str(getattr(saved, "pid", "")),
-        metadata={"projectPid": str(pid), "name": getattr(saved, "name", None)})
+        metadata={"projectPid": str(pid), "name": getattr(saved, "name", None),
+                  "component_type": getattr(saved, "component_type", None)})
     return saved
+
+
+@router.post("/{pid}/datasets", response=AIComponentOutSchema)
+async def create_project_dataset(request, pid: uuid.UUID, data: AIComponentInSchema):
+    await sync_to_async(membership.for_project_pid)(request, pid, "editor")
+    data.component_type = AIComponentType.DATASET
+    return await create_project_component(request, pid, data)
+
+
+@router.post("/{pid}/models", response=AIComponentOutSchema)
+async def create_project_model(request, pid: uuid.UUID, data: AIComponentInSchema):
+    await sync_to_async(membership.for_project_pid)(request, pid, "editor")
+    data.component_type = AIComponentType.MODEL
+    return await create_project_component(request, pid, data)
 
 
 
@@ -119,6 +257,7 @@ async def get_project_evaluations(
     status: EvaluationStatus | None = None,
     exclude_status: list[EvaluationStatus] = Query([]),
 ):
+    await sync_to_async(membership.for_project_pid)(request, pid)
     project = await project_repository.get(pid)
     filter: dict[str, Any] = {"project": project}
     exclude = None
@@ -130,6 +269,35 @@ async def get_project_evaluations(
     return evaluations
 
 
+@router.get("/{pid}/evaluation-inputs-template", response=dict)
+async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
+    """Return the most recent evaluation's input selections per plugin, so the
+    evaluation form can prefill inputs from a previous run."""
+    await sync_to_async(membership.for_project_pid)(request, pid)
+    project = await project_repository.get(pid)
+    latest = await (
+        Evaluation.objects.filter(project=project).order_by("-created_at").afirst()
+    )
+    if latest is None:
+        return {}
+
+    template: dict[str, dict[str, dict]] = {}
+    async for evaluation_plugin in (
+        latest.evaluation_plugins.select_related("plugin_config__plugin").all()
+    ):
+        plugin_config = evaluation_plugin.plugin_config
+        if plugin_config is None or plugin_config.plugin_id is None:
+            continue
+        plugin_name = plugin_config.plugin.name
+        entries = template.setdefault(plugin_name, {})
+        async for inp in evaluation_plugin.evaluation_inputs.select_related("component").all():
+            entries[inp.name] = {
+                "component_pid": str(inp.component.pid),
+                "value": inp.value,
+            }
+    return template
+
+
 class ProjectPluginConfigResponse(Schema):
     name: str
     dataset_pid: uuid.UUID
@@ -137,6 +305,7 @@ class ProjectPluginConfigResponse(Schema):
 
 @router.get("/{pid}/plugins/{plugin_name}/config", response=dict | None)
 async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
+    await sync_to_async(membership.for_project_pid)(request, pid)
     project = await project_repository.get(pid, True)
     plugin = next(
         (p for p in project.get_enabled_plugins() if p.name == plugin_name), None
@@ -151,6 +320,7 @@ async def aggregate_project_measurements(
     pid: uuid.UUID,
     data: MeasurementAggregationRequest
 ):
+    await sync_to_async(membership.for_project_pid)(request, pid)
     project = await project_repository.get(pid)
     queryset = await measurement_repository.filter_queryset(observation__evaluation__project=project)
     results = await measurement_repository.aggregate_measurements(
@@ -160,6 +330,7 @@ async def aggregate_project_measurements(
 
 @router.get("/{pid}/measurements/dimension-keys", response=DimensionKeysResponse)
 async def get_project_dimension_keys(request, pid: uuid.UUID):
+    await sync_to_async(membership.for_project_pid)(request, pid)
     project = await project_repository.get(pid)
     queryset = await measurement_repository.filter_queryset(
         observation__evaluation__project=project
@@ -169,6 +340,7 @@ async def get_project_dimension_keys(request, pid: uuid.UUID):
 
 @router.get("/{pid}/measurements/dimension-values/{key}", response=DimensionValuesResponse)
 async def get_project_dimension_values(request, pid: uuid.UUID, key: str):
+    await sync_to_async(membership.for_project_pid)(request, pid)
     project = await project_repository.get(pid)
     queryset = await measurement_repository.filter_queryset(
         observation__evaluation__project=project

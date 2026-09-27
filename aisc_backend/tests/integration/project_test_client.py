@@ -3,11 +3,10 @@ import uuid
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.models import FeatureType
-from aisc_backend.routers.project import router, CreateProjectModelRequest
-from aisc_backend.schemas.dataset import DatasetOutSchema, DatasetInSchema
+from aisc_backend.routers.project import router
+from aisc_backend.schemas.ai_system import AIComponentOutSchema, AIComponentInSchema
 from aisc_backend.schemas.datashape import DataShapeInSchema, DataShapeOutSchema
 from aisc_backend.schemas.feature import FeatureInSchema
-from aisc_backend.schemas.model import ModelOutSchema
 from aisc_backend.schemas.project import ProjectOutSchema, ProjectInSchema, ProjectDetailsOutSchema
 
 client = TestAsyncClient(router)
@@ -33,17 +32,17 @@ async def patch_project(pid: uuid.UUID, name:str, frequency: str, window_size: s
     return project
 
 
-async def create_project_dataset(pid: uuid.UUID, dataset_name: str) -> DatasetOutSchema:
-    data = DatasetInSchema(name=dataset_name)
-    response = await client.post(f'/{pid}/datasets', json=data.dict())
-    dataset = DatasetOutSchema.model_construct(**response.data)
+async def create_project_dataset(pid: uuid.UUID, dataset_name: str) -> AIComponentOutSchema:
+    data = AIComponentInSchema(name=dataset_name, component_type='dataset')
+    response = await client.post(f'/{pid}/components', json=data.dict())
+    dataset = AIComponentOutSchema.model_construct(**response.data)
     return dataset
 
 
-async def create_project_model(pid: uuid.UUID, model_name: str, dataset_pid: uuid.UUID) -> ModelOutSchema:
-    data = CreateProjectModelRequest(name=model_name, dataset_pid=dataset_pid)
-    response = await client.post(f'/{pid}/models', json=data.dict())
-    model = ModelOutSchema.model_construct(**response.data)
+async def create_project_model(pid: uuid.UUID, model_name: str, dataset_pid: uuid.UUID) -> AIComponentOutSchema:
+    data = AIComponentInSchema(name=model_name, component_type='model')
+    response = await client.post(f'/{pid}/components', json=data.dict())
+    model = AIComponentOutSchema.model_construct(**response.data)
     return model
 
 

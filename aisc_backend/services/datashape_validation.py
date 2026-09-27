@@ -20,9 +20,9 @@ def validate_dataframe_against_datashape(df: pd.DataFrame, datashape: dict) -> d
         if not compatible:
             errors.append(f"incompatible dtype for {name}: expected {feature.get('dtype', expected)}")
             continue
-        if expected == "numeric" and feature.get("min") is not None:
-            if series.min() < feature["min"] or series.max() > feature["max"]:
-                warnings.append(f"{name}: values outside [{feature['min']}, {feature['max']}]")
+        if expected == "numeric" and feature.get("min") is not None and (
+                series.min() < feature["min"] or series.max() > feature["max"]):
+            warnings.append(f"{name}: values outside [{feature['min']}, {feature['max']}]")
         mapping = feature.get("category_mapping") or {}
         if mapping:
             observed = {str(value) for value in series.dropna().unique()}
