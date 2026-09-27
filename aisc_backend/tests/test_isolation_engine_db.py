@@ -304,6 +304,18 @@ class TheShapeIsTheLiveShape(PostgresCase):
 
     ALLOWED_GONE = {"aisc_backend_project_platform_project_id_fkey"}
 
+    #: Ruling 14: three foreign keys keep their columns and targets but take the names Sean's
+    #: squashed 0014 gives them (the live shape was made under the old history). Live name to
+    #: the name from now on.
+    RENAMED = {
+        "aisc_backend_aisystem_project_id_381e09a9_fk_project_id":
+            "aisc_backend_aisyste_project_id_381e09a9_fk_aisc_back",
+        "aisc_backend_evaluat_evaluation_plugin_id_7c4716b3_fk_evaluatio":
+            "aisc_backend_evaluat_evaluation_plugin_id_7c4716b3_fk_aisc_back",
+        "plugin_config_settin_project_config_id_505b7676_fk_project_s":
+            "aisc_backend_pluginc_project_config_id_d1306b7a_fk_aisc_back",
+    }
+
     def _live(self):
         scratch = self.cluster.scratch_database("iso_eng_live_shape")
         with self.cluster.connect(scratch) as conn:
@@ -321,7 +333,8 @@ class TheShapeIsTheLiveShape(PostgresCase):
         # The one table the live shape predates: the mode marker (0025_engine_deployment_marker).
         mine = {kind: {r for r in rows if r[0] != "engine_deployment"} for kind, rows in mine.items()}
         live["constraints"] = {
-            (t, name, kind, d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
+            (t, self.RENAMED.get(name, name), kind,
+             d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
             for t, name, kind, d in live["constraints"] if name not in self.ALLOWED_GONE}
         for kind in live:
             with self.subTest(kind=kind):
