@@ -127,11 +127,112 @@ class TheEngineChecksAtStart(TestCase):
             with self.assertRaisesRegex(ImproperlyConfigured, "this database was made by a"):
                 self._check(["uvicorn", "config.asgi:application"])
 
-    def test_migrate_and_test_are_not_checked(self):
-        other = deployment.STANDALONE if not _STANDALONE_RUN else deployment.CONFIGURATOR
-        with override_settings(AISC_DEPLOYMENT=other):
-            for command in ("migrate", "test", "migrate_projects"):
-                self._check(["manage.py", command])
-
     def test_a_server_of_the_same_mode_starts(self):
         self._check(["uvicorn", "config.asgi:application"])
+
+
+class TheCommandIsFound(SimpleTestCase):
+    def test_the_first_argument_that_is_not_an_option(self):
+        from aisc_backend.apps import command_of
+        cases = {
+            ("manage.py", "migrate"): "migrate",
+            ("manage.py", "--settings=x", "migrate"): "migrate",
+            ("manage.py", "--settings", "x", "migrate"): "migrate",
+            ("manage.py", "--verbosity", "2", "test"): "test",
+            ("manage.py", "-v", "2", "test"): "test",
+            ("manage.py", "--pythonpath", "/p", "--no-color", "collectstatic"): "collectstatic",
+            ("uvicorn", "config.asgi:application"): "config.asgi:application",
+            ("manage.py",): None,
+        }
+        for argv, command in cases.items():
+            with self.subTest(argv=argv):
+                self.assertEqual(command_of(list(argv)), command)
+
+
+class MigrateIsCheckedToo(TestCase):
+    """Fix round 1: a migrate of the other mode would remake (or drop) the login tables."""
+
+    def _other(self):
+        return deployment.CONFIGURATOR if _STANDALONE_RUN else deployment.STANDALONE
+
+    def _check(self, argv):
+        from unittest import mock
+
+        from aisc_backend.apps import AiscBackendConfig
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(connection, "close"):
+            AiscBackendConfig._check_the_database_mode()
+
+    def test_a_migrate_of_the_other_mode_is_refused_at_start(self):
+        with override_settings(AISC_DEPLOYMENT=self._other()):
+            for argv in (["manage.py", "migrate"], ["manage.py", "--settings=config.settings", "migrate"]):
+                with self.subTest(argv=argv), self.assertRaisesRegex(ImproperlyConfigured, "made by a"):
+                    self._check(argv)
+
+    def test_a_migrate_of_the_other_mode_is_refused_by_migrate_itself(self):
+        from django.core.management import call_command
+        with override_settings(AISC_DEPLOYMENT=self._other()):
+            with self.assertRaisesRegex(ImproperlyConfigured, "made by a"):
+                call_command("migrate", verbosity=0, interactive=False)
+
+    def test_a_fresh_database_is_not_blocked_under_migrate(self):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM engine_deployment")
+        with override_settings(AISC_DEPLOYMENT=self._other()):
+            self._check(["manage.py", "migrate"])
+
+    def test_test_makemigrations_collectstatic_are_not_checked(self):
+        with override_settings(AISC_DEPLOYMENT=self._other()):
+            for argv in (["manage.py", "test"], ["manage.py", "-v", "2", "test"],
+                         ["manage.py", "--verbosity", "2", "makemigrations"], ["manage.py", "collectstatic"]):
+                with self.subTest(argv=argv):
+                    self._check(argv)
+
+
+class _FakeConnection:
+    """What stamp/inference read: the table names, and the aisc_backend rows of django_migrations."""
+
+    def __init__(self, tables, recorded, alias="default"):
+        from unittest import mock
+        self.alias = alias
+        self.introspection = mock.Mock(table_names=mock.Mock(return_value=list(tables)))
+        self.ops = mock.Mock(quote_name=lambda n: f'"{n}"')
+        cursor = mock.MagicMock()
+        cursor.fetchone.return_value = (recorded,)
+        self.cursor = mock.MagicMock(return_value=mock.MagicMock(__enter__=mock.Mock(return_value=cursor)))
+
+
+class Migration0025InfersAnOldDatabasesMode(SimpleTestCase):
+    def test_a_pre_0025_standalone_database_keeps_its_login_tables(self):
+        conn = _FakeConnection(["django_migrations", "project", "auth_user"], recorded=24)
+        self.assertEqual(deployment.infer_made_in(conn), deployment.STANDALONE)
+
+    def test_a_pre_0025_configurator_database_lost_them_in_0023(self):
+        conn = _FakeConnection(["django_migrations", "project"], recorded=24)
+        self.assertEqual(deployment.infer_made_in(conn), deployment.CONFIGURATOR)
+
+    def test_a_fresh_database_infers_nothing(self):
+        self.assertIsNone(deployment.infer_made_in(_FakeConnection([], recorded=0)))
+        self.assertIsNone(deployment.infer_made_in(_FakeConnection(["django_migrations"], recorded=0)))
+
+    def test_0025_stamps_what_migrate_found_before_it_ran_else_the_running_mode(self):
+        for found, running, expected in ((deployment.STANDALONE, "configurator", "standalone"),
+                                         (deployment.CONFIGURATOR, "standalone", "configurator"),
+                                         (None, "configurator", "configurator"),
+                                         (None, "standalone", "standalone")):
+            with self.subTest(found=found, running=running), override_settings(AISC_DEPLOYMENT=running):
+                deployment._found_before_migrate.clear()
+                if found:
+                    deployment._found_before_migrate["x"] = found
+                self.assertEqual(deployment.stamp_for(_FakeConnection([], 0, alias="x")), expected)
+        deployment._found_before_migrate.clear()
+
+    def test_migrate_refuses_a_pre_0025_database_of_the_other_mode(self):
+        from unittest import mock
+        conn = _FakeConnection(["django_migrations", "project"], recorded=24, alias="old")
+        sender = mock.Mock()
+        sender.name = "aisc_backend"
+        with override_settings(AISC_DEPLOYMENT="standalone"), \
+                mock.patch("django.db.connections", {"old": conn}):
+            with self.assertRaisesRegex(ImproperlyConfigured, "made by a configurator engine"):
+                deployment.before_migrate(sender=sender, using="old")
+        deployment._found_before_migrate.clear()

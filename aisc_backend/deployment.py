@@ -83,3 +83,48 @@ def assert_database_mode(connection) -> None:
     made, now = made_in(connection), settings.AISC_DEPLOYMENT
     if made is not None and made != now:
         raise ImproperlyConfigured(f"this database was made by a {made} engine; this engine is {now}")
+
+
+#: What `before_migrate` found in a database that predates 0025, by alias, for 0025 to stamp.
+_found_before_migrate: dict[str, str] = {}
+
+
+def infer_made_in(connection) -> str | None:
+    """The mode of a database that predates the marker, or None for a fresh one (no aisc_backend
+    migration recorded). 0023 drops the login tables in configurator only, so a database that has
+    `auth_user` was made standalone, and one that lost it was made by a configurator engine."""
+    tables = set(connection.introspection.table_names())
+    if "django_migrations" not in tables:
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT count(*) FROM django_migrations WHERE app = %s", ["aisc_backend"])
+        if not cursor.fetchone()[0]:
+            return None
+    return STANDALONE if "auth_user" in tables else CONFIGURATOR
+
+
+def before_migrate(sender, using, **kwargs) -> None:
+    """pre_migrate receiver: refuse a migrate of the other mode before it changes anything (it would
+    remake or drop the login tables), and remember what a pre-0025 database was for 0025's stamp.
+    Runs before any migration of the run, so the login tables are still as the database had them."""
+    if getattr(sender, "name", None) != "aisc_backend":
+        return
+    from django.conf import settings
+    from django.db import connections
+
+    connection = connections[using]
+    made = made_in(connection)
+    if made is None:
+        made = infer_made_in(connection)
+        if made is not None:
+            _found_before_migrate[using] = made
+    if made is not None and made != settings.AISC_DEPLOYMENT:
+        raise ImproperlyConfigured(
+            f"this database was made by a {made} engine; this engine is {settings.AISC_DEPLOYMENT}")
+
+
+def stamp_for(connection) -> str:
+    """The mode 0025 writes: what the database was before this migrate, else (a fresh database,
+    or migrations run without the pre_migrate signal) the running mode."""
+    from django.conf import settings
+    return _found_before_migrate.pop(connection.alias, None) or settings.AISC_DEPLOYMENT
