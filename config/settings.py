@@ -16,12 +16,13 @@ from django.core.management.utils import get_random_secret_key
 
 from aisc_backend import deployment
 
-deployment.check_environment()
-AISC_DEPLOYMENT = deployment.mode()
-
 empty_str_to_none = lambda v: v if v and v.strip() else None
 
 env.read_env()
+
+_deployment_env = deployment.settings_source(lambda name: env.str(name, default=None))
+deployment.check_environment(_deployment_env)
+AISC_DEPLOYMENT = deployment.mode(_deployment_env)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

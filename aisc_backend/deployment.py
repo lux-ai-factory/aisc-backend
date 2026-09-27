@@ -5,13 +5,21 @@ module (docs/superpowers/specs/2026-09-27-engine-deployment-modes.md has the lis
 reads the variable.
 """
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from django.core.exceptions import ImproperlyConfigured
 
 STANDALONE = "standalone"
 CONFIGURATOR = "configurator"
 MODES = (STANDALONE, CONFIGURATOR)
+_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE")
+
+
+def settings_source(read: Callable[[str], str | None]) -> dict[str, str]:
+    """Collect AISC_DEPLOYMENT/DB_ENGINE through `read`, whatever loaded them (os.environ directly,
+    or environs.Env after it has read a .env file, which never writes back into os.environ). Names
+    `read` has nothing for are left out, so mode()/check_environment() still default to standalone."""
+    return {name: value for name in _SETTINGS_NAMES if (value := read(name)) is not None}
 
 
 def mode(env: Mapping[str, str] = os.environ) -> str:

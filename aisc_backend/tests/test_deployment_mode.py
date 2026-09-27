@@ -1,3 +1,5 @@
+import os
+
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
@@ -37,3 +39,22 @@ class TheMode(SimpleTestCase):
         self.assertTrue(deployment.project_databases({"AISC_DEPLOYMENT": "configurator", "DB_ENGINE": pg}))
         self.assertFalse(deployment.project_databases({"AISC_DEPLOYMENT": "configurator",
                                                        "DB_ENGINE": "django.db.backends.sqlite3"}))
+
+
+class SettingsSource(SimpleTestCase):
+    def test_includes_only_present_names(self):
+        reader = {"AISC_DEPLOYMENT": "configurator", "DB_ENGINE": "django.db.backends.postgresql"}.get
+        self.assertEqual(
+            deployment.settings_source(reader),
+            {"AISC_DEPLOYMENT": "configurator", "DB_ENGINE": "django.db.backends.postgresql"},
+        )
+
+    def test_absent_names_are_omitted_so_mode_still_defaults_to_standalone(self):
+        reader = lambda name: None
+        self.assertEqual(deployment.settings_source(reader), {})
+        self.assertEqual(deployment.mode(deployment.settings_source(reader)), deployment.STANDALONE)
+
+    def test_mode_sees_a_value_the_reader_has_but_os_environ_does_not(self):
+        self.assertNotIn("AISC_DEPLOYMENT", os.environ)
+        reader = {"AISC_DEPLOYMENT": "configurator"}.get
+        self.assertEqual(deployment.mode(deployment.settings_source(reader)), deployment.CONFIGURATOR)
