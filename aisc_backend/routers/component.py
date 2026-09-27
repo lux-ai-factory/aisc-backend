@@ -7,6 +7,9 @@ from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
+from aisc_backend import deployment
+from aisc_backend.auth import membership
+from aisc_backend.auth.keycloak import router_auth
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import AIComponent, AIComponentType
 from aisc_backend.models.common import StorageContainer
@@ -18,7 +21,7 @@ from aisc_backend.utils.encryption import decrypt_value
 from aisc_plugin_interface import LLMConfig, list_openai_models, ModelListingError
 from config.settings import MODEL_LISTING_SSL_VERIFY
 
-router = Router(tags=["component"])
+router = Router(tags=["component"], auth=router_auth())
 
 ai_component_repository = AIComponentRepository()
 project_config_repository = ProjectConfigRepository()
@@ -37,6 +40,8 @@ def storage_container_for(component: AIComponent) -> str:
 
 @router.get("/{component_pid}", response=AIComponentOutSchema)
 async def get_component(request, component_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_component)(request, component_pid)
     component = await ai_component_repository.get_with_source_dataset(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
@@ -45,6 +50,8 @@ async def get_component(request, component_pid: uuid.UUID):
 
 @router.patch("/{component_pid}", response=AIComponentOutSchema)
 async def update_component(request, component_pid: uuid.UUID, data: AIComponentInSchema):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_component)(request, component_pid, "editor")
     component = await ai_component_repository.get(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
@@ -71,6 +78,8 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
 
 @router.delete("/{component_pid}", response={204: None})
 async def delete_component(request, component_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_component)(request, component_pid, "editor")
     component = await ai_component_repository.get(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
@@ -80,6 +89,8 @@ async def delete_component(request, component_pid: uuid.UUID):
 
 @router.put("/{component_pid}/data", response=UploadComponentFileResponse)
 async def upload_component_file(request, component_pid: uuid.UUID, file: File[UploadedFile]):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_component)(request, component_pid, "editor")
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
@@ -119,6 +130,8 @@ async def get_component_models(request, component_pid: uuid.UUID):
     failure, returns an empty list plus an error message so the UI can fall
     back to a free-text model input.
     """
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_component)(request, component_pid)
     component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
@@ -153,6 +166,8 @@ async def get_component_models(request, component_pid: uuid.UUID):
 
 @router.get("/{component_pid}/data")
 async def get_component_file(request, component_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_component)(request, component_pid)
     try:
         component = await ai_component_repository.get(component_pid)
         if not component:

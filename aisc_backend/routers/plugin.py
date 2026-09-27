@@ -4,7 +4,12 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from aisc_backend import deployment
 from aisc_backend.audit.log import log_action
+# In the Configurator every route that reaches one plugin asks whether the caller is in its
+# project, and the three that install, reinstall or remove code take admin. Standalone never asks.
+from aisc_backend.auth import membership
+from aisc_backend.auth.keycloak import admin_in_configurator
 from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
@@ -74,6 +79,8 @@ async def get_plugins(request):
 
 @router.get("/{plugin_pid}/feature_flags", response=dict)
 async def get_plugin_feature_flags(request, plugin_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     plugin = await plugin_repository.get(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
 
@@ -82,6 +89,8 @@ async def get_plugin_feature_flags(request, plugin_pid: uuid.UUID):
 
 @router.get("/{plugin_pid}/display_icon", response=str)
 async def get_plugin_display_icon(request, plugin_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     plugin = await plugin_repository.get(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
 
@@ -90,6 +99,8 @@ async def get_plugin_display_icon(request, plugin_pid: uuid.UUID):
 
 @router.get("/{plugin_pid}/input_definitions", response=list[InputDefinition])
 async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     plugin = await plugin_repository.get(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
     input_definitions: list[InputDefinition] = plugin_obj.input_definitions
@@ -99,6 +110,8 @@ async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
 
 @router.get("/{plugin_pid}/project_config_definitions", response=list[dict])
 async def get_plugin_project_config_definitions(request, plugin_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     plugin = await plugin_repository.get(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
     return [definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions]
@@ -108,9 +121,12 @@ class CreatePluginsRequest(Schema):
     package_name: str
     version: str
     project_uuid: uuid.UUID
+    # Set when the install came from the catalogue (both modes). Optional so a deep link or a
+    # direct API call still works; it is then recorded as no origin at all.
+    catalogue_slug: str | None = None
 
 
-@router.post("", response=list[PluginOutSchema])
+@router.post("", response=list[PluginOutSchema], auth=admin_in_configurator())
 async def create_plugins(request, data: CreatePluginsRequest):
     project = await project_repository.get(data.project_uuid, True)
 
@@ -127,12 +143,19 @@ async def create_plugins(request, data: CreatePluginsRequest):
 
         if existing is not None:
             project_plugin = existing
+            # An older row may not know where it came from. Learn it, but never
+            # unlearn it: an install without an origin says nothing about the
+            # origin already recorded.
+            if data.catalogue_slug and not project_plugin.catalogue_slug:
+                project_plugin.catalogue_slug = data.catalogue_slug
+                await plugin_repository.save(project_plugin)
         else:
             project_plugin = Plugin(
                 name=plugin_name,
                 display_name=plugin_obj.display_name,
                 package_name=data.package_name,
                 version=data.version,
+                catalogue_slug=data.catalogue_slug,
                 project=project,
                 enabled=True,
             )
@@ -148,6 +171,7 @@ async def create_plugins(request, data: CreatePluginsRequest):
     await sync_to_async(log_action)(
         request, action="install", resource_type="plugin", resource_id=data.package_name,
         metadata={"version": data.version, "projectPid": str(data.project_uuid),
+                  "catalogueSlug": data.catalogue_slug,
                   "plugins": [p.name for p in created_plugins]})
 
     return created_plugins
@@ -159,7 +183,7 @@ class RefreshPluginRequest(Schema):
     project_uuid: uuid.UUID
 
 
-@router.post("/refresh", response=list[PluginOutSchema])
+@router.post("/refresh", response=list[PluginOutSchema], auth=admin_in_configurator())
 async def refresh_plugins(request, data: RefreshPluginRequest):
     plugins_package_dict = plugin_loader.refresh_package(data.package_name, data.version)
 
@@ -198,7 +222,7 @@ class DeletePluginsRequest(Schema):
     project_uuid: uuid.UUID
 
 
-@router.delete("", response={204: None})
+@router.delete("", response={204: None}, auth=admin_in_configurator())
 async def delete_plugin(request, data: DeletePluginsRequest):
     # Soft-disable instead of deleting. Keeps the Plugin row + every
     # downstream link (PluginConfig, EvaluationPlugin, Artifact) intact so
@@ -225,6 +249,8 @@ class UpdatePluginEnabledRequest(Schema):
 async def update_plugin_enabled(
         request, plugin_pid: uuid.UUID, data: UpdatePluginEnabledRequest
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid, "editor")
     plugin = await plugin_repository.get(plugin_pid)
     plugin.enabled = data.enabled
     await plugin_repository.save(plugin)
@@ -239,6 +265,8 @@ async def update_plugin_enabled(
     response=list[PluginConfigOutSchema],
 )
 async def get_plugin_config_history(request, plugin_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     plugin = await plugin_repository.get(plugin_pid)
     return await plugin_repository.configs_with_mappings(plugin)
 
@@ -250,6 +278,8 @@ async def get_plugin_config_history(request, plugin_pid: uuid.UUID):
 async def restore_plugin_config(
         request, plugin_pid: uuid.UUID, config_id: int
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid, "editor")
     plugin = await plugin_repository.get(plugin_pid)
     try:
         config = await plugin_repository.get_config(plugin, config_id)
@@ -271,6 +301,8 @@ class UpdatePluginConfigRequest(Schema):
 async def update_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid, "editor")
     project_plugin = await plugin_repository.get_with_related(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
 
@@ -315,6 +347,8 @@ async def update_plugin_config_state(
 async def preview_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     project_plugin = await plugin_repository.get_with_related(plugin_pid)
     plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
 
@@ -372,6 +406,8 @@ async def get_plugin_evaluation_results(
 async def get_project_plugin_config_state(
         request, plugin_pid: uuid.UUID
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     project_plugin = await plugin_repository.get_with_related(plugin_pid)
     if not project_plugin:
         raise HttpError(
@@ -423,6 +459,8 @@ async def get_project_plugin_config_state(
 async def parse_plugin_config_state_from_dataset(
         request, plugin_pid: uuid.UUID, dataset_uuid: uuid.UUID
 ):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_plugin)(request, plugin_pid)
     dataset = await ai_component_repository.get(dataset_uuid)
     if not dataset:
         raise HttpError(404, f"Component {dataset_uuid} not found")

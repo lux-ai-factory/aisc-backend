@@ -1,5 +1,11 @@
 import uuid
 
+from asgiref.sync import sync_to_async
+
+from aisc_backend import deployment
+from aisc_backend.auth import membership
+from aisc_backend.auth.keycloak import router_auth
+
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -14,7 +20,7 @@ from aisc_backend.schemas.project_config import (
 from aisc_backend.services.project_config_keys import create_project_config_key
 from aisc_backend.utils.encryption import encrypt_value
 
-router = Router(tags=["project settings"])
+router = Router(tags=["project settings"], auth=router_auth())
 project_config_repository = ProjectConfigRepository()
 project_repository = ProjectRepository()
 
@@ -25,11 +31,15 @@ def _masked(value: str) -> str:
 
 @router.get("/{project_pid}", response=list[ProjectConfigOutSchema])
 async def list_project_configs(request, project_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_project_pid)(request, project_pid)
     return await project_config_repository.get_by_project(project_pid)
 
 
 @router.post("/{project_pid}", response=ProjectConfigOutSchema)
 async def create_project_config(request, project_pid: uuid.UUID, data: ProjectConfigInSchema):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_project_pid)(request, project_pid, "editor")
     project = await project_repository.get(project_pid)
     try:
         key = await create_project_config_key(project, data.category, data.key)
@@ -52,6 +62,8 @@ async def create_project_config(request, project_pid: uuid.UUID, data: ProjectCo
 
 @router.get("/{project_pid}/available", response=dict[str, list[ProjectConfigOutSchema]])
 async def available_project_config(request, project_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_project_pid)(request, project_pid)
     result: dict[str, list[ProjectConfigOutSchema]] = {category.value: [] for category in ProjectConfigCategory}
     for project_config in await project_config_repository.get_by_project(project_pid):
         result[project_config.category].append(project_config)
@@ -60,6 +72,8 @@ async def available_project_config(request, project_pid: uuid.UUID):
 
 @router.patch("/{project_pid}/{project_config_pid}", response=ProjectConfigOutSchema)
 async def update_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID, data: ProjectConfigUpdateSchema):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_project_config)(request, project_pid, project_config_pid, "editor")
     project_config = await project_config_repository.get(project_config_pid)
     if project_config.project != project_pid:
         raise HttpError(400, f"Project config not associated with project id")
@@ -78,6 +92,8 @@ async def update_project_config(request, project_pid: uuid.UUID, project_config_
 
 @router.delete("/{project_pid}/{project_config_pid}", response={204: None})
 async def delete_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID):
+    if deployment.is_configurator():
+        await sync_to_async(membership.for_project_config)(request, project_pid, project_config_pid, "editor")
     project_config = await project_config_repository.get(project_config_pid)
     await project_config_repository.delete(project_config)
     return 204, None

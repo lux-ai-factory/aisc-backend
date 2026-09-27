@@ -1,3 +1,6 @@
+import unittest
+
+from django.conf import settings
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
@@ -18,7 +21,10 @@ from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.project import ProjectInSchema, ProjectOutSchema
 
 project_repository = ProjectRepository()
-client = TestAsyncClient(project_router)
+#: In the Configurator these routers name the bearer check themselves (standalone inherits the
+#: API's), so a call carries a token; AUTH_ENABLED is off in the suite, so it is not verified.
+SIGNED_IN = {"Authorization": "Bearer development"}
+client = TestAsyncClient(project_router, headers=SIGNED_IN)
 
 class ProjectRouterTestCase(TestCase):
 
@@ -30,6 +36,8 @@ class ProjectRouterTestCase(TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual(len(response.data), 1)
 
+    @unittest.skipIf(settings.AISC_DEPLOYMENT == "configurator",
+                     "the Configurator makes projects on the launcher (test_modes_routes)")
     async def test_create_project(self):
         data = ProjectInSchema()
         data.name = "test"
