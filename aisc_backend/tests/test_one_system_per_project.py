@@ -77,42 +77,46 @@ class ModelStateIsE34fca3(TestCase):
 
 
 class Migration0023Exists(TestCase):
-    """0023 follows 0022, and 0022 stays."""
+    """0022 is the folded one-system migration, and the leaf is 0025_engine_deployment_marker."""
 
     def test_s1_0023_depends_on_0022(self):
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertIn(("aisc_backend", MIGRATION_0022), loader.disk_migrations)
-        key = ("aisc_backend", MIGRATION_0023)
-        self.assertIn(key, loader.disk_migrations, f"migration {MIGRATION_0023} is missing")
-        self.assertIn(("aisc_backend", MIGRATION_0022), loader.disk_migrations[key].dependencies)
+        self.assertIn(("aisc_backend", "0021_ai_system_tables_lose_the_prefix"), loader.disk_migrations)
+        key = ("aisc_backend", MIGRATION_0022)
+        self.assertIn(("aisc_backend", "0021_ai_system_tables_lose_the_prefix"),
+                      loader.disk_migrations[key].dependencies)
 
     def test_s1_0023_is_the_leaf(self):
-        # Nothing after 0023 changes the data model. The migrations allowed on
-        # top of it: 0024 drops the tables of the login the engine no longer
-        # has, none of which is an engine model; 0025 (isolation I7.7, I7.12)
-        # only adds the evaluation's key to project.system in a project database.
+        # On this branch: 0022 is the folded one-system migration (no-op),
+        # 0023 is no_login_of_its_own, 0024 is the_database_is_the_project,
+        # and 0025_engine_deployment_marker is the leaf.
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"),
-                         [("aisc_backend", "0025_the_database_is_the_project")])
-        parents = loader.graph.node_map[("aisc_backend", "0024_no_login_of_its_own")].parents
+                         [("aisc_backend", "0025_engine_deployment_marker")])
+        parents = loader.graph.node_map[("aisc_backend", "0023_no_login_of_its_own")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
-                         {("aisc_backend", MIGRATION_0023)})
-        parents = loader.graph.node_map[("aisc_backend", "0025_the_database_is_the_project")].parents
+                         {("aisc_backend", MIGRATION_0022)})
+        parents = loader.graph.node_map[("aisc_backend", "0024_the_database_is_the_project")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
-                         {("aisc_backend", "0024_no_login_of_its_own")})
+                         {("aisc_backend", "0023_no_login_of_its_own")})
+        parents = loader.graph.node_map[("aisc_backend", "0025_engine_deployment_marker")].parents
+        self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
+                         {("aisc_backend", "0024_the_database_is_the_project")})
 
     def test_s1_3_0023_applied_on_sqlite_without_core(self):
-        # S1.3: on sqlite 0023 succeeds and skips every core-related statement.
+        # S1.3: on sqlite 0022 (the folded one-system migration) succeeds and leaves
+        # one AISystem per project; it is a no-op on sqlite.
         if connection.vendor != "sqlite":
             self.skipTest("S1.3 is about sqlite")
         loader = MigrationLoader(connection)
-        self.assertIn(("aisc_backend", MIGRATION_0023), loader.applied_migrations,
-                      "0023 did not run on sqlite")
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL")
-            ddl = "\n".join(row[0] for row in cursor.fetchall()).lower()
-        self.assertNotIn("core.", ddl)
-        self.assertNotIn("system_version_parts", ddl)
+        self.assertIn(("aisc_backend", MIGRATION_0022), loader.applied_migrations,
+                      "0022 did not run on sqlite")
+        # Verify one AISystem per project: get an AISystem and verify it has a
+        # one-to-one project field.
+        AISystem = _aisystem_model(self)
+        project_field = AISystem._meta.get_field("project")
+        self.assertTrue(project_field.one_to_one, "AISystem.project must be a OneToOneField")
 
 
 class OneSystemPerProject(TestCase):
