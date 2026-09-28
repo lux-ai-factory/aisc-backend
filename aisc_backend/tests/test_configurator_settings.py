@@ -37,7 +37,7 @@ class TheConfiguratorStack(SimpleTestCase):
 @unittest.skipUnless(_CONFIGURATOR_RUN and not settings.PROJECT_DATABASES,
                      "configurator on one database (sqlite, or config.settings_single_database)")
 class TheLoginTablesStayGone(TransactionTestCase):
-    """Ruling 9: 0023 drops the login tables, and no installed app makes them again."""
+    """Ruling 9: 0019 drops the login tables, and no installed app makes them again."""
 
     LOGIN_TABLES = ("auth_user", "auth_permission", "django_session", "django_admin_log", "account_emailaddress")
 

@@ -49,19 +49,17 @@ from django.test import AsyncClient, SimpleTestCase, TestCase
 from aisc_backend.tests.isolation_support import configurator_only, BACKEND, EXAMPLE_DB, EXAMPLE_PID, settings_probe
 
 MIGRATIONS = BACKEND / "aisc_backend" / "migrations"
-# Renumbered on feat/deployment-modes (Task 2): the FK migration is 0024 here, and the leaf
-# is 0025_engine_deployment_marker (Task 3).
-FK_MIGRATION = ("aisc_backend", "0024_the_database_is_the_project")
-NEW_LEAF = ("aisc_backend", "0025_engine_deployment_marker")
+# Renumbered on feat/deployment-modes (adapt item 1, 2026-09-28): the FK migration is 0020
+# here, and the leaf is 0021_engine_deployment_marker.
+FK_MIGRATION = ("aisc_backend", "0020_the_database_is_the_project")
+NEW_LEAF = ("aisc_backend", "0021_engine_deployment_marker")
 
 #: I7.7: these stay byte for byte as they are (their core blocks are already
-#: guarded by to_regclass). Hashes taken on feat/deployment-modes at 7c47c57, after
-#: Task 2 renumbered them (definitive's 0015 is 0016 here; its 0023 is folded into 0022).
+#: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (definitive's
+#: 0015 is 0016 here). The folded no-op 0022 is gone (adapt item 1).
 UNCHANGED_MIGRATIONS = {
     "0016_evaluation_system_id_project_platform_project_id.py":
         "0b624fbde65aa2efc2fcdd828b8b5cdc2130be5d6ee1f245587c41b2857a81d4",
-    "0022_parts_belong_to_a_version_of_the_one_system.py":
-        "462d930bddc2debfec1bfb29c037dabb18cd4937586f64cf1e789c785788c1b6",
 }
 
 
@@ -84,47 +82,46 @@ def _projectdb(test):
 @configurator_only
 class TheNewMigration(SimpleTestCase):
     def _file(self):
-        found = sorted(MIGRATIONS.glob("0024_*.py"))
+        found = sorted(MIGRATIONS.glob("0020_*.py"))
         if not found:
-            self.fail("I7.7: aisc_backend/migrations/0024_the_database_is_the_project.py is missing")
+            self.fail("I7.7: aisc_backend/migrations/0020_the_database_is_the_project.py is missing")
         return found[0]
 
-    def test_i7_7_0025_has_the_name_of_the_spec(self):
-        self.assertEqual(self._file().name, "0024_the_database_is_the_project.py")
+    def test_i7_7_0020_has_the_name_of_the_spec(self):
+        self.assertEqual(self._file().name, "0020_the_database_is_the_project.py")
 
-    def test_i7_7_0025_adds_the_fk_to_project_system_only_when_it_exists(self):
+    def test_i7_7_0020_adds_the_fk_to_project_system_only_when_it_exists(self):
         text = self._file().read_text()
-        self.assertIn("RunPython", text, "I7.7: 0025 is a RunPython migration")
+        self.assertIn("RunPython", text, "I7.7: 0020 is a RunPython migration")
         self.assertIn("aisc_backend_evaluation_system_id_fkey", text)
         self.assertRegex(text, r"to_regclass\(\s*'project\.system'\s*\)")
         self.assertRegex(text, r"REFERENCES\s+project\.system\s*\(\s*pid\s*\)\s+ON DELETE SET NULL")
         self.assertIn("postgresql", text, "I7.7: Postgres only, a no-op on sqlite")
-        self.assertNotRegex(text, r"core\.", "I7.7: 0025 names nothing in core")
+        self.assertNotRegex(text, r"core\.", "I7.7: 0020 names nothing in core")
 
-    def test_i7_7_0015_0022_0023_are_unchanged(self):
+    def test_i7_7_0016_is_unchanged(self):
         for name, digest in UNCHANGED_MIGRATIONS.items():
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_i7_12_the_leaf_becomes_0025(self):
-        """The leaf-0024 assertion of test_one_system_per_project.py
-        (test_s1_0023_is_the_leaf) changes in WP E1 to this one."""
+    def test_i7_12_the_leaf_is_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_s1_0021_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [NEW_LEAF])
         parents = loader.graph.node_map[NEW_LEAF].parents
         self.assertEqual({p.key for p in parents}, {FK_MIGRATION})
         parents = loader.graph.node_map[FK_MIGRATION].parents
-        self.assertEqual({p.key for p in parents}, {("aisc_backend", "0023_no_login_of_its_own")})
+        self.assertEqual({p.key for p in parents}, {("aisc_backend", "0019_no_login_of_its_own")})
 
 
 @configurator_only
 class TheNewMigrationOnSqlite(TestCase):
-    def test_i7_7_0025_is_applied_as_a_no_op_on_sqlite(self):
+    def test_i7_7_0020_is_applied_as_a_no_op_on_sqlite(self):
         if connection.vendor != "sqlite":
             self.skipTest("about sqlite")
         loader = MigrationLoader(connection)
         self.assertIn(FK_MIGRATION, loader.applied_migrations,
-                      "I7.7: 0025 must exist and apply on sqlite (a no-op there)")
+                      "I7.7: 0020 must exist and apply on sqlite (a no-op there)")
 
 
 # ── I7.1: settings, router, aliases ──

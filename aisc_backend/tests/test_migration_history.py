@@ -8,7 +8,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
 
 SEAN_LAST = ("aisc_backend", "0014_ai_system_and_project_config_squashed")
-OUR_LAST = ("aisc_backend", "0025_engine_deployment_marker")
+OUR_LAST = ("aisc_backend", "0021_engine_deployment_marker")
 
 
 class OneHistory(TransactionTestCase):
@@ -24,11 +24,12 @@ class OneHistory(TransactionTestCase):
         plan = graph.forwards_plan(OUR_LAST)
         self.assertLess(plan.index(SEAN_LAST), plan.index(("aisc_backend", "0015_plugin_catalogue_slug")))
 
-    def test_the_tables_lose_the_prefix(self):
+    def test_the_tables_keep_seans_names(self):
         tables = connection.introspection.table_names()
-        for table in ("project", "plugin", "evaluation", "ai_system", "ai_component", "project_config"):
+        for table in ("aisc_backend_project", "aisc_backend_plugin", "aisc_backend_evaluation",
+                      "aisc_backend_aisystem", "aisc_backend_aicomponent", "aisc_backend_projectconfig"):
             self.assertIn(table, tables)
-        self.assertNotIn("aisc_backend_project", tables)
+        self.assertNotIn("project", tables)
 
     def test_a_standalone_database_keeps_its_rows_through_our_migrations(self):
         executor = MigrationExecutor(connection)
@@ -48,16 +49,16 @@ class OneHistory(TransactionTestCase):
 
     @unittest.skipUnless(settings.AISC_DEPLOYMENT == "standalone", "standalone run only")
     def test_standalone_keeps_the_login_tables(self):
-        # the configurator-only table drop (0023) must not run here
+        # the configurator-only table drop (0019) must not run here
         tables = connection.introspection.table_names()
         self.assertIn("auth_user", tables)
 
 
 class NoLoginOfItsOwn(SimpleTestCase):
-    """0023 drops the login tables only in configurator mode."""
+    """0019 drops the login tables only in configurator mode."""
 
     def _run_forwards(self):
-        migration = importlib.import_module("aisc_backend.migrations.0023_no_login_of_its_own")
+        migration = importlib.import_module("aisc_backend.migrations.0019_no_login_of_its_own")
         schema_editor = mock.MagicMock()
         schema_editor.quote_name = lambda name: f'"{name}"'
         cursor = schema_editor.connection.cursor.return_value.__enter__.return_value

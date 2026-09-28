@@ -202,19 +202,19 @@ class _FakeConnection:
 
 
 class Migration0025InfersAnOldDatabasesMode(SimpleTestCase):
-    def test_a_pre_0025_standalone_database_keeps_its_login_tables(self):
-        conn = _FakeConnection(["django_migrations", "project", "auth_user"], recorded=24)
+    def test_a_pre_0021_standalone_database_keeps_its_login_tables(self):
+        conn = _FakeConnection(["django_migrations", "aisc_backend_project", "auth_user"], recorded=20)
         self.assertEqual(deployment.infer_made_in(conn), deployment.STANDALONE)
 
-    def test_a_pre_0025_configurator_database_lost_them_in_0023(self):
-        conn = _FakeConnection(["django_migrations", "project"], recorded=24)
+    def test_a_pre_0021_configurator_database_lost_them_in_0019(self):
+        conn = _FakeConnection(["django_migrations", "aisc_backend_project"], recorded=20)
         self.assertEqual(deployment.infer_made_in(conn), deployment.CONFIGURATOR)
 
     def test_a_fresh_database_infers_nothing(self):
         self.assertIsNone(deployment.infer_made_in(_FakeConnection([], recorded=0)))
         self.assertIsNone(deployment.infer_made_in(_FakeConnection(["django_migrations"], recorded=0)))
 
-    def test_0025_stamps_what_migrate_found_before_it_ran_else_the_running_mode(self):
+    def test_0021_stamps_what_migrate_found_before_it_ran_else_the_running_mode(self):
         for found, running, expected in ((deployment.STANDALONE, "configurator", "standalone"),
                                          (deployment.CONFIGURATOR, "standalone", "configurator"),
                                          (None, "configurator", "configurator"),
@@ -226,9 +226,9 @@ class Migration0025InfersAnOldDatabasesMode(SimpleTestCase):
                 self.assertEqual(deployment.stamp_for(_FakeConnection([], 0, alias="x")), expected)
         deployment._found_before_migrate.clear()
 
-    def test_migrate_refuses_a_pre_0025_database_of_the_other_mode(self):
+    def test_migrate_refuses_a_pre_0021_database_of_the_other_mode(self):
         from unittest import mock
-        conn = _FakeConnection(["django_migrations", "project"], recorded=24, alias="old")
+        conn = _FakeConnection(["django_migrations", "aisc_backend_project"], recorded=20, alias="old")
         sender = mock.Mock()
         sender.name = "aisc_backend"
         with override_settings(AISC_DEPLOYMENT="standalone"), \

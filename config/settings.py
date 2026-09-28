@@ -144,7 +144,7 @@ def _single_database() -> dict:
 
 if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
     # The Configurator owns projects and sign-in: no login of our own (migration
-    # 0023 dropped its tables, and Django's accounts, sessions and admin with them,
+    # 0019 dropped its tables, and Django's accounts, sessions and admin with them,
     # so their apps must not come back and remake them), one database per project
     # behind the door, memberships from the platform.
     _NO_LOGIN_APPS = ("django.contrib.admin", "django.contrib.auth", "django.contrib.sessions",

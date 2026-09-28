@@ -44,7 +44,7 @@ def forwards(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("aisc_backend", "0022_parts_belong_to_a_version_of_the_one_system"),
+        ("aisc_backend", "0018_alter_project_platform_project_id"),
         ("contenttypes", "0002_remove_content_type_name"),
     ]
 

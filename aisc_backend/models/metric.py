@@ -7,9 +7,6 @@ from .common import Base
 class MetricCategory(Base):
     metrics = models.ManyToManyField('Metric', related_name='categories')
 
-    class Meta:
-        db_table = "metric_category"
-
 
 class Metric(Base):
     type_spec = models.CharField(max_length=255)
@@ -26,20 +23,12 @@ class Metric(Base):
     def __str__(self):
         return f'{self.name}'
 
-    class Meta:
-        db_table = "metric"
-
 
 class Direct(Metric):
-
-    class Meta:
-        db_table = "direct"
+    pass
 
 
 class Derived(Metric):
     expression = models.CharField(max_length=255)
     base_metric = models.ForeignKey(
         'Metric', related_name='derived_by', on_delete=models.PROTECT)
-
-    class Meta:
-        db_table = "derived"

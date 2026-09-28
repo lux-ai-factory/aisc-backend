@@ -193,15 +193,15 @@ class PostgresCase(unittest.TestCase):
 
 @configurator_only
 class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
-    def test_i7_6_every_project_database_is_at_0025(self):
+    def test_i7_6_every_project_database_is_at_0021(self):
         for key in ("A", "B"):
             with self.subTest(project=key):
                 names = {r[0] for r in self.cluster.rows(
                     self.w[key]["database"], "SELECT name FROM engine.django_migrations WHERE app = 'aisc_backend'")}
-                # renumbered on feat/deployment-modes (Task 2), plus Task 3's mode marker
-                self.assertIn("0025_engine_deployment_marker", names)
-                self.assertIn("0024_the_database_is_the_project", names)
-                self.assertIn("0023_no_login_of_its_own", names)
+                # renumbered on feat/deployment-modes (adapt item 1), with the mode marker
+                self.assertIn("0021_engine_deployment_marker", names)
+                self.assertIn("0020_the_database_is_the_project", names)
+                self.assertIn("0019_no_login_of_its_own", names)
 
     def test_i7_6_the_tables_belong_to_engine_rw_in_schema_engine(self):
         owners = {r[0] for r in self.cluster.rows(
@@ -253,10 +253,13 @@ class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
 class TheEngineReaderGrants(PostgresCase):
     """I2.6 engine row: issued by migrate_projects as engine_rw (I7.6)."""
 
-    READABLE = ["project", "ai_system", "ai_component", "evaluation", "evaluation_plugin", "evaluation_input",
-                "plugin", "observation", "measurement", "metric", "direct", "derived", "metric_category",
-                "metric_category_metrics", "artifact"]
-    SECRET = ["project_config", "plugin_config_project_config", "django_migrations", "django_content_type"]
+    READABLE = ["aisc_backend_project", "aisc_backend_aisystem", "aisc_backend_aicomponent",
+                "aisc_backend_evaluation", "aisc_backend_evaluationplugin", "aisc_backend_evaluationinput",
+                "aisc_backend_plugin", "aisc_backend_observation", "aisc_backend_measurement",
+                "aisc_backend_metric", "aisc_backend_direct", "aisc_backend_derived",
+                "aisc_backend_metriccategory", "aisc_backend_metriccategory_metrics", "aisc_backend_artifact"]
+    SECRET = ["aisc_backend_projectconfig", "aisc_backend_pluginconfigprojectconfig", "django_migrations",
+              "django_content_type"]
 
     def _can(self, role, table, privilege="SELECT"):
         return self.cluster.rows(self.w["A"]["database"],
@@ -277,10 +280,10 @@ class TheEngineReaderGrants(PostgresCase):
     def test_i2_6_plugin_config_by_column(self):
         for role in ("report_ro", "dashboard_ro"):
             with self.subTest(role=role):
-                self.assertFalse(self._can(role, "plugin_config"), "no table-wide SELECT")
+                self.assertFalse(self._can(role, "aisc_backend_pluginconfig"), "no table-wide SELECT")
                 for column, allowed in (("id", True), ("plugin_id", True), ("config", False)):
                     got = self.cluster.rows(self.w["A"]["database"],
-                                            "SELECT has_column_privilege(%s, 'engine.plugin_config', %s, 'SELECT')",
+                                            "SELECT has_column_privilege(%s, 'engine.aisc_backend_pluginconfig', %s, 'SELECT')",
                                             (role, column))[0][0]
                     self.assertEqual(got, allowed, f"plugin_config.{column}")
 
@@ -330,7 +333,7 @@ class TheShapeIsTheLiveShape(PostgresCase):
         live = self._live()
         with self.cluster.connect(self.w["A"]["database"]) as conn:
             mine = catalog(conn, "engine")
-        # The one table the live shape predates: the mode marker (0025_engine_deployment_marker).
+        # The one table the live shape predates: the mode marker (0021_engine_deployment_marker).
         mine = {kind: {r for r in rows if r[0] != "engine_deployment"} for kind, rows in mine.items()}
         live["constraints"] = {
             (t, self.RENAMED.get(name, name), kind,
@@ -350,8 +353,8 @@ class TheOrmStaysInItsDatabase(PostgresCase):
     def test_i7_1_rows_written_under_a_are_in_a_only(self):
         for key, other in (("A", "B"), ("B", "A")):
             with self.subTest(project=key):
-                here = self.cluster.rows(self.w[key]["database"], "SELECT pid::text FROM engine.project")
-                there = self.cluster.rows(self.w[other]["database"], "SELECT pid::text FROM engine.project")
+                here = self.cluster.rows(self.w[key]["database"], "SELECT pid::text FROM engine.aisc_backend_project")
+                there = self.cluster.rows(self.w[other]["database"], "SELECT pid::text FROM engine.aisc_backend_project")
                 self.assertEqual(here, [(self.w[key]["pid"],)])
                 self.assertNotIn((self.w[key]["pid"],), there)
 
@@ -363,7 +366,7 @@ class TheOrmStaysInItsDatabase(PostgresCase):
     def test_i7_10_metrics_are_rows_of_each_project(self):
         for key in ("A", "B"):
             with self.subTest(project=key):
-                names = self.cluster.rows(self.w[key]["database"], "SELECT name FROM engine.metric")
+                names = self.cluster.rows(self.w[key]["database"], "SELECT name FROM engine.aisc_backend_metric")
                 self.assertEqual(names, [("accuracy",)], "one metric per project, made in its own database")
 
     def test_i7_1_a_query_with_nothing_admitted_fails(self):

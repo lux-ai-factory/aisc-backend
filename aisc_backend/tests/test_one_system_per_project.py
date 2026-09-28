@@ -26,8 +26,6 @@ from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.project import router as project_router
 
 SIGNED_IN = {"Authorization": "Bearer development"}
-MIGRATION_0022 = "0022_parts_belong_to_a_version_of_the_one_system"
-MIGRATION_0023 = "0023_one_system_per_project_again"
 
 projects = TestAsyncClient(project_router)
 evaluations = TestAsyncClient(evaluation_router)
@@ -55,9 +53,9 @@ def _aisystem_model(test):
 class ModelStateIsE34fca3(TestCase):
     """The models equal e34fca3: AIComponent.system, no version fields."""
 
-    def test_s1_aisystem_model_is_back_on_table_ai_system(self):
+    def test_s1_aisystem_model_is_back_on_seans_table(self):
         AISystem = _aisystem_model(self)
-        self.assertEqual(AISystem._meta.db_table, "ai_system")
+        self.assertEqual(AISystem._meta.db_table, "aisc_backend_aisystem")
         project_field = AISystem._meta.get_field("project")
         self.assertTrue(project_field.one_to_one, "AISystem.project must be a OneToOneField")
 
@@ -76,42 +74,39 @@ class ModelStateIsE34fca3(TestCase):
                          "SystemVersionParts must be deleted (WP1)")
 
 
-class Migration0023Exists(TestCase):
-    """0022 is the folded one-system migration, and the leaf is 0025_engine_deployment_marker."""
+class TheChainAfterSeans0014(TestCase):
+    """The one-system state is Sean's 0014 itself (the folded no-op is gone), and the
+    leaf is 0021_engine_deployment_marker."""
 
-    def test_s1_0023_depends_on_0022(self):
+    def test_s1_no_folded_one_system_migration(self):
         loader = MigrationLoader(connection, ignore_no_migrations=True)
-        self.assertIn(("aisc_backend", MIGRATION_0022), loader.disk_migrations)
-        self.assertIn(("aisc_backend", "0021_ai_system_tables_lose_the_prefix"), loader.disk_migrations)
-        key = ("aisc_backend", MIGRATION_0022)
-        self.assertIn(("aisc_backend", "0021_ai_system_tables_lose_the_prefix"),
-                      loader.disk_migrations[key].dependencies)
+        names = {n for a, n in loader.disk_migrations if a == "aisc_backend"}
+        self.assertNotIn("0022_parts_belong_to_a_version_of_the_one_system", names)
+        self.assertIn("0014_ai_system_and_project_config_squashed", names)
 
-    def test_s1_0023_is_the_leaf(self):
-        # On this branch: 0022 is the folded one-system migration (no-op),
-        # 0023 is no_login_of_its_own, 0024 is the_database_is_the_project,
-        # and 0025_engine_deployment_marker is the leaf.
+    def test_s1_0021_is_the_leaf(self):
+        # On this branch: 0019 is no_login_of_its_own, 0020 is the_database_is_the_project,
+        # and 0021_engine_deployment_marker is the leaf.
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"),
-                         [("aisc_backend", "0025_engine_deployment_marker")])
-        parents = loader.graph.node_map[("aisc_backend", "0023_no_login_of_its_own")].parents
+                         [("aisc_backend", "0021_engine_deployment_marker")])
+        parents = loader.graph.node_map[("aisc_backend", "0019_no_login_of_its_own")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
-                         {("aisc_backend", MIGRATION_0022)})
-        parents = loader.graph.node_map[("aisc_backend", "0024_the_database_is_the_project")].parents
+                         {("aisc_backend", "0018_alter_project_platform_project_id")})
+        parents = loader.graph.node_map[("aisc_backend", "0020_the_database_is_the_project")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
-                         {("aisc_backend", "0023_no_login_of_its_own")})
-        parents = loader.graph.node_map[("aisc_backend", "0025_engine_deployment_marker")].parents
+                         {("aisc_backend", "0019_no_login_of_its_own")})
+        parents = loader.graph.node_map[("aisc_backend", "0021_engine_deployment_marker")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
-                         {("aisc_backend", "0024_the_database_is_the_project")})
+                         {("aisc_backend", "0020_the_database_is_the_project")})
 
-    def test_s1_3_0023_applied_on_sqlite_without_core(self):
-        # S1.3: on sqlite 0022 (the folded one-system migration) succeeds and leaves
-        # one AISystem per project; it is a no-op on sqlite.
+    def test_s1_3_the_chain_applies_on_sqlite_without_core(self):
+        # S1.3: on sqlite the whole chain applies and leaves one AISystem per project.
         if connection.vendor != "sqlite":
             self.skipTest("S1.3 is about sqlite")
         loader = MigrationLoader(connection)
-        self.assertIn(("aisc_backend", MIGRATION_0022), loader.applied_migrations,
-                      "0022 did not run on sqlite")
+        self.assertIn(("aisc_backend", "0021_engine_deployment_marker"), loader.applied_migrations,
+                      "the chain did not run on sqlite")
         # Verify one AISystem per project: get an AISystem and verify it has a
         # one-to-one project field.
         AISystem = _aisystem_model(self)
