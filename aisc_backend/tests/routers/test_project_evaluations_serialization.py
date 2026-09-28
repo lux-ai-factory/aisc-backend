@@ -16,10 +16,7 @@ from aisc_backend.models import (
 )
 from aisc_backend.routers.project import router as project_router
 
-#: In the Configurator these routers name the bearer check themselves (standalone inherits the
-#: API's), so a call carries a token; AUTH_ENABLED is off in the suite, so it is not verified.
-SIGNED_IN = {"Authorization": "Bearer development"}
-client = TestAsyncClient(project_router, headers=SIGNED_IN)
+client = TestAsyncClient(project_router)
 
 
 class ProjectEvaluationsSerializationTestCase(TestCase):

@@ -29,14 +29,11 @@ from aisc_backend.schemas.measure import MeasurementAggregationResponse, \
     DimensionKeysRequest, DimensionValuesRequest, MetricNamesResponse, MetricNamesRequest
 from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
-from aisc_backend import deployment
-from aisc_backend.auth import membership
-from aisc_backend.auth.keycloak import router_auth
 from aisc_backend.audit.log import log_action
 from aisc_backend.routers.plugin import plugin_loader
 from aisc_backend.services.project_config_matching import validate_plugin_settings
 
-router = Router(tags=["evaluation"], auth=router_auth())
+router = Router(tags=["evaluation"])
 
 evaluation_repository = EvaluationRepository()
 project_repository = ProjectRepository()
@@ -66,10 +63,6 @@ class CreateEvaluationRequest(Schema):
 @router.post("/task", response=EvaluationOutSchema)
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
-    if deployment.is_configurator():
-        # Running tests is work on the project, so it takes an editor; somebody who
-        # is not in the project is told there is no such project.
-        await sync_to_async(membership.require)(request, project.platform_project_id, "editor")
 
     # Resolve and validate plugins before writing anything to DB
     resolved: list[tuple[EvaluationPluginInSchema, object]] = []
@@ -142,32 +135,17 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
 @router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     return await evaluation_repository.get_including(evaluation_pid, include)
 
 
 @router.get("", response=list[EvaluationByStatusResponseSchema])
 async def get_evaluations_by_status(request, status: EvaluationStatus):
-    """The evaluations of this status.
-
-    Standalone: every one the engine has (Sean's). Configurator: only those the
-    caller may see; the whole install's list would also hand out the ids that
-    address everything else on this router.
-    """
-    found = await evaluation_repository.filter(status=status)
-    if not deployment.is_configurator():
-        return found
-    return await sync_to_async(membership.visible_by)(
-        request, found, lambda evaluation: evaluation.project
-    )
+    return await evaluation_repository.filter(status=status)
 
 
 @router.get("/{evaluation_pid}/plugins/status", response=dict)
 async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
     """Check if any plugins in the evaluation have failed."""
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
     has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
@@ -183,8 +161,6 @@ async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
 async def get_evaluation_artifacts(
     request, evaluation_pid: uuid.UUID, evaluation_plugin_uuid: uuid.UUID
 ):
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     evaluation = await evaluation_repository.get_with_related(evaluation_pid)
 
     if evaluation is None:
@@ -241,8 +217,6 @@ async def aggregate_evaluation_measurements(
     evaluation_pid: uuid.UUID,
     data: MeasurementAggregationRequest
 ):
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
@@ -267,8 +241,6 @@ async def get_evaluation_dimension_keys(
     evaluation_pid: uuid.UUID, 
     data: DimensionKeysRequest
 ):
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
@@ -292,8 +264,6 @@ async def get_evaluation_dimension_values(
     key: str,
     data: DimensionValuesRequest
 ):
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
@@ -316,8 +286,6 @@ async def get_evaluation_metric_names(
     evaluation_pid: uuid.UUID, 
     data: MetricNamesRequest
 ):
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_evaluation)(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 

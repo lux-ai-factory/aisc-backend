@@ -25,7 +25,7 @@ engine object (engine project, AI system, dataset and model components, a
 project config, a plugin with its config, an evaluation with a task id, its
 evaluation plugin, an artifact, an observation, a metric and a measurement),
 written through the ORM with that project's alias admitted. alice is owner of
-A, B and C; bob is a viewer of A. So every cross-project refusal below is the
+A, B and C; bob is a viewer of A, carol a viewer of B. So every cross-project refusal below is the
 database's doing, not the membership check's: alice may see both projects.
 """
 from __future__ import annotations
@@ -136,7 +136,7 @@ def _build() -> dict:
     cluster = Cluster(_url())
     _CLUSTERS.append(cluster)
     a = cluster.platform_project("A", {"alice": "owner", "bob": "viewer"})
-    b = cluster.platform_project("B", {"alice": "owner"})
+    b = cluster.platform_project("B", {"alice": "owner", "carol": "viewer"})
     c = cluster.platform_project("C", {"alice": "owner"})
     for pid in (a, b, c):
         cluster.provision(pid)
@@ -402,6 +402,26 @@ class TheDoorOnPostgres(PostgresCase):
         response = self.api.as_member("GET", f"/api/v1/projects/{self.w['A']['pid']}", self.w["A"]["platform"])
         self.assertEqual(response.status_code, 200, response.content[:300])
         self.assertEqual(response.json()["pid"], self.w["A"]["pid"])
+
+    # Adapt plan 2026-09-28, item 2: a stored file and a Celery task id are outside the
+    # project's database, so the door asks the row that records them (Review Focus 3).
+    def test_a_file_and_a_task_of_b_are_404_under_a(self):
+        for path in (f"/api/v1/files/dataset/{self.w['B']['dataset_file']}",
+                     f"/api/v1/tasks/{self.w['B']['task']}/status"):
+            with self.subTest(path=path):
+                response = self.api.as_member("GET", path, self.w["A"]["platform"])
+                self.assertEqual(response.status_code, 404, response.content[:300])
+
+    def test_a_viewer_of_b_downloads_b_s_file(self):
+        import unittest.mock as mock
+
+        from django.http import StreamingHttpResponse
+
+        stream = mock.AsyncMock(return_value=StreamingHttpResponse(iter([b"x"])))
+        with mock.patch("aisc_backend.routers.file.file_repository.get_s3_file_stream", stream):
+            response = self.api.as_member("GET", f"/api/v1/files/dataset/{self.w['B']['dataset_file']}",
+                                          self.w["B"]["platform"], subject="carol")
+        self.assertEqual(response.status_code, 200, getattr(response, "content", b"")[:300])
 
 
 # ── I16.5, I7.2, I7.5, I7.11: every route that addresses an object by id ──

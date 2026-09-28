@@ -116,30 +116,6 @@ PROJECT_DATABASE_TEMPLATE = None
 # One database per project: the Configurator on Postgres (Ruling 7: read through
 # _deployment_env, so a value set in .env counts). Standalone is always one database.
 PROJECT_DATABASES = deployment.project_databases(_deployment_env)
-DB_SCHEMA = env("DB_SCHEMA", "")
-
-
-def _single_database() -> dict:
-    """The one database of a laptop or a test run (config/settings_single_database.py).
-
-    A search path is a Postgres idea; the sqlite the test runner builds has no
-    schemas and rejects the option outright.
-    """
-    engine = env("DB_ENGINE", "django.db.backends.sqlite3")
-    options = (
-        {"options": f"-c search_path={DB_SCHEMA},core"}
-        if DB_SCHEMA and "postgresql" in engine
-        else {}
-    )
-    return {
-        "ENGINE": engine,
-        "NAME": env("DB_NAME", BASE_DIR / "db.db"),
-        "USER": env("DB_USER", ""),
-        "PASSWORD": env("DB_PASSWORD", ""),
-        "HOST": env("DB_HOST", ""),
-        "PORT": env("DB_PORT", ""),
-        "OPTIONS": options,
-    }
 
 
 if AISC_DEPLOYMENT == deployment.CONFIGURATOR:

@@ -1,11 +1,5 @@
 import uuid
 
-from asgiref.sync import sync_to_async
-
-from aisc_backend import deployment
-from aisc_backend.auth import membership
-from aisc_backend.auth.keycloak import router_auth
-
 from ninja import Router
 
 from aisc_backend.repositories.stats_repository import StatsRepository
@@ -16,7 +10,7 @@ from aisc_backend.schemas.stats import (
     ProjectStatsPluginDurations,
 )
 
-router = Router(tags=["stats"], auth=router_auth())
+router = Router(tags=["stats"])
 
 stats_repository = StatsRepository()
 
@@ -24,16 +18,12 @@ stats_repository = StatsRepository()
 @router.get("/projects/{pid}/overview", response=ProjectStatsOverview)
 async def get_project_stats_overview(request, pid: uuid.UUID):
     """High-level stats summary for a project."""
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_project_pid)(request, pid)
     return await stats_repository.get_overview(pid)
 
 
 @router.get("/projects/{pid}/metrics", response=ProjectStatsMetricBreakdown)
 async def get_project_metric_breakdown(request, pid: uuid.UUID):
     """Per-metric score statistics for a project."""
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_project_pid)(request, pid)
     metrics = await stats_repository.get_metric_breakdown(pid)
     return {"metrics": metrics}
 
@@ -41,8 +31,6 @@ async def get_project_metric_breakdown(request, pid: uuid.UUID):
 @router.get("/projects/{pid}/plugins", response=ProjectStatsPluginUsage)
 async def get_project_plugin_usage(request, pid: uuid.UUID):
     """Per-plugin usage summary for a project."""
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_project_pid)(request, pid)
     plugins = await stats_repository.get_plugin_usage(pid)
     return {"plugins": plugins}
 
@@ -50,7 +38,5 @@ async def get_project_plugin_usage(request, pid: uuid.UUID):
 @router.get("/projects/{pid}/plugin-durations", response=ProjectStatsPluginDurations)
 async def get_project_plugin_durations(request, pid: uuid.UUID):
     """Per-run duration history for all plugins in a project."""
-    if deployment.is_configurator():
-        await sync_to_async(membership.for_project_pid)(request, pid)
     runs = await stats_repository.get_plugin_durations(pid)
     return {"runs": runs}

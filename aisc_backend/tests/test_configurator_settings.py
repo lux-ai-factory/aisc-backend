@@ -35,7 +35,7 @@ class TheConfiguratorStack(SimpleTestCase):
 
 
 @unittest.skipUnless(_CONFIGURATOR_RUN and not settings.PROJECT_DATABASES,
-                     "configurator on one database (sqlite, or config.settings_single_database)")
+                     "configurator on one database (sqlite)")
 class TheLoginTablesStayGone(TransactionTestCase):
     """Ruling 9: 0019 drops the login tables, and no installed app makes them again."""
 

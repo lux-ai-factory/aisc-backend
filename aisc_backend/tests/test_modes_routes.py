@@ -20,6 +20,8 @@ from ninja.testing import TestAsyncClient, TestClient
 
 from aisc_backend.auth import keycloak
 from aisc_backend.routers.project import router as projects_router
+from aisc_backend.tests.isolation_support import configurator_only
+from aisc_backend.tests.test_isolation_engine import A_PID as DOOR_PID, DoorCase
 
 CONFIGURATOR = settings.AISC_DEPLOYMENT == "configurator"
 standalone_run = unittest.skipIf(CONFIGURATOR, "standalone run")
@@ -86,31 +88,35 @@ class StandaloneProjects(TestCase):
 
 class ConfiguratorProjects(TestCase):
     @configurator_run
-    async def test_the_engine_does_not_make_projects(self):
-        # The router names the bearer check in configurator, so a call carries a
-        # token; AUTH_ENABLED is off here, so it is not verified.
-        response = await TestAsyncClient(projects_router).post(
-            "", json={"name": "Loans"},
-            headers={"X-AISC-Project": A_PID, "Authorization": "Bearer development"})
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("launcher", response.json()["detail"])
-
-    @configurator_run
     async def test_the_first_visit_makes_the_engine_s_row_and_the_next_finds_it(self):
         from aisc_backend.models import Project
+        from aisc_backend.routers.platform_project import router as platform_project_router
 
-        client = TestAsyncClient(projects_router)
-        headers = {"Authorization": "Bearer development"}
+        client = TestAsyncClient(platform_project_router)
         with mock.patch.object(keycloak, "AUTH_ENABLED", False):
-            first = await client.post(f"/for-platform/{A_PID}", headers=headers)
-            again = await client.post(f"/for-platform/{A_PID}", headers=headers)
+            first = await client.post(f"/{A_PID}")
+            again = await client.post(f"/{A_PID}")
         self.assertEqual(first.status_code, 200, first.content)
         self.assertEqual(first.json()["pid"], again.json()["pid"])
         self.assertEqual(await Project.objects.filter(platform_project_id=A_PID).acount(), 1)
 
 
+@configurator_only
+class ConfiguratorProjectsAtTheDoor(DoorCase):
+    """The engine does not make projects: the door's 403 (adapt plan 2026-09-28, item 2)."""
+
+    def test_the_engine_does_not_make_projects(self):
+        with self.as_role("owner"):
+            response = self.call("POST", "/api/v1/projects",
+                                 {"X-AISC-Project": DOOR_PID, "Authorization": self.bearer()}, {"name": "Loans"})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("launcher", response.json()["detail"])
+
+
 class TheGatewayHeader(SignedIn):
-    """oauth2-proxy's header is the Configurator's session; standalone has its own login."""
+    """oauth2-proxy's header is the Configurator's session; standalone has its own login.
+    The constant is the door's (adapt plan 2026-09-28, item 2); Sean's `keycloak.py` never
+    reads it, and the door copies it into `Authorization` (test_gateway_session)."""
 
     def router(self):
         from ninja import Router
@@ -123,37 +129,33 @@ class TheGatewayHeader(SignedIn):
 
         return TestClient(router)
 
-    def test_the_constant_exists_in_both_modes(self):
-        self.assertEqual(keycloak.GATEWAY_TOKEN_HEADER, "X-Auth-Request-Access-Token")
+    def test_the_constant_is_the_door_s(self):
+        from aisc_backend import project_door
 
-    @standalone_run
-    def test_standalone_does_not_take_it(self):
+        self.assertEqual(project_door.GATEWAY_TOKEN_HEADER, "X-Auth-Request-Access-Token")
+        self.assertFalse(hasattr(keycloak, "GATEWAY_TOKEN_HEADER"))
+
+    def test_sean_s_bearer_check_does_not_take_it(self):
         response = self.router().get(
-            "/who", headers={keycloak.GATEWAY_TOKEN_HEADER: self.token()})
+            "/who", headers={"X-Auth-Request-Access-Token": self.token()})
         self.assertEqual(response.status_code, 401)
 
-    @configurator_run
-    def test_the_configurator_takes_it(self):
-        response = self.router().get(
-            "/who", headers={keycloak.GATEWAY_TOKEN_HEADER: self.token()})
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(response.json()["sub"], "someone")
 
+class AMissingRoleIsSeans401(SignedIn):
+    """A verified token without the role is Sean's 401 in both modes (adapt plan item 3)."""
 
-class AMissingRoleIsForbidden(SignedIn):
-    """A verified token without the role is 403 in both modes, not 401."""
-
-    def test_a_signed_in_non_admin_is_403_on_an_admin_route(self):
+    def test_a_signed_in_non_admin_is_401_on_an_admin_route(self):
         from aisc_backend.routers.audit import router as audit_router
 
         response = TestClient(audit_router).get(
             "", headers={"Authorization": f"Bearer {self.token()}"})
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
 
 class InstallingAPlugin(SignedIn):
-    """In the Configurator an install runs code on the shared server, so it takes admin.
-    Standalone keeps Sean's rule: any signed-in user."""
+    """Standalone keeps Sean's rule: any signed-in user installs. In the Configurator an
+    install runs code on the shared server, so it takes admin: the door's rule
+    (InstallingAPluginAtTheDoor)."""
 
     async def _install(self):
         from aisc_backend.models import Project, ProjectStatus
@@ -169,9 +171,15 @@ class InstallingAPlugin(SignedIn):
     async def test_standalone_lets_a_signed_in_user_install(self):
         self.assertNotIn((await self._install()).status_code, (401, 403))
 
-    @configurator_run
-    async def test_the_configurator_takes_admin(self):
-        self.assertEqual((await self._install()).status_code, 403)
+
+@configurator_only
+class InstallingAPluginAtTheDoor(DoorCase):
+    def test_the_configurator_takes_admin(self):
+        with self.as_role("editor"):
+            response = self.call("POST", "/api/v1/plugins", {"X-AISC-Project": DOOR_PID,
+                                                             "Authorization": self.bearer()},
+                                 {"package_name": "x", "version": "1", "project_uuid": str(uuid.uuid4())})
+        self.assertEqual(response.status_code, 403)
 
 
 class StartingARun(TestCase):
@@ -204,41 +212,22 @@ class StartingARun(TestCase):
                                 projectdb.run_ticket(pid, projectdb.normalise(evaluation_pid))])
 
 
-class TheRoutesTheEnumerationMissed(SignedIn):
+@configurator_only
+class TheRoutesTheEnumerationMissed(DoorCase):
     """A project by its name, and a plugin's result in one evaluation: in the Configurator a
-    stranger is told there is no such thing, a member reads it."""
-
-    @classmethod
-    def setUpTestData(cls):
-        from aisc_backend.models import Evaluation, EvaluationStatus, Project, ProjectStatus
-
-        cls.project = Project.objects.create(name="theirs", status=ProjectStatus.Created,
-                                             platform_project_id=A_PID)
-        cls.evaluation = Evaluation.objects.create(project=cls.project, status=EvaluationStatus.Pending)
-
-    def as_role(self, role):
-        return mock.patch("aisc_backend.auth.membership.role_in_project", return_value=role)
+    stranger is told there is no such thing (the door's 404). That a member reads them is on
+    Postgres (test_isolation_engine_db CONTROLS, test_isolation_result_route)."""
 
     def headers(self):
-        return {"Authorization": f"Bearer {self.token()}"}
+        return {"X-AISC-Project": DOOR_PID, "Authorization": self.bearer()}
 
-    @configurator_run
-    async def test_a_stranger_does_not_find_a_project_by_its_name(self):
-        client = TestAsyncClient(projects_router)
+    def test_a_stranger_does_not_find_a_project_by_its_name(self):
         with self.as_role(None):
-            refused = await client.get("/by-name/theirs", headers=self.headers())
-        with self.as_role("viewer"):
-            member = await client.get("/by-name/theirs", headers=self.headers())
-            missing = await client.get("/by-name/nobody-has-this", headers=self.headers())
+            refused = self.call("GET", "/api/v1/projects/by-name/theirs", self.headers())
         self.assertEqual(refused.status_code, 404)
-        self.assertEqual(member.status_code, 200, member.content)
-        self.assertEqual(missing.status_code, 404)
 
-    @configurator_run
-    async def test_a_stranger_does_not_read_a_result_by_its_ids(self):
-        from aisc_backend.routers.plugin import router as plugin_router
-
+    def test_a_stranger_does_not_read_a_result_by_its_ids(self):
         with self.as_role(None):
-            refused = await TestAsyncClient(plugin_router).get(
-                f"/{uuid.uuid4()}/evaluations/{self.evaluation.pid}/result", headers=self.headers())
+            refused = self.call("GET", f"/api/v1/plugins/{uuid.uuid4()}/evaluations/{uuid.uuid4()}/result",
+                                self.headers())
         self.assertEqual(refused.status_code, 404)

@@ -8,13 +8,16 @@ signed-in account could read another project's results by id, and
 `GET /evaluations?status=` handed out the ids.
 
 So this does not test one route. It enumerates the API and fails when a
-project-scoped route does not consult membership, which is the only version of
-this that survives somebody adding a route next month.
+project-scoped route is not asked about, which is the only version of this that
+survives somebody adding a route next month.
+
+Since the adapt plan (2026-09-28, item 2) the asking is the door's, not the route's
+(`project_door`): a project-scoped route must not be exempt from the door, and a route
+that addresses what is not a row of the project's database (a stored file, a Celery task)
+must match the door's rule for it. Sean's routes are his again and ask nothing themselves.
 
 Configurator only: standalone has no memberships (and no for-platform route).
 """
-import inspect
-
 from django.test import SimpleTestCase
 
 from config.urls import api
@@ -87,22 +90,27 @@ class EveryProjectRouteIsGuardedTestCase(SimpleTestCase):
         self.assertIn("/api/v1/files/dataset/{file_name}", paths)
 
     def test_nothing_reaches_a_project_without_asking(self):
+        import re
+
+        from aisc_backend import project_door
+
         unguarded = []
         for method, path, view in operations_of(api):
             if path.startswith("/api/v1/internal"):
                 continue  # the worker, on a shared key of its own
             if path in NOT_PROJECT_SCOPED or not looks_project_scoped(path):
                 continue
-            try:
-                source = inspect.getsource(view)
-            except OSError:  # pragma: no cover - only for a view with no source
-                continue
-            if "membership." not in source:
-                unguarded.append(f"{method} {path}")
+            concrete = re.sub(r"\{[a-z_]+\}", "00000000-0000-4000-8000-000000000000", path)
+            if project_door._exempt(method, concrete):
+                unguarded.append(f"{method} {path}: exempt from the door")
+            elif "{file_name}" in path and not project_door._FILE_PATH.match(concrete):
+                unguarded.append(f"{method} {path}: a stored file the door does not ask about")
+            elif path.startswith("/api/v1/tasks") and not project_door._TASK_PATH.match(concrete):
+                unguarded.append(f"{method} {path}: a task the door does not ask about")
         self.assertEqual(
             [],
             sorted(unguarded),
-            "these reach one project's work without asking whether the caller is in it",
+            "these reach one project's work without the door asking whether the caller is in it",
         )
 
     def test_the_exemptions_are_all_real_routes(self):
