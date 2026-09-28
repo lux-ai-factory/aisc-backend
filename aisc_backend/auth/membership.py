@@ -123,9 +123,10 @@ def require(request, platform_project_id, needed: str = "viewer") -> str | None:
 def _require_owner(request, project, needed: str) -> str | None:
     """Membership of the project a row belongs to.
 
-    A row with no project, and a project with no platform link, belong to
-    nobody: an admin may still reach them, anybody else is told there is no
-    such thing, which is the same answer as for a row that does not exist.
+    A row with no project belongs to nobody: nobody reaches it, an admin
+    neither, and the answer is 404, the same as for a row that does not exist.
+    A project with no platform link has no members: only the realm role
+    `admin` reaches it (`role_for` counts that role as owner).
     """
     if not enforced():
         return None
@@ -152,7 +153,7 @@ def for_stored_file(request, container, file_name: str, needed: str = "viewer") 
             .select_related("system__project")
             .first()
         )
-        return _require_owner(request, found.system.project if found else None, needed)
+        return _require_owner(request, getattr(getattr(found, "system", None), "project", None), needed)
     artifact = (
         Artifact.objects.filter(data=file_name)
         .select_related("evaluation_plugin__evaluation__project")

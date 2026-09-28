@@ -65,3 +65,21 @@ class SeansMissingRoleAnswer(DoorCase):
             return {"ok": True}
         r = TestClient(router).get("/x", headers={"Authorization": self.bearer(("primary-user",))})
         self.assertEqual(r.status_code, 401)
+
+
+class AComponentWithNoSystem(SimpleTestCase):
+    """Final review M2: a stored file whose component has no AI system belongs to nobody: 404, not a 500."""
+    def test_the_file_check_answers_404(self):
+        from ninja.errors import HttpError
+
+        from aisc_backend.auth import membership
+        from aisc_backend.models.common import StorageContainer
+
+        orphan = mock.Mock(system=None)
+        rows = mock.Mock()
+        rows.filter.return_value.select_related.return_value.first.return_value = orphan
+        with mock.patch.object(membership, "enforced", return_value=True), \
+                mock.patch("aisc_backend.models.AIComponent.objects", rows):
+            with self.assertRaises(HttpError) as refused:
+                membership.for_stored_file(object(), StorageContainer.Datasets, "x.csv")
+        self.assertEqual(refused.exception.status_code, 404)

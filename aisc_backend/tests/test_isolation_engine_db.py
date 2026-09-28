@@ -406,11 +406,19 @@ class TheDoorOnPostgres(PostgresCase):
     # Adapt plan 2026-09-28, item 2: a stored file and a Celery task id are outside the
     # project's database, so the door asks the row that records them (Review Focus 3).
     def test_a_file_and_a_task_of_b_are_404_under_a(self):
-        for path in (f"/api/v1/files/dataset/{self.w['B']['dataset_file']}",
-                     f"/api/v1/tasks/{self.w['B']['task']}/status"):
-            with self.subTest(path=path):
-                response = self.api.as_member("GET", path, self.w["A"]["platform"])
-                self.assertEqual(response.status_code, 404, response.content[:300])
+        import unittest.mock as mock
+
+        from django.http import StreamingHttpResponse
+
+        # The object store would answer 200, so a 404 here can only be the door's.
+        stream = mock.AsyncMock(return_value=StreamingHttpResponse(iter([b"x"])))
+        with mock.patch("aisc_backend.routers.file.file_repository.get_s3_file_stream", stream):
+            for path in (f"/api/v1/files/dataset/{self.w['B']['dataset_file']}",
+                         f"/api/v1/tasks/{self.w['B']['task']}/status"):
+                with self.subTest(path=path):
+                    response = self.api.as_member("GET", path, self.w["A"]["platform"])
+                    self.assertEqual(response.status_code, 404, getattr(response, "content", b"")[:300])
+        stream.assert_not_called()
 
     def test_a_viewer_of_b_downloads_b_s_file(self):
         import unittest.mock as mock

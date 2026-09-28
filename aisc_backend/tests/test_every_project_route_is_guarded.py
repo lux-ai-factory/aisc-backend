@@ -34,7 +34,7 @@ NOT_PROJECT_SCOPED = {
     "/api/v1/audit": "admin only, by role",
     "/api/v1/plugins": "installed plugins are the same for everyone; writing takes admin",
     "/api/v1/plugins/refresh": "admin only, by role",
-    "/api/v1/projects": "lists what the caller is in, filters rather than refuses",
+    "/api/v1/projects": "the door admits the one project named in the header and refuses strangers; POST is refused",
     "/api/v1/projects/for-platform/{platform_project_id}": "guarded, but by the platform id itself",
 }
 
