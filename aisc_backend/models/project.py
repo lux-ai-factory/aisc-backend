@@ -32,7 +32,6 @@ class Project(Base):
     )
 
     class Meta:
-        db_table = "project"
         constraints = [
             # One project here per platform project: this row is the engine's
             # side of the project chosen on the launcher, not a second project.

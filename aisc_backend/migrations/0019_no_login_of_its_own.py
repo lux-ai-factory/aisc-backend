@@ -7,7 +7,12 @@ installed, so Django would never touch them again; this removes them, and the
 bookkeeping rows that still name those apps, so the schema holds the evaluation
 and nothing else. Children before parents, and IF EXISTS throughout: a database
 made after the apps went never had them.
+
+Configurator only. A standalone engine keeps Django's accounts, sessions and
+admin (Sean's login), so there this migration is recorded and does nothing. The
+mode is read from settings, so a value set in .env counts.
 """
+from django.conf import settings
 from django.db import migrations
 
 TABLES = (
@@ -26,6 +31,8 @@ APPS = ("admin", "auth", "sessions", "account", "headless", "socialaccount", "ni
 
 
 def forwards(apps, schema_editor):
+    if settings.AISC_DEPLOYMENT != "configurator":
+        return  # standalone keeps Django's accounts, sessions and admin (Sean's login)
     quote = schema_editor.quote_name
     with schema_editor.connection.cursor() as cursor:
         for table in TABLES:
@@ -37,7 +44,7 @@ def forwards(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("aisc_backend", "0023_one_system_per_project_again"),
+        ("aisc_backend", "0018_alter_project_platform_project_id"),
         ("contenttypes", "0002_remove_content_type_name"),
     ]
 

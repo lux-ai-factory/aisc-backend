@@ -8,14 +8,20 @@ signed-in account could read another project's results by id, and
 `GET /evaluations?status=` handed out the ids.
 
 So this does not test one route. It enumerates the API and fails when a
-project-scoped route does not consult membership, which is the only version of
-this that survives somebody adding a route next month.
-"""
-import inspect
+project-scoped route is not asked about, which is the only version of this that
+survives somebody adding a route next month.
 
+Since the adapt plan (2026-09-28, item 2) the asking is the door's, not the route's
+(`project_door`): a project-scoped route must not be exempt from the door, and a route
+that addresses what is not a row of the project's database (a stored file, a Celery task)
+must match the door's rule for it. Sean's routes are his again and ask nothing themselves.
+
+Configurator only: standalone has no memberships (and no for-platform route).
+"""
 from django.test import SimpleTestCase
 
 from config.urls import api
+from aisc_backend.tests.isolation_support import configurator_only
 
 #: Routes that legitimately touch nobody's project.
 #:
@@ -28,7 +34,7 @@ NOT_PROJECT_SCOPED = {
     "/api/v1/audit": "admin only, by role",
     "/api/v1/plugins": "installed plugins are the same for everyone; writing takes admin",
     "/api/v1/plugins/refresh": "admin only, by role",
-    "/api/v1/projects": "lists what the caller is in, filters rather than refuses",
+    "/api/v1/projects": "the door admits the one project named in the header and refuses strangers; POST is refused",
     "/api/v1/projects/for-platform/{platform_project_id}": "guarded, but by the platform id itself",
 }
 
@@ -60,14 +66,19 @@ def looks_project_scoped(path: str) -> bool:
              "{model_pid}", "{file_name}", "{plugin_pid}", "{setting_pid}",
              # the AI system's parts and the project's configs, since the
              # AISystem merge: a component or a config belongs to one project
-             "{component_pid}", "{project_config_pid}")
+             "{component_pid}", "{project_config_pid}",
+             # a plugin's result within one evaluation, and a project by its name
+             "{evaluation_plugin_pid}", "{evaluation_uuid}", "{name}")
     if any(token in path for token in owned):
         return True
     # A listing with no id in it is project-scoped when it lists rows that
     # belong to projects.
-    return path in ("/api/v1/evaluations", "/api/v1/datasets", "/api/v1/models")
+    # Starting a run names its project in the body, not the path.
+    return path in ("/api/v1/evaluations", "/api/v1/evaluations/task",
+                    "/api/v1/datasets", "/api/v1/models")
 
 
+@configurator_only
 class EveryProjectRouteIsGuardedTestCase(SimpleTestCase):
     maxDiff = None
 
@@ -79,22 +90,27 @@ class EveryProjectRouteIsGuardedTestCase(SimpleTestCase):
         self.assertIn("/api/v1/files/dataset/{file_name}", paths)
 
     def test_nothing_reaches_a_project_without_asking(self):
+        import re
+
+        from aisc_backend import project_door
+
         unguarded = []
         for method, path, view in operations_of(api):
             if path.startswith("/api/v1/internal"):
                 continue  # the worker, on a shared key of its own
             if path in NOT_PROJECT_SCOPED or not looks_project_scoped(path):
                 continue
-            try:
-                source = inspect.getsource(view)
-            except OSError:  # pragma: no cover - only for a view with no source
-                continue
-            if "membership." not in source:
-                unguarded.append(f"{method} {path}")
+            concrete = re.sub(r"\{[a-z_]+\}", "00000000-0000-4000-8000-000000000000", path)
+            if project_door._exempt(method, concrete):
+                unguarded.append(f"{method} {path}: exempt from the door")
+            elif "{file_name}" in path and not project_door._FILE_PATH.match(concrete):
+                unguarded.append(f"{method} {path}: a stored file the door does not ask about")
+            elif path.startswith("/api/v1/tasks") and not project_door._TASK_PATH.match(concrete):
+                unguarded.append(f"{method} {path}: a task the door does not ask about")
         self.assertEqual(
             [],
             sorted(unguarded),
-            "these reach one project's work without asking whether the caller is in it",
+            "these reach one project's work without the door asking whether the caller is in it",
         )
 
     def test_the_exemptions_are_all_real_routes(self):

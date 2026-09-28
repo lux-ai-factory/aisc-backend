@@ -39,6 +39,3 @@ class Evaluation(CreatedAtModel):
 
     def __str__(self):
         return f"{self.pid} ({self.status})"
-
-    class Meta:
-        db_table = "evaluation"

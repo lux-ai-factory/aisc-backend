@@ -25,7 +25,7 @@ engine object (engine project, AI system, dataset and model components, a
 project config, a plugin with its config, an evaluation with a task id, its
 evaluation plugin, an artifact, an observation, a metric and a measurement),
 written through the ORM with that project's alias admitted. alice is owner of
-A, B and C; bob is a viewer of A. So every cross-project refusal below is the
+A, B and C; bob is a viewer of A, carol a viewer of B. So every cross-project refusal below is the
 database's doing, not the membership check's: alice may see both projects.
 """
 from __future__ import annotations
@@ -38,6 +38,7 @@ import unittest
 import uuid
 
 from aisc_backend.tests.isolation_support import (
+    configurator_only,
     BACKEND, LIVE_SHAPE, SUPERUSER_URL_VAR, ApiCaller, Cluster, catalog, database_name, superuser_url,
 )
 
@@ -135,7 +136,7 @@ def _build() -> dict:
     cluster = Cluster(_url())
     _CLUSTERS.append(cluster)
     a = cluster.platform_project("A", {"alice": "owner", "bob": "viewer"})
-    b = cluster.platform_project("B", {"alice": "owner"})
+    b = cluster.platform_project("B", {"alice": "owner", "carol": "viewer"})
     c = cluster.platform_project("C", {"alice": "owner"})
     for pid in (a, b, c):
         cluster.provision(pid)
@@ -178,6 +179,7 @@ def tearDownModule():
 
 
 @unittest.skipUnless(os.environ.get(SUPERUSER_URL_VAR), SKIP_REASON)
+@configurator_only
 class PostgresCase(unittest.TestCase):
     def setUp(self):
         self.w = world(self)
@@ -189,14 +191,17 @@ class PostgresCase(unittest.TestCase):
 # ── I7.6, I7.7, I2.6 (engine part): migrate_projects ──
 
 
+@configurator_only
 class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
-    def test_i7_6_every_project_database_is_at_0025(self):
+    def test_i7_6_every_project_database_is_at_0021(self):
         for key in ("A", "B"):
             with self.subTest(project=key):
                 names = {r[0] for r in self.cluster.rows(
                     self.w[key]["database"], "SELECT name FROM engine.django_migrations WHERE app = 'aisc_backend'")}
-                self.assertIn("0025_the_database_is_the_project", names)
-                self.assertIn("0024_no_login_of_its_own", names)
+                # renumbered on feat/deployment-modes (adapt item 1), with the mode marker
+                self.assertIn("0021_engine_deployment_marker", names)
+                self.assertIn("0020_the_database_is_the_project", names)
+                self.assertIn("0019_no_login_of_its_own", names)
 
     def test_i7_6_the_tables_belong_to_engine_rw_in_schema_engine(self):
         owners = {r[0] for r in self.cluster.rows(
@@ -244,13 +249,17 @@ class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
         self.assertEqual(rows, [], "I7.9: no key to core (there is no core in a project database)")
 
 
+@configurator_only
 class TheEngineReaderGrants(PostgresCase):
     """I2.6 engine row: issued by migrate_projects as engine_rw (I7.6)."""
 
-    READABLE = ["project", "ai_system", "ai_component", "evaluation", "evaluation_plugin", "evaluation_input",
-                "plugin", "observation", "measurement", "metric", "direct", "derived", "metric_category",
-                "metric_category_metrics", "artifact"]
-    SECRET = ["project_config", "plugin_config_project_config", "django_migrations", "django_content_type"]
+    READABLE = ["aisc_backend_project", "aisc_backend_aisystem", "aisc_backend_aicomponent",
+                "aisc_backend_evaluation", "aisc_backend_evaluationplugin", "aisc_backend_evaluationinput",
+                "aisc_backend_plugin", "aisc_backend_observation", "aisc_backend_measurement",
+                "aisc_backend_metric", "aisc_backend_direct", "aisc_backend_derived",
+                "aisc_backend_metriccategory", "aisc_backend_metriccategory_metrics", "aisc_backend_artifact"]
+    SECRET = ["aisc_backend_projectconfig", "aisc_backend_pluginconfigprojectconfig", "django_migrations",
+              "django_content_type"]
 
     def _can(self, role, table, privilege="SELECT"):
         return self.cluster.rows(self.w["A"]["database"],
@@ -271,10 +280,11 @@ class TheEngineReaderGrants(PostgresCase):
     def test_i2_6_plugin_config_by_column(self):
         for role in ("report_ro", "dashboard_ro"):
             with self.subTest(role=role):
-                self.assertFalse(self._can(role, "plugin_config"), "no table-wide SELECT")
-                for column, allowed in (("id", True), ("plugin_id", True), ("config", False)):
+                self.assertFalse(self._can(role, "aisc_backend_pluginconfig"), "no table-wide SELECT")
+                # the configuration name is printed by the report's Test runs block (2026-09-28); settings never
+                for column, allowed in (("id", True), ("plugin_id", True), ("name", True), ("config", False)):
                     got = self.cluster.rows(self.w["A"]["database"],
-                                            "SELECT has_column_privilege(%s, 'engine.plugin_config', %s, 'SELECT')",
+                                            "SELECT has_column_privilege(%s, 'engine.aisc_backend_pluginconfig', %s, 'SELECT')",
                                             (role, column))[0][0]
                     self.assertEqual(got, allowed, f"plugin_config.{column}")
 
@@ -288,6 +298,7 @@ class TheEngineReaderGrants(PostgresCase):
 # ── I7.9: the table definitions do not change ──
 
 
+@configurator_only
 class TheShapeIsTheLiveShape(PostgresCase):
     """Catalog diff between A's `engine` schema (migrated by I7.6) and the live
     `platform.engine` shape (scripts/tests/fixtures/isolation/live_shape.sql,
@@ -296,6 +307,18 @@ class TheShapeIsTheLiveShape(PostgresCase):
     and evaluation.system_id references project.system instead of core.system."""
 
     ALLOWED_GONE = {"aisc_backend_project_platform_project_id_fkey"}
+
+    #: Ruling 14: three foreign keys keep their columns and targets but take the names Sean's
+    #: squashed 0014 gives them (the live shape was made under the old history). Live name to
+    #: the name from now on.
+    RENAMED = {
+        "aisc_backend_aisystem_project_id_381e09a9_fk_project_id":
+            "aisc_backend_aisyste_project_id_381e09a9_fk_aisc_back",
+        "aisc_backend_evaluat_evaluation_plugin_id_7c4716b3_fk_evaluatio":
+            "aisc_backend_evaluat_evaluation_plugin_id_7c4716b3_fk_aisc_back",
+        "plugin_config_settin_project_config_id_505b7676_fk_project_s":
+            "aisc_backend_pluginc_project_config_id_d1306b7a_fk_aisc_back",
+    }
 
     def _live(self):
         scratch = self.cluster.scratch_database("iso_eng_live_shape")
@@ -311,8 +334,11 @@ class TheShapeIsTheLiveShape(PostgresCase):
         live = self._live()
         with self.cluster.connect(self.w["A"]["database"]) as conn:
             mine = catalog(conn, "engine")
+        # The one table the live shape predates: the mode marker (0021_engine_deployment_marker).
+        mine = {kind: {r for r in rows if r[0] != "engine_deployment"} for kind, rows in mine.items()}
         live["constraints"] = {
-            (t, name, kind, d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
+            (t, self.RENAMED.get(name, name), kind,
+             d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
             for t, name, kind, d in live["constraints"] if name not in self.ALLOWED_GONE}
         for kind in live:
             with self.subTest(kind=kind):
@@ -323,12 +349,13 @@ class TheShapeIsTheLiveShape(PostgresCase):
 # ── I7.1, I7.8, I7.10: the ORM goes to the admitted database ──
 
 
+@configurator_only
 class TheOrmStaysInItsDatabase(PostgresCase):
     def test_i7_1_rows_written_under_a_are_in_a_only(self):
         for key, other in (("A", "B"), ("B", "A")):
             with self.subTest(project=key):
-                here = self.cluster.rows(self.w[key]["database"], "SELECT pid::text FROM engine.project")
-                there = self.cluster.rows(self.w[other]["database"], "SELECT pid::text FROM engine.project")
+                here = self.cluster.rows(self.w[key]["database"], "SELECT pid::text FROM engine.aisc_backend_project")
+                there = self.cluster.rows(self.w[other]["database"], "SELECT pid::text FROM engine.aisc_backend_project")
                 self.assertEqual(here, [(self.w[key]["pid"],)])
                 self.assertNotIn((self.w[key]["pid"],), there)
 
@@ -340,7 +367,7 @@ class TheOrmStaysInItsDatabase(PostgresCase):
     def test_i7_10_metrics_are_rows_of_each_project(self):
         for key in ("A", "B"):
             with self.subTest(project=key):
-                names = self.cluster.rows(self.w[key]["database"], "SELECT name FROM engine.metric")
+                names = self.cluster.rows(self.w[key]["database"], "SELECT name FROM engine.aisc_backend_metric")
                 self.assertEqual(names, [("accuracy",)], "one metric per project, made in its own database")
 
     def test_i7_1_a_query_with_nothing_admitted_fails(self):
@@ -355,6 +382,7 @@ class TheOrmStaysInItsDatabase(PostgresCase):
 # ── I7.2 with the platform database: membership and the project row are real ──
 
 
+@configurator_only
 class TheDoorOnPostgres(PostgresCase):
     def test_i7_2_a_pid_with_no_core_project_row_is_404(self):
         response = self.api.as_member("GET", "/api/v1/projects", uuid.uuid4(), roles=("admin",))
@@ -375,6 +403,34 @@ class TheDoorOnPostgres(PostgresCase):
         response = self.api.as_member("GET", f"/api/v1/projects/{self.w['A']['pid']}", self.w["A"]["platform"])
         self.assertEqual(response.status_code, 200, response.content[:300])
         self.assertEqual(response.json()["pid"], self.w["A"]["pid"])
+
+    # Adapt plan 2026-09-28, item 2: a stored file and a Celery task id are outside the
+    # project's database, so the door asks the row that records them (Review Focus 3).
+    def test_a_file_and_a_task_of_b_are_404_under_a(self):
+        import unittest.mock as mock
+
+        from django.http import StreamingHttpResponse
+
+        # The object store would answer 200, so a 404 here can only be the door's.
+        stream = mock.AsyncMock(return_value=StreamingHttpResponse(iter([b"x"])))
+        with mock.patch("aisc_backend.routers.file.file_repository.get_s3_file_stream", stream):
+            for path in (f"/api/v1/files/dataset/{self.w['B']['dataset_file']}",
+                         f"/api/v1/tasks/{self.w['B']['task']}/status"):
+                with self.subTest(path=path):
+                    response = self.api.as_member("GET", path, self.w["A"]["platform"])
+                    self.assertEqual(response.status_code, 404, getattr(response, "content", b"")[:300])
+        stream.assert_not_called()
+
+    def test_a_viewer_of_b_downloads_b_s_file(self):
+        import unittest.mock as mock
+
+        from django.http import StreamingHttpResponse
+
+        stream = mock.AsyncMock(return_value=StreamingHttpResponse(iter([b"x"])))
+        with mock.patch("aisc_backend.routers.file.file_repository.get_s3_file_stream", stream):
+            response = self.api.as_member("GET", f"/api/v1/files/dataset/{self.w['B']['dataset_file']}",
+                                          self.w["B"]["platform"], subject="carol")
+        self.assertEqual(response.status_code, 200, getattr(response, "content", b"")[:300])
 
 
 # ── I16.5, I7.2, I7.5, I7.11: every route that addresses an object by id ──
@@ -489,6 +545,7 @@ def _fill(value, ids):
     return value
 
 
+@configurator_only
 class EveryRouteByIdIsInTheTable(unittest.TestCase):
     """No database needed: every route of the API with a path parameter, and
     every route that takes a project in its body, is in ROUTES (or NOT_BY_ID
@@ -512,6 +569,7 @@ class EveryRouteByIdIsInTheTable(unittest.TestCase):
         self.assertEqual(missing, [], "I16.5: routes by id without a cross-project test")
 
 
+@configurator_only
 class NothingOfAIsReachableUnderB(PostgresCase):
     def _ids(self):
         return dict(self.w["A"], key="k", plugin_name="probe")
@@ -560,6 +618,7 @@ class NothingOfAIsReachableUnderB(PostgresCase):
 # ── I2.5, I17.1: a dropped database, and no connection kept ──
 
 
+@configurator_only
 class ADroppedDatabase(PostgresCase):
     def test_i2_5_after_the_drop_the_project_is_404_and_the_alias_is_gone(self):
         from django.db import connections

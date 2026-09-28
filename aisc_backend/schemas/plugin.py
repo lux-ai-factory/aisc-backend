@@ -5,6 +5,7 @@ from pydantic import Field
 
 from aisc_backend.models import Plugin, EvaluationPlugin, PluginConfig
 from aisc_backend.schemas.ai_system import AIComponentOutSchema
+from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 
 
 class EvaluationInputOutSchema(Schema):
@@ -22,15 +23,15 @@ class EvaluationInputOutSchema(Schema):
         return obj.component
 
 class PluginConfigOutSchema(ModelSchema):
-    project_config_selections: list[dict] = []
+    project_config_selections: list[ProjectConfigSelectionSchema] = Field(default=[])
 
     @staticmethod
     def resolve_project_config_selections(obj):
         return [
-            {
-                "plugin_config_key": mapping.plugin_config_key,
-                "project_config_pid": mapping.project_config.pid,
-            }
+            ProjectConfigSelectionSchema(
+                plugin_config_key=mapping.plugin_config_key,
+                project_config_pid=mapping.project_config.pid,
+            )
             for mapping in getattr(obj, "_prefetched_objects_cache", {}).get("setting_mappings", [])
         ]
 

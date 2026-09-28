@@ -25,8 +25,10 @@ the module but not its functions):
   (three internal routes have no evaluation in their path); the door checks the
   ticket against it and, when the path names an evaluation, requires both equal;
 - the Celery message of the start route is
-  `aisc_eval.celery_tasks.run_evaluation` with args
-  `[platform_pid, evaluation_pid, ticket]`. How the backend builds it is left to
+  `aisc_eval.celery_tasks.run_evaluation` with Sean's args `[evaluation_pid]`
+  and the run in its `aisc_run` header:
+  `{"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket}`
+  (adapt Task 4, 2026-09-28). How the backend builds it is left to
   stage 4 (routers/evaluation.py is a frozen Sean file, I7.12), so these tests
   read the message, not the router's source.
 """
@@ -46,20 +48,20 @@ from django.db import DatabaseError, connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import AsyncClient, SimpleTestCase, TestCase
 
-from aisc_backend.tests.isolation_support import BACKEND, EXAMPLE_DB, EXAMPLE_PID, settings_probe
+from aisc_backend.tests.isolation_support import configurator_only, BACKEND, EXAMPLE_DB, EXAMPLE_PID, settings_probe
 
 MIGRATIONS = BACKEND / "aisc_backend" / "migrations"
-NEW_LEAF = ("aisc_backend", "0025_the_database_is_the_project")
+# Renumbered on feat/deployment-modes (adapt item 1, 2026-09-28): the FK migration is 0020
+# here, and the leaf is 0021_engine_deployment_marker.
+FK_MIGRATION = ("aisc_backend", "0020_the_database_is_the_project")
+NEW_LEAF = ("aisc_backend", "0021_engine_deployment_marker")
 
 #: I7.7: these stay byte for byte as they are (their core blocks are already
-#: guarded by to_regclass). Hashes taken on isolation/2026-09-25 at 94f23e0.
+#: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (definitive's
+#: 0015 is 0016 here). The folded no-op 0022 is gone (adapt item 1).
 UNCHANGED_MIGRATIONS = {
-    "0015_evaluation_system_id_project_platform_project_id.py":
-        "88b6debb260d03db52a4bb1defb7c9397744cc45e4b222e305d1235d7778c724",
-    "0022_parts_belong_to_a_version_of_the_one_system.py":
-        "4d6ad4a8ab76b74abf71cd0c54c3e6f1c8dd9ce0b4d8504d0077c8869a211bc1",
-    "0023_one_system_per_project_again.py":
-        "35233b16b7932a6add5f619079cc87a180f4505fb0e26626be40fd1791f9236f",
+    "0016_evaluation_system_id_project_platform_project_id.py":
+        "0b624fbde65aa2efc2fcdd828b8b5cdc2130be5d6ee1f245587c41b2857a81d4",
 }
 
 
@@ -79,51 +81,55 @@ def _projectdb(test):
 # ── I7.7, I7.12: the migration that makes the evaluation point at project.system ──
 
 
+@configurator_only
 class TheNewMigration(SimpleTestCase):
     def _file(self):
-        found = sorted(MIGRATIONS.glob("0025_*.py"))
+        found = sorted(MIGRATIONS.glob("0020_*.py"))
         if not found:
-            self.fail("I7.7: aisc_backend/migrations/0025_the_database_is_the_project.py is missing")
+            self.fail("I7.7: aisc_backend/migrations/0020_the_database_is_the_project.py is missing")
         return found[0]
 
-    def test_i7_7_0025_has_the_name_of_the_spec(self):
-        self.assertEqual(self._file().name, "0025_the_database_is_the_project.py")
+    def test_i7_7_0020_has_the_name_of_the_spec(self):
+        self.assertEqual(self._file().name, "0020_the_database_is_the_project.py")
 
-    def test_i7_7_0025_adds_the_fk_to_project_system_only_when_it_exists(self):
+    def test_i7_7_0020_adds_the_fk_to_project_system_only_when_it_exists(self):
         text = self._file().read_text()
-        self.assertIn("RunPython", text, "I7.7: 0025 is a RunPython migration")
+        self.assertIn("RunPython", text, "I7.7: 0020 is a RunPython migration")
         self.assertIn("aisc_backend_evaluation_system_id_fkey", text)
         self.assertRegex(text, r"to_regclass\(\s*'project\.system'\s*\)")
         self.assertRegex(text, r"REFERENCES\s+project\.system\s*\(\s*pid\s*\)\s+ON DELETE SET NULL")
         self.assertIn("postgresql", text, "I7.7: Postgres only, a no-op on sqlite")
-        self.assertNotRegex(text, r"core\.", "I7.7: 0025 names nothing in core")
+        self.assertNotRegex(text, r"core\.", "I7.7: 0020 names nothing in core")
 
-    def test_i7_7_0015_0022_0023_are_unchanged(self):
+    def test_i7_7_0016_is_unchanged(self):
         for name, digest in UNCHANGED_MIGRATIONS.items():
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_i7_12_the_leaf_becomes_0025(self):
-        """The leaf-0024 assertion of test_one_system_per_project.py
-        (test_s1_0023_is_the_leaf) changes in WP E1 to this one."""
+    def test_i7_12_the_leaf_is_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_s1_0021_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [NEW_LEAF])
         parents = loader.graph.node_map[NEW_LEAF].parents
-        self.assertEqual({p.key for p in parents}, {("aisc_backend", "0024_no_login_of_its_own")})
+        self.assertEqual({p.key for p in parents}, {FK_MIGRATION})
+        parents = loader.graph.node_map[FK_MIGRATION].parents
+        self.assertEqual({p.key for p in parents}, {("aisc_backend", "0019_no_login_of_its_own")})
 
 
+@configurator_only
 class TheNewMigrationOnSqlite(TestCase):
-    def test_i7_7_0025_is_applied_as_a_no_op_on_sqlite(self):
+    def test_i7_7_0020_is_applied_as_a_no_op_on_sqlite(self):
         if connection.vendor != "sqlite":
             self.skipTest("about sqlite")
         loader = MigrationLoader(connection)
-        self.assertIn(NEW_LEAF, loader.applied_migrations,
-                      "I7.7: 0025 must exist and apply on sqlite (a no-op there)")
+        self.assertIn(FK_MIGRATION, loader.applied_migrations,
+                      "I7.7: 0020 must exist and apply on sqlite (a no-op there)")
 
 
 # ── I7.1: settings, router, aliases ──
 
 
+@configurator_only
 class SettingsOfADeployedEngine(SimpleTestCase):
     """What config.settings says when DB_ENGINE is Postgres (read in a child process)."""
 
@@ -182,6 +188,7 @@ class SettingsOfADeployedEngine(SimpleTestCase):
                                  "I7.1: aisc_backend/projectdb.py is missing")
 
 
+@configurator_only
 class TheRouter(SimpleTestCase):
     def router(self):
         projectdb = _projectdb(self)
@@ -247,6 +254,7 @@ class TheRouter(SimpleTestCase):
         self.assertEqual(asyncio.run(request()), EXAMPLE_DB)
 
 
+@configurator_only
 class OnlyTwoFilesReadPlatform(SimpleTestCase):
     """I7.1: raw SQL on core.* only in auth/membership.py and platform_projects.py,
     both on the `platform` alias; I7.8: the stamp reads project.system."""
@@ -283,6 +291,7 @@ class OnlyTwoFilesReadPlatform(SimpleTestCase):
                          "SELECT pid FROM project.system ORDER BY number DESC LIMIT 1")
 
 
+@configurator_only
 class TheOneShotMigrates(SimpleTestCase):
     def test_i7_6_migrate_projects_is_a_command(self):
         from django.core.management import get_commands
@@ -296,10 +305,22 @@ class TheOneShotMigrates(SimpleTestCase):
             self.fail("I7.6: aisc_backend/management/commands/migrate_projects.py is missing")
         self.assertRegex(path.read_text(), r"pg_advisory(_xact)?_lock")
 
-    def test_i7_6_the_image_no_longer_migrates_platform(self):
-        text = (BACKEND / "Dockerfile").read_text()
-        self.assertNotRegex(text, r"manage\.py migrate(?!_projects)\b",
-                            "I7.6: aisc-backend no longer runs manage.py migrate on platform")
+    def test_i7_6_the_configurator_migrates_through_the_one_shot(self):
+        """Ruling 21: the image is shared with standalone, whose start runs `manage.py migrate`
+        (master's Dockerfile, kept), so this no longer pins the Dockerfile. In the Configurator
+        the engine's migrations run through the compose one-shot aisc-backend-migrate, which
+        runs `migrate_projects` over every project database; `default` is the dummy backend
+        there (I7.1), so a plain `migrate` has no database to write. That the Configurator's
+        compose runs the one-shot and not a plain migrate is Task 9's compose-level check."""
+        result = settings_probe(
+            "from django.conf import settings\n"
+            "from django.core.management import get_commands\n"
+            "out = [settings.PROJECT_DATABASES, settings.DATABASES['default']['ENGINE'],"
+            " get_commands().get('migrate_projects')]")
+        if not result["ok"]:
+            self.fail(f"I7.6: the probe failed: {result['error']}")
+        self.assertEqual(result["out"], [True, "django.db.backends.dummy", "aisc_backend"],
+                         "I7.6: a deployed Configurator has project databases and migrate_projects")
 
 
 # ── I7.2, I7.3: the door ──
@@ -314,6 +335,7 @@ class _FakeKey:
         self.key = key
 
 
+@configurator_only
 class DoorCase(SimpleTestCase):
     """The API through Django's middleware, auth on, membership stubbed.
 
@@ -370,6 +392,7 @@ class DoorCase(SimpleTestCase):
         return mock.patch("aisc_backend.auth.membership.role_in_project", return_value=role)
 
 
+@configurator_only
 class TheDoorOrder(DoorCase):
     """I7.2 as one table, in the spec's order: each row names what the caller
     sends and what the door answers. A later check never runs before an earlier
@@ -444,6 +467,7 @@ class TheDoorOrder(DoorCase):
                     self.assertEqual(opened, [], f"I7.2 {row}: a refused call opens no database")
 
 
+@configurator_only
 class TheDoorsExemptions(DoorCase):
     """I7.2: the unauthenticated and project-less routes need no header."""
 
@@ -465,6 +489,7 @@ class TheDoorsExemptions(DoorCase):
         self.assertEqual(response.status_code, 400)
 
 
+@configurator_only
 class TheWorkersTicket(DoorCase):
     """I7.3: an internal call needs the shared secret (401) and a run ticket
     bound to that project and that evaluation (403)."""
@@ -522,6 +547,7 @@ class TheWorkersTicket(DoorCase):
         self.assertEqual(response.status_code, 400)
 
 
+@configurator_only
 class TheStartRouteMintsTheTicket(TestCase):
     """I7.3 through the start route, on the test runner's database (as test_evaluation_system_stamp)."""
 
@@ -560,7 +586,11 @@ class TheStartRouteMintsTheTicket(TestCase):
         name = send.call_args.args[0] if send.call_args.args else send.call_args.kwargs.get("name")
         args = send.call_args.kwargs.get("args") or send.call_args.args[1]
         self.assertEqual(name, "aisc_eval.celery_tasks.run_evaluation")
-        self.assertEqual([str(a) for a in args], [A_PID, str(evaluation_pid), ticket(A_PID, evaluation_pid)],
-                         "I7.3: the task is run_evaluation(platform_pid, evaluation_pid, ticket)")
+        self.assertEqual([str(a) for a in args], [str(evaluation_pid)],
+                         "I7.3: the task is Sean's run_evaluation(evaluation_pid)")
+        self.assertEqual(send.call_args.kwargs.get("headers"),
+                         {"aisc_run": {"project": A_PID, "evaluation": str(evaluation_pid),
+                                       "ticket": ticket(A_PID, evaluation_pid)}},
+                         "I7.3: the run (project, evaluation, ticket) travels in the aisc_run header")
         self.assertNotRegex(repr(send.call_args), r"postgres|password|dbname",
                             "I7.3: a task never carries a DSN")

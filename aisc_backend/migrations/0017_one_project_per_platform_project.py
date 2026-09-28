@@ -14,7 +14,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc_backend', '0015_evaluation_system_id_project_platform_project_id'),
+        ('aisc_backend', '0016_evaluation_system_id_project_platform_project_id'),
     ]
 
     operations = [

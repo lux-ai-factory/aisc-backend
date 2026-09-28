@@ -48,7 +48,7 @@ def unlink_from_core(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc_backend', '0014_plugin_catalogue_slug'),
+        ('aisc_backend', '0015_plugin_catalogue_slug'),
     ]
 
     operations = [

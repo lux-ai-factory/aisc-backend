@@ -18,19 +18,28 @@ before an earlier one:
    path naming another evaluation: 403;
 4. a person (only while authentication is on): no or a bad token 401; the
    membership cannot be read 503; a stranger 404; a viewer writing 403. The
-   realm role `admin` is not a membership and skips the lookup;
+   realm role `admin` is not a membership and skips the lookup. The claims
+   verified here are kept on `request.aisc_claims`;
+4a. `POST /api/v1/projects`: 403, projects are made on the Configurator's
+   launcher; installing, removing or refreshing a plugin without the realm
+   role `admin` (while authentication is on): 403;
 5. the alias of the project's database is registered (no connection yet);
 6. a pid the platform has no project for: 404 (503 when that cannot be read);
 7. the database is opened, and migrated the first time this process opens it:
    a missing database 404 (I2.5), a failed migration 503;
 8. the alias is admitted, and every pid of a path or a body that names an
-   engine object must be one of this database's, else 404;
+   engine object must be one of this database's, else 404. A stored file and a
+   Celery task are not rows of the database: the row that records them must be
+   one of this database's and the caller a member of its project
+   (`membership.for_stored_file`, `membership.for_task`), else the same refusal;
 9. the view.
 
 The unauthenticated and project-less routes (docs, openapi, app-name, me,
-me/admin, audit, `GET /plugins`) pass through untouched. At the end of the
-request the admitted alias is released and the project's and the platform's
-connections are closed in the thread that used them (CONN_MAX_AGE=0, I17.1).
+me/admin, audit, `GET /plugins`) pass through untouched, except that the
+gateway's token is copied into `Authorization` first (`bearer_from_gateway`).
+At the end of the request the admitted alias is released and the project's and
+the platform's connections are closed in the thread that used them
+(CONN_MAX_AGE=0, I17.1).
 
 The door names nothing of the platform's schema: membership and the project's
 existence are asked of `auth.membership` and `platform_projects`.
@@ -46,6 +55,7 @@ import uuid
 from asgiref.sync import markcoroutinefunction, sync_to_async
 from django.db import DatabaseError, connections
 from django.http import JsonResponse
+from ninja.errors import HttpError
 
 from aisc_backend import platform_projects, projectdb
 from aisc_backend.auth import keycloak, membership
@@ -55,6 +65,11 @@ RUN_HEADER = "X-AISC-Run"
 EVALUATION_HEADER = "X-AISC-Evaluation"
 SECRET_HEADER = "X-Internal-Secret"
 INTERNAL_PREFIX = "/api/v1/internal/"
+#: The header oauth2-proxy sets when it has vouched for a request. In the Configurator the
+#: gateway holds the session, refreshes it, and knows who is behind the request; a page behind it
+#: therefore need not keep a second session of its own, and when it does not, this is where the
+#: token arrives. The door copies it into `Authorization`, so Sean's bearer check reads it.
+GATEWAY_TOKEN_HEADER = "X-Auth-Request-Access-Token"
 
 #: Routes that need no project, whatever the method (plan 4's list).
 EXEMPT = {"/api/docs", "/api/openapi.json", "/api/v1/app/app-name", "/api/v1/me", "/api/v1/me/admin",
@@ -71,12 +86,21 @@ READ_POSTS = re.compile(
 _UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 _ENGINE_PROJECT_PATH = re.compile(rf"^/api/v1/(?:projects|stats/projects|project/settings)/({_UUID})(?:/|$)")
 _EVALUATION_PATH = re.compile(rf"^/api/v1/evaluations/({_UUID})(?:/|$)")
+#: Sean's `GET /components/{pid}/data` answers 500 for any failure, a missing row included.
+_COMPONENT_PATH = re.compile(rf"^/api/v1/components/({_UUID})(?:/|$)")
 _RESULT_PATH = re.compile(rf"^/api/v1/plugins/[^/]+/evaluations/({_UUID})/result$")
 _FOR_PLATFORM_PATH = re.compile(r"^/api/v1/projects/for-platform/([^/]+)$")
 _PROJECT_ROW_PATH = re.compile(rf"^/api/v1/projects/{_UUID}$")
 _INTERNAL_EVALUATION_PATH = re.compile(r"^/api/v1/internal/evaluations/([^/]+)(?:/|$)")
 _INTERNAL_SETTINGS_PATH = re.compile(rf"^/api/v1/internal/projects/settings/({_UUID})(?:/by-pid)?$")
 _INTERNAL_FILE_PATH = re.compile(r"^/api/v1/internal/files/(dataset|model)/([^/]+)$")
+_FILE_PATH = re.compile(r"^/api/v1/files/(dataset|model|artifact)/([^/]+)$")
+#: Sean's task router is mounted as `/tasks` with the route `{pid}/status`: both spellings.
+_TASK_PATH = re.compile(r"^/api/v1/tasks/?([^/]+)/status$")
+
+#: Installing, removing or refreshing a plugin fetches a distribution and the engine then runs
+#: its code on a shared server, so in the Configurator it takes the realm role `admin`.
+_ADMIN_ROUTES = {("POST", "/api/v1/plugins"), ("DELETE", "/api/v1/plugins"), ("POST", "/api/v1/plugins/refresh")}
 
 #: JSON bodies that name an engine project, by (method, path): the field.
 _BODY_ENGINE_PROJECT = {
@@ -125,12 +149,27 @@ def _json_body(request):
     return body if isinstance(body, dict) else None
 
 
+def bearer_from_gateway(request) -> None:
+    """The gateway's token as the bearer, when the page sent no `Authorization` of its own.
+
+    Both are the same session and are verified the same way; a request carrying
+    neither is still refused.
+    """
+    if request.META.get("HTTP_AUTHORIZATION"):
+        return
+    token = request.META.get("HTTP_" + GATEWAY_TOKEN_HEADER.upper().replace("-", "_"), "").strip()
+    if token:
+        request.META["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+        # `request.headers` is a copy of META made once; drop it so every reader sees the bearer.
+        request.__dict__.pop("headers", None)
+
+
 def _bearer(request) -> str:
     auth = request.headers.get("Authorization", "")
     scheme, _, token = auth.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
         return token.strip()
-    return request.headers.get(keycloak.GATEWAY_TOKEN_HEADER, "").strip()
+    return ""
 
 
 def _worker_refusal(request, pid: str, path: str):
@@ -166,6 +205,7 @@ async def _person_refusal(request, pid: str, path: str):
         claims = keycloak.verify_token(token)
     except Exception:  # noqa: BLE001 - any failure to verify is "not signed in"
         return _refuse(401, "sign in")
+    request.aisc_claims = claims or {}
     if membership.ADMIN_ROLE in keycloak.get_roles(claims or {}):
         return None
     try:
@@ -176,6 +216,38 @@ async def _person_refusal(request, pid: str, path: str):
         return _refuse(404, "no such project")
     if role == "viewer" and writes(request.method, path):
         return _refuse(403, "this takes editor on this project")
+    return None
+
+
+def _rule_refusal(request, method: str, path: str):
+    """Step 4a: what the Configurator does not let anybody do here, or not without admin."""
+    if method == "POST" and path == "/api/v1/projects":
+        return _refuse(403, "projects are made on the Configurator's launcher")
+    if (method, path) in _ADMIN_ROUTES and keycloak.AUTH_ENABLED:
+        claims = getattr(request, "aisc_claims", None) or {}
+        if membership.ADMIN_ROLE not in keycloak.get_roles(claims):
+            return _refuse(403, f"this needs the {membership.ADMIN_ROLE!r} role")
+    return None
+
+
+def _outside_the_database(request, path: str):
+    """Step 8, for what is not a row: a stored file, a Celery task (runs with the alias admitted).
+
+    The row that records it says whose it is; `membership` raises the refusal.
+    """
+    from aisc_backend.models.common import StorageContainer
+
+    containers = {"dataset": StorageContainer.Datasets, "model": StorageContainer.Models,
+                  "artifact": StorageContainer.Artifacts}
+    try:
+        stored = _FILE_PATH.match(path)
+        if stored:
+            membership.for_stored_file(request, containers[stored.group(1)], stored.group(2))
+        task = _TASK_PATH.match(path)
+        if task and _as_uuid(task.group(1)) is not None:  # not a uuid: the view's 422
+            membership.for_task(request, _as_uuid(task.group(1)))
+    except HttpError as refused:
+        return _refuse(refused.status_code, refused.message)
     return None
 
 
@@ -229,6 +301,9 @@ def _not_in_this_database(request, pid: str, path: str, method: str, internal: b
     evaluation_path = _EVALUATION_PATH.match(path) or _RESULT_PATH.match(path)
     if evaluation_path and not evaluation_here(evaluation_path.group(1)):
         return True
+    component_path = _COMPONENT_PATH.match(path)
+    if component_path and not AIComponent.objects.filter(pid=component_path.group(1)).exists():
+        return True
     return False
 
 
@@ -251,6 +326,7 @@ class ProjectDoor:
         markcoroutinefunction(self)
 
     async def __call__(self, request):
+        bearer_from_gateway(request)
         path = request.path_info
         method = (request.method or "GET").upper()
         if not path.startswith("/api/") or _exempt(method, path):
@@ -272,6 +348,10 @@ class ProjectDoor:
                        else await _person_refusal(request, pid, path))
             if refusal is not None:
                 return refusal
+            if not internal:
+                refusal = _rule_refusal(request, method, path)
+                if refusal is not None:
+                    return refusal
 
             try:
                 alias = projectdb.alias_for(pid)
@@ -305,6 +385,13 @@ class ProjectDoor:
                 return _refuse(503, "the project's database cannot be read")
             if elsewhere:
                 return _refuse(404, "no such thing in this project")
+            if not internal and method in ("GET", "HEAD"):
+                try:
+                    refusal = await sync_to_async(_outside_the_database)(request, path)
+                except DatabaseError:
+                    return _refuse(503, "the project's database cannot be read")
+                if refusal is not None:
+                    return refusal
 
             return await self.get_response(request)
         finally:

@@ -41,7 +41,6 @@ class Measurement(Base):
     )
 
     class Meta:
-        db_table = "measurement"
         indexes = [
             GinIndex(fields=['dimensions'], name='metric_dimensions_gin'),
         ]

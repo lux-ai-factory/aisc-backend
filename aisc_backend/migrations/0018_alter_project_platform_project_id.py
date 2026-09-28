@@ -15,7 +15,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc_backend', '0016_one_project_per_platform_project'),
+        ('aisc_backend', '0017_one_project_per_platform_project'),
     ]
 
     operations = [

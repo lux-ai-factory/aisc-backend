@@ -8,9 +8,7 @@ from aisc_backend.schemas.plugin import PluginOutSchema
 class ProjectInSchema(ModelSchema):
     class Meta:
         model = Project
-        # The platform project this workspace belongs to, when it was made from
-        # one. Optional: the engine can still be used on its own.
-        fields = ["name", "platform_project_id"]
+        fields = ["name"]
         fields_optional = "__all__"
 
 class ProjectOutSchema(ModelSchema):

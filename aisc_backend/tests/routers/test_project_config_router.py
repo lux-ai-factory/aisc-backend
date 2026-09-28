@@ -4,28 +4,6 @@ from ninja.testing import TestAsyncClient
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers.project_config import router
 
-import unittest.mock as mock
-
-from aisc_backend.auth import keycloak
-
-#: These tests are about the routes, not about Keycloak. The switch is pinned
-#: off for the module, as in test_project_router: the merged branch puts
-#: KeycloakAuth on these routers, and the suite runs where AUTH_ENABLED=true.
-_auth_off = None
-
-#: A token that is not meant to verify: with the switch off, any bearer passes.
-SIGNED_IN = {"Authorization": "Bearer development"}
-
-
-def setUpModule():
-    global _auth_off
-    _auth_off = mock.patch.object(keycloak, "AUTH_ENABLED", False)
-    _auth_off.start()
-
-
-def tearDownModule():
-    _auth_off.stop()
-
 
 client = TestAsyncClient(router)
 
@@ -42,7 +20,7 @@ class ProjectConfigRouterTestCase(TestCase):
                 "key": "max_tokens",
                 "name": "Max tokens",
                 "json_value": {"type": "number", "value": 42},
-            }, headers=SIGNED_IN,
+            },
         )
         self.assertEqual(res.status_code, 200, res.text)
         body = res.json()
@@ -51,21 +29,21 @@ class ProjectConfigRouterTestCase(TestCase):
         self.assertEqual(body["json_value"], {"type": "number", "value": 42})
         self.assertEqual(body["masked_value"], "")
 
-        listing = await client.get(f"/{self.project.pid}", headers=SIGNED_IN)
+        listing = await client.get(f"/{self.project.pid}")
         self.assertEqual(listing.status_code, 200)
         self.assertEqual(len(listing.json()), 1)
 
     async def test_create_secret_requires_value(self):
         res = await client.post(
             f"/{self.project.pid}",
-            json={"category": "secrets", "key": "api_key", "name": "API key", "value": ""}, headers=SIGNED_IN,
+            json={"category": "secrets", "key": "api_key", "name": "API key", "value": ""},
         )
         self.assertEqual(res.status_code, 422)
 
     async def test_create_secret_encrypts_and_masks(self):
         res = await client.post(
             f"/{self.project.pid}",
-            json={"category": "secrets", "key": "api_key", "name": "API key", "value": "sk-1234567890"}, headers=SIGNED_IN,
+            json={"category": "secrets", "key": "api_key", "name": "API key", "value": "sk-1234567890"},
         )
         self.assertEqual(res.status_code, 200, res.text)
         body = res.json()
@@ -74,13 +52,13 @@ class ProjectConfigRouterTestCase(TestCase):
     async def test_update_variable_json_value(self):
         create = await client.post(
             f"/{self.project.pid}",
-            json={"category": "variables", "key": "threshold", "name": "Threshold", "json_value": {"type": "number", "value": 0.5}}, headers=SIGNED_IN,
+            json={"category": "variables", "key": "threshold", "name": "Threshold", "json_value": {"type": "number", "value": 0.5}},
         )
         pid = create.json()["pid"]
 
         updated = await client.patch(
             f"/{self.project.pid}/{pid}",
-            json={"json_value": {"type": "boolean", "value": True}}, headers=SIGNED_IN,
+            json={"json_value": {"type": "boolean", "value": True}},
         )
         self.assertEqual(updated.status_code, 200, updated.text)
         self.assertEqual(updated.json()["json_value"], {"type": "boolean", "value": True})
@@ -89,13 +67,13 @@ class ProjectConfigRouterTestCase(TestCase):
     async def test_update_secret_value(self):
         create = await client.post(
             f"/{self.project.pid}",
-            json={"category": "secrets", "key": "token", "name": "Token", "value": "secret-value"}, headers=SIGNED_IN,
+            json={"category": "secrets", "key": "token", "name": "Token", "value": "secret-value"},
         )
         pid = create.json()["pid"]
 
         updated = await client.patch(
             f"/{self.project.pid}/{pid}",
-            json={"value": "new-secret-value-123"}, headers=SIGNED_IN,
+            json={"value": "new-secret-value-123"},
         )
         self.assertEqual(updated.status_code, 200, updated.text)
         self.assertTrue(updated.json()["masked_value"].startswith("new-..."))
@@ -104,20 +82,20 @@ class ProjectConfigRouterTestCase(TestCase):
     async def test_update_secret_value_rejected_on_variable(self):
         create = await client.post(
             f"/{self.project.pid}",
-            json={"category": "variables", "key": "mode", "name": "Mode", "json_value": {"type": "string", "value": "a"}}, headers=SIGNED_IN,
+            json={"category": "variables", "key": "mode", "name": "Mode", "json_value": {"type": "string", "value": "a"}},
         )
         pid = create.json()["pid"]
 
-        res = await client.patch(f"/{self.project.pid}/{pid}", json={"value": "not a secret"}, headers=SIGNED_IN)
+        res = await client.patch(f"/{self.project.pid}/{pid}", json={"value": "not a secret"})
         self.assertEqual(res.status_code, 400)
 
     async def test_delete_config(self):
         create = await client.post(
             f"/{self.project.pid}",
-            json={"category": "variables", "key": "k", "name": "K", "json_value": {"type": "json", "value": {"a": 1}}}, headers=SIGNED_IN,
+            json={"category": "variables", "key": "k", "name": "K", "json_value": {"type": "json", "value": {"a": 1}}},
         )
         pid = create.json()["pid"]
-        res = await client.delete(f"/{self.project.pid}/{pid}", headers=SIGNED_IN)
+        res = await client.delete(f"/{self.project.pid}/{pid}")
         self.assertEqual(res.status_code, 204)
-        listing = await client.get(f"/{self.project.pid}", headers=SIGNED_IN)
+        listing = await client.get(f"/{self.project.pid}")
         self.assertEqual(len(listing.json()), 0)

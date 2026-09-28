@@ -24,9 +24,14 @@ import sys
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
+import unittest
+
+from django.conf import settings
 
 BACKEND = Path(__file__).resolve().parents[2]
-REPO = BACKEND.parents[1]
+#: The monorepo holding platform/ and scripts/ (the platform's provisioning and the live shape).
+#: The engine's own repository has neither: point AISC_ISOLATION_REPO at a monorepo checkout.
+REPO = Path(os.environ.get("AISC_ISOLATION_REPO") or BACKEND.parents[1])
 PLATFORM = REPO / "platform"
 LIVE_SHAPE = REPO / "scripts" / "tests" / "fixtures" / "isolation" / "live_shape.sql"
 
@@ -36,7 +41,12 @@ EXAMPLE_DB = "project_3f2b8c1e0d4a4e7b9a551c2d3e4f5a6b"
 
 SUPERUSER_URL_VAR = "ENGINE_TEST_SUPERUSER_URL"
 
+#: Isolation is the Configurator's (engine deployment modes, 2026-09-27): a standalone run skips it.
+configurator_only = unittest.skipUnless(settings.AISC_DEPLOYMENT == "configurator",
+                                        "configurator mode only (AISC_DEPLOYMENT=configurator)")
+
 DEPLOYED_ENV = {
+    "AISC_DEPLOYMENT": "configurator",
     "DB_ENGINE": "django.db.backends.postgresql",
     "DB_NAME": "platform",
     "DB_USER": "engine_rw",

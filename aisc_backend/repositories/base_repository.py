@@ -7,19 +7,16 @@ Errors are handled and propagated in a generic way to the API with utils/excepti
 
 import uuid
 import logging
-from typing import TypeVar, Generic, Type, Any
+from typing import Any
 
 from django.db import models
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=models.Model)
+class BaseRepository[T: models.Model]:
+    model: type[T]
 
-
-class BaseRepository(Generic[T]):
-    model: Type[T]
-
-    def __init__(self, model: Type[T]):
+    def __init__(self, model: type[T]):
         self.model = model
 
 

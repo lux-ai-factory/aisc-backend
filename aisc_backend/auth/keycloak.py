@@ -17,7 +17,6 @@ import logging
 import jwt
 from jwt import PyJWKClient
 from django.conf import settings
-from ninja.errors import HttpError
 from ninja.security import HttpBearer
 
 logger = logging.getLogger(__name__)
@@ -54,30 +53,12 @@ def get_roles(claims: dict) -> list[str]:
     """
     return claims.get("realm_access", {}).get("roles", [])
 
-#: The header oauth2-proxy sets when it has vouched for a request. The gateway
-#: holds the session, refreshes it, and knows who is behind the request; a page
-#: behind it therefore need not keep a second session of its own, and when it
-#: does not, this is where the token arrives.
-GATEWAY_TOKEN_HEADER = "X-Auth-Request-Access-Token"
-
-
 class KeycloakAuth(HttpBearer):
     """
     django-ninja bearer auth. `token` is the string after 'Bearer ' (ninja extracts it).
     Contract: return TRUTHY -> request passes (value becomes request.auth); return None -> 401.
 
-    The token may arrive in the Authorization header, from a page that holds one,
-    or in the gateway's header, from the session the gateway already has. Both
-    are the same session and are verified the same way; a request carrying
-    neither is refused.
     """
-
-    def __call__(self, request):
-        found = super().__call__(request)
-        if found is not None:
-            return found
-        token = request.headers.get(GATEWAY_TOKEN_HEADER, "")
-        return self.authenticate(request, token) if token else None
 
     def authenticate(self, request, token):
         # if authenticator is disabled, allow all requests
@@ -116,9 +97,6 @@ def require_role(role: str) -> KeycloakAuth:
             # enforce the role
             if role in get_roles(claims):
                 return claims
-            # A verified token that lacks the role is 403, not 401. 401 invites
-            # the client to sign in again, which cannot help, and it makes a
-            # permissions problem read as a session problem in the logs.
-            raise HttpError(403, f"this needs the {role!r} role")
+            return None                                     # valid token, missing role -> 401
 
     return _RoleRequired()

@@ -106,7 +106,7 @@ def general_setting_to_variables(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("aisc_backend", "0019_alter_derived_table_alter_direct_table"),
+        ("aisc_backend", "0013_projectsetting_pluginconfigsetting_and_more"),
     ]
 
     operations = [

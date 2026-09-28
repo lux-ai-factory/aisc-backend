@@ -31,11 +31,13 @@ from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
 from aisc_backend.routers.internal import router as internal_router
 from aisc_backend.routers.project_config import router as project_config_router
+from aisc_backend.routers.platform_project import router as platform_project_router
 
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from aisc_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
+from aisc_backend import deployment
 
 # Deny-by-default: KeycloakAuth() is the API-wide default, so EVERY endpoint requires a valid token.
 # (KeycloakAuth lets everyone through while AUTH_ENABLED is False, so dev is unaffected; in prod with
@@ -48,6 +50,9 @@ v1_router = Router()
 
 v1_router.add_router("/app", app_router)
 # Our endpoints
+if deployment.is_configurator():
+    # The engine's row for a platform project; before /projects so its path is matched first.
+    v1_router.add_router("/projects/for-platform", platform_project_router)
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/components", component_router)
 v1_router.add_router("/evaluations", evaluation_router)
@@ -63,6 +68,17 @@ api.add_router("/v1/", v1_router)
 api.add_router("/v1/internal", internal_router)
 
 
-urlpatterns = [
+if deployment.is_standalone():
+    # Sean's login: the admin site and allauth. The Configurator signs people in at its gateway.
+    from django.contrib import admin
+
+    urlpatterns = [
+        path("admin/", admin.site.urls),
+        path("_allauth/", include("allauth.headless.urls")),
+    ]
+else:
+    urlpatterns = []
+
+urlpatterns += [
     path("api/", api.urls),
 ]

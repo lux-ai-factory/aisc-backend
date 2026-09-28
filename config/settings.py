@@ -14,7 +14,15 @@ from corsheaders.defaults import default_headers
 from environs import env
 from django.core.management.utils import get_random_secret_key
 
+from aisc_backend import deployment
+
+empty_str_to_none = lambda v: v if v and v.strip() else None
+
 env.read_env()
+
+_deployment_env = deployment.settings_source(lambda name: env.str(name, default=None))
+deployment.check_environment(_deployment_env)
+AISC_DEPLOYMENT = deployment.mode(_deployment_env)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -32,31 +40,40 @@ DEBUG = env.bool("DEBUG", False)
 # Application definition
 
 INSTALLED_APPS = [
-     # Django core. No accounts, sessions or admin site: people sign in once, at
-     # the gateway, and the API reads who they are from its token (KeycloakAuth).
-     # contenttypes stays because migration 0004 depends on it.
+     # Django core
+    'django.contrib.admin',
+    'django.contrib.auth',
     'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
 
     # Third party
     'corsheaders',
+    'allauth',
+    'allauth.account',
+    'allauth.headless',
+    'ninja_jwt',
 
     # Local
     'aisc_backend'
 ]
 
+SITE_ID = 1
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-    # Isolation I7.2: every /api/* call names its project (X-AISC-Project); the
-    # door checks the caller may enter it, then opens that project's database.
-    'aisc_backend.project_door.ProjectDoor',
 
     'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
+    'allauth.account.middleware.AccountMiddleware',
     'ninja.compatibility.files.fix_request_files_middleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
@@ -71,6 +88,8 @@ TEMPLATES = [
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
             ],
         },
     },
@@ -82,77 +101,73 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# Isolation 2026-09-25 (01-specs.md I7.1): every project has its own database,
-# `project_<pid without hyphens>`, and the engine's tables live in its schema
-# `engine` there. On Postgres the engine therefore has no database of its own:
-#
-# - `default` is Django's dummy backend, so a query that was not routed to an
-#   admitted project fails instead of landing somewhere;
-# - `platform` is a raw-SQL connection to the platform database, search_path
-#   `core`, read only by the membership check and the project-name lookup;
-# - one alias per project database, registered on first use from
-#   PROJECT_DATABASE_TEMPLATE by aisc_backend.projectdb, whose router sends every
-#   ORM read, write and migration to the alias admitted for the current request.
-#
-# DB_NAME names only the platform database. On sqlite (a laptop, the unit test
-# runner) there is one database, as before: see _single_database() and
-# config/settings_single_database.py.
-DB_SCHEMA = env("DB_SCHEMA", "")
-_db_engine = env("DB_ENGINE", "django.db.backends.sqlite3")
-PROJECT_DATABASES = "postgresql" in _db_engine
-
-
-def _single_database() -> dict:
-    """The one database of a laptop or a test run (the layout before isolation).
-
-    A search path is a Postgres idea; the sqlite the test runner builds has no
-    schemas and rejects the option outright.
-    """
-    options = (
-        {"options": f"-c search_path={DB_SCHEMA},core"}
-        if DB_SCHEMA and "postgresql" in _db_engine
-        else {}
-    )
-    return {
-        "ENGINE": _db_engine,
+DATABASES = {
+    'default': {
+        "ENGINE": env("DB_ENGINE", "django.db.backends.sqlite3"),
         "NAME": env("DB_NAME", BASE_DIR / "db.db"),
         "USER": env("DB_USER", ""),
         "PASSWORD": env("DB_PASSWORD", ""),
         "HOST": env("DB_HOST", ""),
         "PORT": env("DB_PORT", ""),
-        "OPTIONS": options,
     }
+}
+DATABASE_ROUTERS = []
+PROJECT_DATABASE_TEMPLATE = None
+# One database per project: the Configurator on Postgres (Ruling 7: read through
+# _deployment_env, so a value set in .env counts). Standalone is always one database.
+PROJECT_DATABASES = deployment.project_databases(_deployment_env)
 
 
-if PROJECT_DATABASES:
-    DATABASES = {
-        "default": {"ENGINE": "django.db.backends.dummy"},
-        "platform": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": env("DB_NAME", "platform"),
-            "USER": env("DB_USER", ""),
-            "PASSWORD": env("DB_PASSWORD", ""),
-            "HOST": env("DB_HOST", ""),
-            "PORT": env("DB_PORT", ""),
-            "OPTIONS": {"options": "-c search_path=core"},
-            "CONN_MAX_AGE": 0,
-        },
-    }
-    # Copied for each project database, with NAME = project_<hex>.
-    PROJECT_DATABASE_TEMPLATE = {
-        "ENGINE": "django.db.backends.postgresql",
-        "USER": env("DB_USER", ""),
-        "PASSWORD": env("DB_PASSWORD", ""),
-        "HOST": env("DB_HOST", ""),
-        "PORT": env("DB_PORT", ""),
-        "OPTIONS": {"options": f"-c search_path={DB_SCHEMA or 'engine'}"},
-        "CONN_MAX_AGE": 0,
-    }
-    DATABASE_ROUTERS = ["aisc_backend.projectdb.ProjectDatabaseRouter"]
-else:
-    DATABASES = {"default": _single_database()}
-    PROJECT_DATABASE_TEMPLATE = None
-    DATABASE_ROUTERS = []
+if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+    # The Configurator owns projects and sign-in: no login of our own (migration
+    # 0019 dropped its tables, and Django's accounts, sessions and admin with them,
+    # so their apps must not come back and remake them), one database per project
+    # behind the door, memberships from the platform.
+    _NO_LOGIN_APPS = ("django.contrib.admin", "django.contrib.auth", "django.contrib.sessions",
+                      "django.contrib.messages")
+    INSTALLED_APPS = [a for a in INSTALLED_APPS
+                      if a not in _NO_LOGIN_APPS and not a.startswith(("allauth", "ninja_jwt"))]
+    # The door right after CORS, as on the definitive branch (isolation I7.2: every
+    # /api/* call names its project in X-AISC-Project).
+    MIDDLEWARE = [m for m in MIDDLEWARE
+                  if "allauth" not in m and not m.startswith(("django.contrib.sessions.",
+                                                               "django.contrib.auth.",
+                                                               "django.contrib.messages."))]
+    MIDDLEWARE.insert(MIDDLEWARE.index("corsheaders.middleware.CorsMiddleware") + 1,
+                      "aisc_backend.project_door.ProjectDoor")
+    TEMPLATES[0]["OPTIONS"]["context_processors"] = [
+        c for c in TEMPLATES[0]["OPTIONS"]["context_processors"]
+        if not c.startswith(("django.contrib.auth.", "django.contrib.messages."))]
+    if PROJECT_DATABASES:
+        from aisc_backend.projectdb import configurator_databases
+        DATABASES, DATABASE_ROUTERS, PROJECT_DATABASE_TEMPLATE = configurator_databases(env)
+
+
+# Password validation
+# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+
+AUTHENTICATION_BACKENDS = [
+    # Needed to login by username in Django admin, regardless of `allauth`
+    'django.contrib.auth.backends.ModelBackend',
+
+    # `allauth` specific authentication methods, such as login by email
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
 
 
 # Internationalization
@@ -184,8 +199,9 @@ if ENABLE_SSL_PROXY:
 CORS_ALLOW_CREDENTIALS = True
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 CORS_ALLOWED_ORIGINS = env.list('BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
-# Isolation I7.4: the SPA names its project in this header on every call.
-CORS_ALLOW_HEADERS = (*default_headers, "x-aisc-project")
+if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+    # Isolation I7.4: the SPA names its project in this header on every call.
+    CORS_ALLOW_HEADERS = (*default_headers, "x-aisc-project")
 CRSF_TRUSTED_ORIGINS = env.list('BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
 
 
@@ -195,6 +211,33 @@ CRSF_TRUSTED_ORIGINS = env.list('BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_O
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# --- allauth (headless) ---
+ACCOUNT_LOGIN_METHODS =  {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"   # must verify before using app
+
+HEADLESS_ONLY = True                       # disable server-rendered pages
+HEADLESS_FRONTEND_URLS = {
+    "account_confirm_email": "/account/verify-email/{key}",
+    "account_reset_password": "/account/password/reset",
+    "account_signup": "/account/signup",
+}
+# show OpenAPI spec for headless endpoints (handy in dev)
+HEADLESS_SERVE_SPECIFICATION = True
+HEADLESS_SPECIFICATION_TEMPLATE_NAME = "headless/spec/swagger_cdn.html"
+
+# custom token strategy class to additionally return JWT on allauth login
+HEADLESS_TOKEN_STRATEGY = "config.jwt.SessionAndJWTStrategy"
+
+# Dev email: print verification/reset emails to console
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+
+# --- Ninja JWT ---
+NINJA_JWT = {
+    "ACCESS_TOKEN_LIFETIME": 30 * 60,
+    "REFRESH_TOKEN_LIFETIME": 7 * 24 * 3600
+}
 
 # --- Keycloak auth (read by aisc_backend.auth.keycloak) ---
 # AUTH_ENABLED gates the Keycloak bearer auth; while False the API behaves as before.
@@ -243,6 +286,6 @@ CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 PLUGIN_PATH = env('PLUGIN_PATH', '')
 PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
-PACKAGE_REGISTRY_USER = env('PACKAGE_REGISTRY_USER', '')
-PACKAGE_REGISTRY_PASSWORD = env('PACKAGE_REGISTRY_PASSWORD', '')
+PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
+PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))
 PACKAGE_REGISTRY_INDEX = env('PACKAGE_REGISTRY_INDEX', '')

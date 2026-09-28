@@ -26,7 +26,6 @@ class ProjectConfig(Base):
     json_value = models.JSONField(blank=True, default=dict)
 
     class Meta:
-        db_table = "project_config"
         constraints = [
             models.UniqueConstraint(fields=("project", "category", "key"), name="unique_project_config_key")
         ]

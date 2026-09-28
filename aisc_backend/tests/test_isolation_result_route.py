@@ -23,7 +23,7 @@ import os
 import unittest
 import unittest.mock as mock
 
-from aisc_backend.tests.isolation_support import SUPERUSER_URL_VAR, ApiCaller, Cluster, database_name, superuser_url
+from aisc_backend.tests.isolation_support import configurator_only, SUPERUSER_URL_VAR, ApiCaller, Cluster, database_name, superuser_url
 from aisc_backend.tests.test_isolation_engine_db import SKIP_REASON, _migrate_projects, _seed
 
 _WORLD: dict | None = None
@@ -60,6 +60,7 @@ class _FakePlugin:
 
 
 @unittest.skipUnless(os.environ.get(SUPERUSER_URL_VAR), SKIP_REASON)
+@configurator_only
 class TheResultRouteNoLongerLeaks(unittest.TestCase):
     def setUp(self):
         global _WORLD, _WORLD_ERROR

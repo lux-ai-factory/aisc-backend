@@ -16,28 +16,6 @@ from aisc_backend.models import (
 )
 from aisc_backend.routers.project import router as project_router
 
-import unittest.mock as mock
-
-from aisc_backend.auth import keycloak
-
-#: These tests are about the routes, not about Keycloak. The switch is pinned
-#: off for the module, as in test_project_router: the merged branch puts
-#: KeycloakAuth on these routers, and the suite runs where AUTH_ENABLED=true.
-_auth_off = None
-
-#: A token that is not meant to verify: with the switch off, any bearer passes.
-SIGNED_IN = {"Authorization": "Bearer development"}
-
-
-def setUpModule():
-    global _auth_off
-    _auth_off = mock.patch.object(keycloak, "AUTH_ENABLED", False)
-    _auth_off.start()
-
-
-def tearDownModule():
-    _auth_off.stop()
-
 client = TestAsyncClient(project_router)
 
 
@@ -89,7 +67,7 @@ class ProjectEvaluationsSerializationTestCase(TestCase):
             value={},
         )
 
-        response = await client.get(f"/{project.pid}/evaluations", params={"status": "Pending"}, headers=SIGNED_IN)
+        response = await client.get(f"/{project.pid}/evaluations", params={"status": "Pending"})
 
         self.assertEqual(200, response.status_code)
         self.assertEqual(len(response.data), 1)

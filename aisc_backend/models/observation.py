@@ -16,6 +16,3 @@ class Observation(Base):
 
     def __str__(self):
         return f'{self.observer} ({self.created_at})'
-
-    class Meta:
-        db_table = "observation"

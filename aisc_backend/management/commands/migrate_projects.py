@@ -28,19 +28,22 @@ from aisc_backend import projectdb
 ENGINE_MIGRATE_LOCK = 0x656E67696E65
 
 #: I2.6, the engine row: what report_ro and dashboard_ro may read. Nothing on
-#: project_config, plugin_config_project_config, plugin_config.config or the
-#: bookkeeping tables, and no default privileges.
+#: aisc_backend_projectconfig, aisc_backend_pluginconfigprojectconfig,
+#: aisc_backend_pluginconfig.config or the bookkeeping tables, and no default
+#: privileges. The tables keep Sean's names (aisc_backend_<model>).
 READER_GRANTS = """
 DO $$
 DECLARE r text;
 BEGIN
   FOREACH r IN ARRAY ARRAY['report_ro','dashboard_ro'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-      EXECUTE format('GRANT SELECT ON engine.project, engine.ai_system, engine.ai_component, engine.evaluation,
-        engine.evaluation_plugin, engine.evaluation_input, engine.plugin, engine.observation, engine.measurement,
-        engine.metric, engine.direct, engine.derived, engine.metric_category, engine.metric_category_metrics,
-        engine.artifact TO %I', r);
-      EXECUTE format('GRANT SELECT (id, plugin_id) ON engine.plugin_config TO %I', r);
+      EXECUTE format('GRANT SELECT ON engine.aisc_backend_project, engine.aisc_backend_aisystem,
+        engine.aisc_backend_aicomponent, engine.aisc_backend_evaluation, engine.aisc_backend_evaluationplugin,
+        engine.aisc_backend_evaluationinput, engine.aisc_backend_plugin, engine.aisc_backend_observation,
+        engine.aisc_backend_measurement, engine.aisc_backend_metric, engine.aisc_backend_direct,
+        engine.aisc_backend_derived, engine.aisc_backend_metriccategory, engine.aisc_backend_metriccategory_metrics,
+        engine.aisc_backend_artifact TO %I', r);
+      EXECUTE format('GRANT SELECT (id, plugin_id, name) ON engine.aisc_backend_pluginconfig TO %I', r);
     END IF;
   END LOOP;
 END $$;

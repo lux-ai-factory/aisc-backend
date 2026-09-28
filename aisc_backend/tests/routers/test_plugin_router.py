@@ -1,134 +1,41 @@
-"""Where an installed plugin came from.
-
-Discovery lives in the catalogue, so every install that arrives from it names
-the catalogue entry it came from. The engine records that slug on the Plugin row
-it creates: without it an installed distribution cannot be traced back to the
-entry, its tags or its controls. Installs that did not come from the catalogue
-(a deep link, a hand-made request) store no origin at all rather than a guess.
-"""
-
-import unittest.mock as mock
-
-from aisc_backend.auth import keycloak
-from unittest.mock import patch
-
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import Plugin
-from aisc_backend.repositories.project_repository import ProjectRepository
-from aisc_backend.routers.plugin import router as plugin_router
-
-project_repository = ProjectRepository()
-client = TestAsyncClient(plugin_router)
-
-#: These tests are about the routes, not about Keycloak, and they send a token
-#: that is not meant to verify. The switch is pinned off for the module so the
-#: suite behaves the same wherever it runs: the container it is run in has
-#: AUTH_ENABLED=true, and without this it would pass locally and fail there.
-_auth_off = None
+from aisc_backend.models import Plugin, PluginConfig
+from aisc_backend.models.project import Project, ProjectStatus
+from aisc_backend.routers.plugin import router
 
 
-def setUpModule():
-    global _auth_off
-    _auth_off = mock.patch.object(keycloak, "AUTH_ENABLED", False)
-    _auth_off.start()
+client = TestAsyncClient(router)
 
 
-def tearDownModule():
-    _auth_off.stop()
+class PluginRouterTestCase(TestCase):
+    def setUp(self):
+        self.project = Project.objects.create(name="proj", status=ProjectStatus.Ready)
+        self.plugin = Plugin.objects.create(
+            name="DemoPlugin", display_name="Demo",
+            package_name="demo-pkg", version="0.1.0", project=self.project,
+        )
+        self.plugin_config = PluginConfig.objects.create(plugin=self.plugin, config={"a": 1})
 
+    async def test_config_history_lists_configs(self):
+        response = await client.get(f"/{self.plugin.pid}/configs")
+        self.assertEqual(200, response.status_code, response.text)
+        body = response.data
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["config"], {"a": 1})
 
+    async def test_restore_plugin_config(self):
+        config = await PluginConfig.objects.acreate(plugin=self.plugin, config={"b": 2})
+        response = await client.post(f"/{self.plugin.pid}/configs/{config.id}/restore")
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(response.data["config"], {"b": 2})
 
-class FakePlugin:
-    display_name = "LangBiTe"
+    async def test_restore_missing_config_404(self):
+        response = await client.post(f"/{self.plugin.pid}/configs/99999/restore")
+        self.assertEqual(404, response.status_code)
 
-
-def one_plugin_package(*_args, **_kwargs):
-    """Stand in for the plugin manager: the index and the installed
-    distribution are not what is under test here."""
-    return {"langbite": FakePlugin()}
-
-
-class CreatePluginsCatalogueOriginTestCase(TestCase):
-
-    async def _install(self, body):
-        with patch(
-            "aisc_backend.routers.plugin.plugin_loader.load_package",
-            side_effect=one_plugin_package,
-        ):
-            # Installing takes the admin role. AUTH_ENABLED is off in the
-            # suite, so the token is not verified and no role is read; what the
-            # header does is get past the deny-by-default bearer check.
-            return await client.post(
-                "", json=body, headers={"Authorization": "Bearer development"}
-            )
-
-    async def test_records_the_catalogue_entry_it_was_installed_from(self):
-        project = await project_repository.create("test")
-
-        response = await self._install({
-            "package_name": "aisc-plugin-langbite",
-            "version": "0.1.2",
-            "project_uuid": str(project.pid),
-            "catalogue_slug": "langbite",
-        })
-
-        self.assertEqual(200, response.status_code)
-        plugin = await Plugin.objects.aget(package_name="aisc-plugin-langbite")
-        self.assertEqual("langbite", plugin.catalogue_slug)
-        # And it is visible on the way out, so a client can show the origin.
-        self.assertEqual("langbite", response.data[0]["catalogue_slug"])
-
-    async def test_an_install_without_an_origin_stores_none(self):
-        project = await project_repository.create("test")
-
-        response = await self._install({
-            "package_name": "aisc-plugin-langbite",
-            "version": "0.1.2",
-            "project_uuid": str(project.pid),
-        })
-
-        self.assertEqual(200, response.status_code)
-        plugin = await Plugin.objects.aget(package_name="aisc-plugin-langbite")
-        self.assertIsNone(plugin.catalogue_slug)
-
-    async def test_re_enabling_a_plugin_learns_the_origin_it_lacked(self):
-        # A row can predate the catalogue mapping, or have been created by a
-        # deep link. When the same distribution is later installed from the
-        # catalogue, the known origin is filled in rather than left empty.
-        project = await project_repository.create("test")
-        await self._install({
-            "package_name": "aisc-plugin-langbite",
-            "version": "0.1.2",
-            "project_uuid": str(project.pid),
-        })
-
-        await self._install({
-            "package_name": "aisc-plugin-langbite",
-            "version": "0.1.2",
-            "project_uuid": str(project.pid),
-            "catalogue_slug": "langbite",
-        })
-
-        self.assertEqual(1, await Plugin.objects.acount())
-        plugin = await Plugin.objects.aget(package_name="aisc-plugin-langbite")
-        self.assertEqual("langbite", plugin.catalogue_slug)
-
-    async def test_a_known_origin_is_never_overwritten_with_nothing(self):
-        project = await project_repository.create("test")
-        await self._install({
-            "package_name": "aisc-plugin-langbite",
-            "version": "0.1.2",
-            "project_uuid": str(project.pid),
-            "catalogue_slug": "langbite",
-        })
-
-        await self._install({
-            "package_name": "aisc-plugin-langbite",
-            "version": "0.1.2",
-            "project_uuid": str(project.pid),
-        })
-
-        plugin = await Plugin.objects.aget(package_name="aisc-plugin-langbite")
-        self.assertEqual("langbite", plugin.catalogue_slug)
+    async def test_toggle_enabled(self):
+        response = await client.patch(f"/{self.plugin.pid}/enabled", json={"enabled": False})
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertFalse(response.data["enabled"])

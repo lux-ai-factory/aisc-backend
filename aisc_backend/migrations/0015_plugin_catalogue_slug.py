@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc_backend', '0013_projectsetting_pluginconfigsetting_and_more'),
+        ('aisc_backend', '0014_ai_system_and_project_config_squashed'),
     ]
 
     operations = [

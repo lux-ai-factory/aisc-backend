@@ -38,7 +38,6 @@ class Plugin(Base):
         return self.current_config is not None
 
     class Meta:
-        db_table = "plugin"
         unique_together = ("name", "project", "version", "package_name")
 
     def __str__(self):
@@ -58,7 +57,6 @@ class PluginConfig(Base):
     )
 
     class Meta:
-        db_table = "plugin_config"
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -77,7 +75,6 @@ class PluginConfigProjectConfig(Base):
     plugin_config_key = models.CharField(max_length=255)
 
     class Meta:
-        db_table = "plugin_config_project_config"
         constraints = [
             models.UniqueConstraint(
                 fields=("plugin_config", "plugin_config_key"),
@@ -103,7 +100,6 @@ class EvaluationInput(Base):
     value = models.JSONField(blank=True, default=dict)
 
     class Meta:
-        db_table = "evaluation_input"
         unique_together = ("evaluation_plugin", "name")
 
 
@@ -149,6 +145,3 @@ class EvaluationPlugin(Base):
 
     def get_artifacts(self):
         return self.artifacts.all()
-
-    class Meta:
-        db_table = "evaluation_plugin"

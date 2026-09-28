@@ -61,6 +61,51 @@ class MigrationFailed(Exception):
     """Migrating a project database failed; the next open tries again."""
 
 
+def configurator_databases(env) -> tuple[dict, list[str], dict]:
+    """The databases of a Configurator engine on Postgres (isolation I7.1), for config/settings.py.
+
+    Every project has its own database, `project_<pid without hyphens>`, and the
+    engine's tables live in its schema `engine` there, so the engine has no database
+    of its own:
+
+    - `default` is Django's dummy backend, so a query that was not routed to an
+      admitted project fails instead of landing somewhere;
+    - `platform` is a raw-SQL connection to the platform database, search_path
+      `core`, read only by the membership check and the project-name lookup;
+    - one alias per project database, registered on first use from the returned
+      template by alias_for(), whose router sends every ORM read, write and
+      migration to the alias admitted for the current request.
+
+    DB_NAME names only the platform database. `env` is the settings' environs reader.
+    Returns (DATABASES, DATABASE_ROUTERS, PROJECT_DATABASE_TEMPLATE).
+    """
+    db_schema = env("DB_SCHEMA", "")
+    databases = {
+        "default": {"ENGINE": "django.db.backends.dummy"},
+        "platform": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("DB_NAME", "platform"),
+            "USER": env("DB_USER", ""),
+            "PASSWORD": env("DB_PASSWORD", ""),
+            "HOST": env("DB_HOST", ""),
+            "PORT": env("DB_PORT", ""),
+            "OPTIONS": {"options": "-c search_path=core"},
+            "CONN_MAX_AGE": 0,
+        },
+    }
+    # Copied for each project database, with NAME = project_<hex>.
+    template = {
+        "ENGINE": "django.db.backends.postgresql",
+        "USER": env("DB_USER", ""),
+        "PASSWORD": env("DB_PASSWORD", ""),
+        "HOST": env("DB_HOST", ""),
+        "PORT": env("DB_PORT", ""),
+        "OPTIONS": {"options": f"-c search_path={db_schema or 'engine'}"},
+        "CONN_MAX_AGE": 0,
+    }
+    return databases, ["aisc_backend.projectdb.ProjectDatabaseRouter"], template
+
+
 _settings_lock = threading.Lock()
 _migrate_locks: dict[str, threading.Lock] = {}
 _migrate_locks_lock = threading.Lock()

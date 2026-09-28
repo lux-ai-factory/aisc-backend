@@ -2,9 +2,9 @@
 
 Each platform project has its own database, and its saved AI card versions are
 the rows of `project.system` there. An evaluation records the version it ran
-under, so `evaluation.system_id` gets its foreign key to that table, with the
-rule it had before (ON DELETE SET NULL). Nothing else changes: the engine's table
-definitions stay as they are, only where they live changes.
+under, so `aisc_backend_evaluation.system_id` gets its foreign key to that
+table, with the rule it had before (ON DELETE SET NULL). Nothing else changes:
+the engine's table definitions stay as they are, only where they live changes.
 
 Postgres only, and only when `project.system` exists (a project database made by
 the platform's template); on sqlite, or on a database without it, this does
@@ -18,9 +18,9 @@ DO $$
 BEGIN
   IF to_regclass('project.system') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_constraint
-                     WHERE conrelid = 'evaluation'::regclass
+                     WHERE conrelid = 'aisc_backend_evaluation'::regclass
                        AND conname = 'aisc_backend_evaluation_system_id_fkey') THEN
-    ALTER TABLE evaluation ADD CONSTRAINT aisc_backend_evaluation_system_id_fkey
+    ALTER TABLE aisc_backend_evaluation ADD CONSTRAINT aisc_backend_evaluation_system_id_fkey
       FOREIGN KEY (system_id) REFERENCES project.system (pid) ON DELETE SET NULL;
   END IF;
 END $$;
@@ -36,7 +36,7 @@ def forwards(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("aisc_backend", "0024_no_login_of_its_own"),
+        ("aisc_backend", "0019_no_login_of_its_own"),
     ]
 
     operations = [
