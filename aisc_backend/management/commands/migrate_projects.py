@@ -43,7 +43,7 @@ BEGIN
         engine.aisc_backend_measurement, engine.aisc_backend_metric, engine.aisc_backend_direct,
         engine.aisc_backend_derived, engine.aisc_backend_metriccategory, engine.aisc_backend_metriccategory_metrics,
         engine.aisc_backend_artifact TO %I', r);
-      EXECUTE format('GRANT SELECT (id, plugin_id) ON engine.aisc_backend_pluginconfig TO %I', r);
+      EXECUTE format('GRANT SELECT (id, plugin_id, name) ON engine.aisc_backend_pluginconfig TO %I', r);
     END IF;
   END LOOP;
 END $$;

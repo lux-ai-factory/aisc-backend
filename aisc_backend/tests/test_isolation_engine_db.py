@@ -281,7 +281,8 @@ class TheEngineReaderGrants(PostgresCase):
         for role in ("report_ro", "dashboard_ro"):
             with self.subTest(role=role):
                 self.assertFalse(self._can(role, "aisc_backend_pluginconfig"), "no table-wide SELECT")
-                for column, allowed in (("id", True), ("plugin_id", True), ("config", False)):
+                # the configuration name is printed by the report's Test runs block (2026-09-28); settings never
+                for column, allowed in (("id", True), ("plugin_id", True), ("name", True), ("config", False)):
                     got = self.cluster.rows(self.w["A"]["database"],
                                             "SELECT has_column_privilege(%s, 'engine.aisc_backend_pluginconfig', %s, 'SELECT')",
                                             (role, column))[0][0]
