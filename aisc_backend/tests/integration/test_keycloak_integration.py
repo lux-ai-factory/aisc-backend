@@ -1,50 +1,43 @@
 """
-INTEGRATION tests — require a RUNNING Keycloak with the `aisc` realm.
-Auto-skips if Keycloak isn't reachable. Uses REAL password-grant tokens against the /me router.
+Tests for the Keycloak-auth-protected /me endpoints — run HERMETICALLY with a
+mocked token layer (AUTH_ENABLED + verify_token), so they execute in CI instead
+of silently skipping.
 
-Run (Keycloak up), with settings pointing at the SAME host the tokens come from:
-    AUTH_ENABLED=true \
-    KEYCLOAK_ISSUER=http://localhost:8081/realms/aisc \
-    KEYCLOAK_JWKS_URL=http://localhost:8081/realms/aisc/protocol/openid-connect/certs \
-    uv run manage.py test aisc_backend.tests.integration.test_keycloak_integration
+Exercises the deny-by-default gates against the REAL routers as ASGI:
+  - anonymous -> 401
+  - admin token -> 200 with roles, /me/admin allowed
+  - primary-user token -> allowed on /me, blocked on /me/admin
 """
-import json
-import os
-import unittest
-import urllib.parse
-import urllib.request
+import unittest.mock as mock
 
 from django.test import SimpleTestCase, AsyncClient
 from ninja.testing import TestClient
 
 from aisc_backend.routers.me import router as me_router
 
-KC_REALM = os.environ.get("KC_REALM", "http://localhost:8081/realms/aisc")
-TOKEN_URL = f"{KC_REALM}/protocol/openid-connect/token"
+
+def _claims_for(token: str) -> dict:
+    if token == "admin":
+        return {"preferred_username": "admin", "realm_access": {"roles": ["admin", "primary-user"]}}
+    return {"preferred_username": "user", "realm_access": {"roles": ["primary-user"]}}
 
 
-def _get_token(username: str, password: str) -> str:
-    body = urllib.parse.urlencode({
-        "client_id": "aisc-webapp",
-        "grant_type": "password",
-        "username": username,
-        "password": password,
-    }).encode()
-    with urllib.request.urlopen(urllib.request.Request(TOKEN_URL, data=body)) as r:
-        return json.load(r)["access_token"]
+def _get_token(username: str, _password: str) -> str:
+    return username
 
 
-def _keycloak_up() -> bool:
-    try:
-        urllib.request.urlopen(KC_REALM + "/.well-known/openid-configuration", timeout=2)
-        return True
-    except Exception:
-        return False
-
-
-@unittest.skipUnless(_keycloak_up(), "Keycloak not reachable on KC_REALM")
 class KeycloakIntegrationTest(SimpleTestCase):
+
     def setUp(self):
+        self.auth_enabled = mock.patch("aisc_backend.auth.keycloak.AUTH_ENABLED", True)
+        self.auth_enabled.start()
+        self.addCleanup(self.auth_enabled.stop)
+        self.verify_token = mock.patch(
+            "aisc_backend.auth.keycloak.verify_token",
+            side_effect=lambda token: _claims_for(token),
+        )
+        self.verify_token.start()
+        self.addCleanup(self.verify_token.stop)
         self.client = TestClient(me_router)
 
     def test_no_token_returns_401(self):
