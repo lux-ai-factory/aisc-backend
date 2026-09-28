@@ -25,8 +25,10 @@ the module but not its functions):
   (three internal routes have no evaluation in their path); the door checks the
   ticket against it and, when the path names an evaluation, requires both equal;
 - the Celery message of the start route is
-  `aisc_eval.celery_tasks.run_evaluation` with args
-  `[platform_pid, evaluation_pid, ticket]`. How the backend builds it is left to
+  `aisc_eval.celery_tasks.run_evaluation` with Sean's args `[evaluation_pid]`
+  and the run in its `aisc_run` header:
+  `{"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket}`
+  (adapt Task 4, 2026-09-28). How the backend builds it is left to
   stage 4 (routers/evaluation.py is a frozen Sean file, I7.12), so these tests
   read the message, not the router's source.
 """
@@ -584,7 +586,11 @@ class TheStartRouteMintsTheTicket(TestCase):
         name = send.call_args.args[0] if send.call_args.args else send.call_args.kwargs.get("name")
         args = send.call_args.kwargs.get("args") or send.call_args.args[1]
         self.assertEqual(name, "aisc_eval.celery_tasks.run_evaluation")
-        self.assertEqual([str(a) for a in args], [A_PID, str(evaluation_pid), ticket(A_PID, evaluation_pid)],
-                         "I7.3: the task is run_evaluation(platform_pid, evaluation_pid, ticket)")
+        self.assertEqual([str(a) for a in args], [str(evaluation_pid)],
+                         "I7.3: the task is Sean's run_evaluation(evaluation_pid)")
+        self.assertEqual(send.call_args.kwargs.get("headers"),
+                         {"aisc_run": {"project": A_PID, "evaluation": str(evaluation_pid),
+                                       "ticket": ticket(A_PID, evaluation_pid)}},
+                         "I7.3: the run (project, evaluation, ticket) travels in the aisc_run header")
         self.assertNotRegex(repr(send.call_args), r"postgres|password|dbname",
                             "I7.3: a task never carries a DSN")

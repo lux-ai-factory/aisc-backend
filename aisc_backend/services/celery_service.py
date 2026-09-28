@@ -33,20 +33,24 @@ async def _platform_pid_of(evaluation_uuid: uuid.UUID) -> str:
 
 
 async def run_evaluation(evaluation_uuid: uuid.UUID):
-    """Dispatch a run.
+    """Dispatch a run: run_evaluation(evaluation_pid), as Sean's worker takes it, in both modes.
 
-    Standalone: run_evaluation(evaluation_pid), as Sean's worker takes it.
-    Configurator (I7.3): run_evaluation(platform_pid, evaluation_pid, ticket). The ticket binds
-    the run to its project and its evaluation; the worker sends it back on every internal call
-    and the door checks it. No DSN is sent: the door opens the project's database from the
-    platform pid.
+    Configurator (I7.3; adapt plan 2026-09-28, items 5 and 6): the run also travels in the
+    Celery message headers, under aisc_run: the platform pid, the evaluation pid and the
+    ticket that binds the run to both. The worker copies that header onto every task it
+    publishes and sends the three back on every internal call; the door checks them. No DSN
+    is sent: the door opens the project's database from the platform pid.
     """
     if not deployment.is_configurator():
         return celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid])
     platform_pid = await _platform_pid_of(evaluation_uuid)
     evaluation_pid = projectdb.normalise(evaluation_uuid)
     ticket = projectdb.run_ticket(platform_pid, evaluation_pid)
-    return celery.send_task(RUN_EVAL_TASK, args=[platform_pid, evaluation_pid, ticket])
+    return celery.send_task(
+        RUN_EVAL_TASK,
+        args=[evaluation_uuid],
+        headers={"aisc_run": {"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket}},
+    )
 
 
 async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProgress]:

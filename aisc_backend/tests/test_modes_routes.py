@@ -2,8 +2,8 @@
 
 Standalone is Sean's engine: it makes and lists its own projects, needs no
 project header, and the worker gets the evaluation pid alone. The configurator
-never makes a project (the launcher does), follows the platform's memberships,
-and hands the worker the platform pid and a run ticket.
+never makes a project (the launcher does) and follows the platform's memberships.
+What the worker is sent, in both modes, is in test_celery_dispatch.py.
 
 The mode is read from settings, like everything else that asks it.
 """
@@ -180,36 +180,6 @@ class InstallingAPluginAtTheDoor(DoorCase):
                                                              "Authorization": self.bearer()},
                                  {"package_name": "x", "version": "1", "project_uuid": str(uuid.uuid4())})
         self.assertEqual(response.status_code, 403)
-
-
-class StartingARun(TestCase):
-    """What the worker is sent."""
-
-    async def _dispatched_args(self):
-        from aisc_backend.models import Evaluation, EvaluationStatus, Project, ProjectStatus
-        from aisc_backend.services import celery_service
-
-        project = await Project.objects.acreate(name="p", status=ProjectStatus.Created,
-                                                platform_project_id=A_PID)
-        evaluation = await Evaluation.objects.acreate(project=project, status=EvaluationStatus.Pending)
-        send = mock.Mock(return_value=mock.Mock(task_id=str(uuid.uuid4())))
-        with mock.patch.object(celery_service.celery, "send_task", new=send):
-            await celery_service.run_evaluation(evaluation.pid)
-        return evaluation.pid, send.call_args.kwargs.get("args") or send.call_args.args[1]
-
-    @standalone_run
-    async def test_standalone_sends_the_evaluation_alone(self):
-        evaluation_pid, args = await self._dispatched_args()
-        self.assertEqual(args, [evaluation_pid])
-
-    @configurator_run
-    async def test_the_configurator_sends_the_project_and_a_ticket(self):
-        from aisc_backend import projectdb
-
-        evaluation_pid, args = await self._dispatched_args()
-        pid = projectdb.normalise(A_PID)
-        self.assertEqual(args, [pid, projectdb.normalise(evaluation_pid),
-                                projectdb.run_ticket(pid, projectdb.normalise(evaluation_pid))])
 
 
 @configurator_only
