@@ -32,6 +32,7 @@ from aisc_backend.routers.audit import router as audit_router
 from aisc_backend.routers.internal import router as internal_router
 from aisc_backend.routers.project_config import router as project_config_router
 from aisc_backend.routers.platform_project import router as platform_project_router
+from aisc_backend.routers.target_input import router as target_input_router
 
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
@@ -53,6 +54,9 @@ v1_router.add_router("/app", app_router)
 if deployment.is_configurator():
     # The engine's row for a platform project; before /projects so its path is matched first.
     v1_router.add_router("/projects/for-platform", platform_project_router)
+    # Every evaluation names its target (targets plan v2): before /plugins, so the evaluation
+    # form's input definitions come from here (the frozen handler's, plus `target`).
+    v1_router.add_router("/plugins", target_input_router)
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/components", component_router)
 v1_router.add_router("/evaluations", evaluation_router)
