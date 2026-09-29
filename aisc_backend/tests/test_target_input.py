@@ -49,6 +49,13 @@ class TheTargetInput(SimpleTestCase):
         self.assertEqual([d.name for d in out], ["dataset", "target"])
         self.assertEqual(out[-1].label, "Mine")
 
+    def test_en2_a_plugins_own_optional_target_is_required_here(self):
+        # O2: every evaluation names a target; a plugin's own declaration (optional, so standalone
+        # keeps working) is made required in configurator mode
+        own = InputDefinition(name="target", label="Mine", input_type=InputType.RESOURCE, required=False)
+        out, _ = self.definitions(DATASET, own)
+        self.assertEqual([(d.name, d.required, d.label) for d in out], [("dataset", True, "Dataset"), ("target", True, "Mine")])
+
     def test_en1_the_system_target_is_made_sure_of_so_there_is_always_one_to_pick(self):
         _, ensured = self.definitions(DATASET)
         ensured.assert_awaited_once()

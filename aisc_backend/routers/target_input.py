@@ -62,8 +62,11 @@ async def ensure_system_target() -> None:
 @router.get("/{plugin_pid}/input_definitions", response=list[InputDefinition])
 async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
     definitions = list(await frozen_input_definitions(request, plugin_pid))
-    if not _configurator() or any(d.name == TARGET for d in definitions):
+    if not _configurator():
         return definitions
+    if any(d.name == TARGET for d in definitions):
+        # a plugin's own target (declared optional, for standalone) is required here (O2)
+        return [d.model_copy(update={"required": True}) if d.name == TARGET else d for d in definitions]
     try:
         await ensure_system_target()
     except Exception:  # the definitions matter more than the mirror; the platform makes it too
