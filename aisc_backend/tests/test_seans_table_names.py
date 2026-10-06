@@ -66,6 +66,7 @@ class SeansTableNames(TestCase):
             "0019_no_login_of_its_own",
             "0020_the_database_is_the_project",
             "0021_engine_deployment_marker",
+            "0022_one_system_target_per_system",
         ])
 
 

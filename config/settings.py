@@ -14,6 +14,8 @@ from corsheaders.defaults import default_headers
 from environs import env
 from django.core.management.utils import get_random_secret_key
 
+import sys
+
 from aisc_backend import deployment
 
 empty_str_to_none = lambda v: v if v and v.strip() else None
@@ -23,6 +25,13 @@ env.read_env()
 _deployment_env = deployment.settings_source(lambda name: env.str(name, default=None))
 deployment.check_environment(_deployment_env)
 AISC_DEPLOYMENT = deployment.mode(_deployment_env)
+# The run tickets' key (projectdb.run_ticket), the backend's alone: never DJANGO_SECRET_KEY, which the eval
+# worker holds. The configurator refuses to start without it (deployment.check_environment); the test
+# runner gets one of its own.
+RUN_TICKET_KEY = (_deployment_env.get("RUN_TICKET_KEY") or "").strip() or (
+    get_random_secret_key() if sys.argv[1:2] == ["test"] else "")
+# How long a run ticket lasts: a day, longer than any run (code review 2026-10-06).
+RUN_TICKET_TTL_SECONDS = env.int("RUN_TICKET_TTL_SECONDS", default=24 * 60 * 60)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

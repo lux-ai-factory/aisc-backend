@@ -20,7 +20,7 @@ the module but not its functions):
   registers the alias on first use and returns its name, which is the database
   name `project_<hex>`;
 - `run ticket` = hex HMAC-SHA256 over `platform_pid + "." + evaluation_pid` with
-  settings.SECRET_KEY (DJANGO_SECRET_KEY), sent as `X-AISC-Run`;
+  RUN_TICKET_KEY (never DJANGO_SECRET_KEY, which the worker holds), sent as `X-AISC-Run`;
 - gap E-G1: every internal call also sends `X-AISC-Evaluation: <evaluation pid>`
   (three internal routes have no evaluation in their path); the door checks the
   ticket against it and, when the path names an evaluation, requires both equal;
@@ -41,7 +41,6 @@ import importlib
 import re
 import unittest.mock as mock
 import uuid
-from pathlib import Path
 
 from django.conf import settings
 from django.db import DatabaseError, connection
@@ -55,6 +54,8 @@ MIGRATIONS = BACKEND / "aisc_backend" / "migrations"
 # here, and the leaf is 0021_engine_deployment_marker.
 FK_MIGRATION = ("aisc_backend", "0020_the_database_is_the_project")
 NEW_LEAF = ("aisc_backend", "0021_engine_deployment_marker")
+#: The leaf since 2026-10-06: one system target per system (code review), on top of 0021.
+LEAF = ("aisc_backend", "0022_one_system_target_per_system")
 
 #: I7.7: these stay byte for byte as they are (their core blocks are already
 #: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (definitive's
@@ -65,10 +66,15 @@ UNCHANGED_MIGRATIONS = {
 }
 
 
-def ticket(platform_pid, evaluation_pid, key=None) -> str:
-    """I7.3: what the backend mints and the door checks."""
-    key = settings.SECRET_KEY if key is None else key
-    return hmac.new(key.encode(), f"{platform_pid}.{evaluation_pid}".encode(), hashlib.sha256).hexdigest()
+def ticket(platform_pid, evaluation_pid, key=None, expires=None) -> str:
+    """I7.3: what the backend mints and the door checks: `<expiry>.<HMAC over pid.evaluation.expiry>`
+    (the expiry since 2026-10-06)."""
+    import time
+
+    key = settings.RUN_TICKET_KEY if key is None else key
+    expires = int(time.time()) + 3600 if expires is None else expires
+    mac = hmac.new(key.encode(), f"{platform_pid}.{evaluation_pid}.{expires}".encode(), hashlib.sha256).hexdigest()
+    return f"{expires}.{mac}"
 
 
 def _projectdb(test):
@@ -106,10 +112,11 @@ class TheNewMigration(SimpleTestCase):
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_i7_12_the_leaf_is_0021(self):
-        """The same leaf as test_one_system_per_project.py (test_s1_0021_is_the_leaf)."""
+    def test_i7_12_the_leaf_is_0022_on_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_s1_0022_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
-        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [NEW_LEAF])
+        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [LEAF])
+        self.assertEqual({p.key for p in loader.graph.node_map[LEAF].parents}, {NEW_LEAF})
         parents = loader.graph.node_map[NEW_LEAF].parents
         self.assertEqual({p.key for p in parents}, {FK_MIGRATION})
         parents = loader.graph.node_map[FK_MIGRATION].parents
@@ -588,9 +595,11 @@ class TheStartRouteMintsTheTicket(TestCase):
         self.assertEqual(name, "aisc_eval.celery_tasks.run_evaluation")
         self.assertEqual([str(a) for a in args], [str(evaluation_pid)],
                          "I7.3: the task is Sean's run_evaluation(evaluation_pid)")
-        self.assertEqual(send.call_args.kwargs.get("headers"),
-                         {"aisc_run": {"project": A_PID, "evaluation": str(evaluation_pid),
-                                       "ticket": ticket(A_PID, evaluation_pid)}},
+        run = (send.call_args.kwargs.get("headers") or {}).get("aisc_run") or {}
+        self.assertEqual((run.get("project"), run.get("evaluation")), (A_PID, str(evaluation_pid)),
                          "I7.3: the run (project, evaluation, ticket) travels in the aisc_run header")
+        from aisc_backend import projectdb
+        self.assertTrue(projectdb.ticket_is_valid(A_PID, evaluation_pid, run.get("ticket")),
+                        "I7.3: the ticket is the one the door accepts for this project and evaluation")
         self.assertNotRegex(repr(send.call_args), r"postgres|password|dbname",
                             "I7.3: a task never carries a DSN")

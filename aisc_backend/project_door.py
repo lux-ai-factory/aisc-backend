@@ -101,6 +101,9 @@ _TASK_PATH = re.compile(r"^/api/v1/tasks/?([^/]+)/status$")
 #: Installing, removing or refreshing a plugin fetches a distribution and the engine then runs
 #: its code on a shared server, so in the Configurator it takes the realm role `admin`.
 _ADMIN_ROUTES = {("POST", "/api/v1/plugins"), ("DELETE", "/api/v1/plugins"), ("POST", "/api/v1/plugins/refresh")}
+#: Switching a plugin on or off (Sean's PATCH .../enabled) flips the flag DELETE flips: admin too, or an editor
+#: could switch back on a plugin an admin removed (code review 2026-10-06).
+_ADMIN_PATTERNS = {"PATCH": re.compile(r"^/api/v1/plugins/[^/]+/enabled/?$")}
 
 #: JSON bodies that name an engine project, by (method, path): the field.
 _BODY_ENGINE_PROJECT = {
@@ -223,7 +226,9 @@ def _rule_refusal(request, method: str, path: str):
     """Step 4a: what the Configurator does not let anybody do here, or not without admin."""
     if method == "POST" and path == "/api/v1/projects":
         return _refuse(403, "projects are made on the Configurator's launcher")
-    if (method, path) in _ADMIN_ROUTES and keycloak.AUTH_ENABLED:
+    admin_only = (method, path) in _ADMIN_ROUTES or bool(
+        _ADMIN_PATTERNS.get(method) and _ADMIN_PATTERNS[method].match(path))
+    if admin_only and keycloak.AUTH_ENABLED:
         claims = getattr(request, "aisc_claims", None) or {}
         if membership.ADMIN_ROLE not in keycloak.get_roles(claims):
             return _refuse(403, f"this needs the {membership.ADMIN_ROLE!r} role")

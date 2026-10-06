@@ -7,12 +7,15 @@ applied, and the engine's deployed environment pointed at it:
 
     ENGINE_TEST_SUPERUSER_URL=postgresql://<superuser>:<pw>@127.0.0.1:<port>/platform
     PLATFORM_TEST_DATABASE_URL=postgresql://platform_rw:platform_rw@127.0.0.1:<port>/platform
+    AISC_DEPLOYMENT=configurator
     DB_ENGINE=django.db.backends.postgresql DB_NAME=platform DB_USER=engine_rw
     DB_PASSWORD=engine_rw DB_HOST=127.0.0.1 DB_PORT=<port> DB_SCHEMA=engine
     .venv/bin/python manage.py test aisc_backend.tests.test_isolation_engine_db
 
 (isolation 02-tests.md has the full recipe). Without ENGINE_TEST_SUPERUSER_URL
-every test here skips, so the sqlite unit run is unaffected.
+every test here skips, so the sqlite unit run is unaffected; without
+AISC_DEPLOYMENT=configurator they skip too (they are configurator-only), and the
+run still says OK, so check that it ran 30 tests, not 30 skipped.
 
 These are plain unittest cases, not Django's TestCase: Django's runner then
 creates no test database, and the tests use the real project databases the
@@ -37,6 +40,8 @@ import time
 import unittest
 import uuid
 
+from django.conf import settings
+
 from aisc_backend.tests.isolation_support import (
     configurator_only,
     BACKEND, LIVE_SHAPE, SUPERUSER_URL_VAR, ApiCaller, Cluster, catalog, database_name, superuser_url,
@@ -60,6 +65,9 @@ def _migrate_projects(extra_env=None) -> subprocess.CompletedProcess:
     """`manage.py migrate_projects` in a child process with this process's
     (deployed) environment. Output is captured and never printed."""
     env = dict(os.environ)
+    # a deployed configurator refuses to start without its run tickets' key: the test run's own
+    env.setdefault("RUN_TICKET_KEY", settings.RUN_TICKET_KEY)
+    env.setdefault("AUTH_ENABLED", "true")  # and its door's bearer check
     env.update(extra_env or {})
     return subprocess.run([sys.executable, "manage.py", "migrate_projects"], cwd=BACKEND, env=env,
                           capture_output=True, text=True, timeout=600)
@@ -227,6 +235,8 @@ class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
         pid = self.cluster.platform_project("D", {"alice": "owner"})
         self.cluster.provision(pid)
         env = dict(os.environ)
+        env.setdefault("RUN_TICKET_KEY", settings.RUN_TICKET_KEY)
+        env.setdefault("AUTH_ENABLED", "true")
         runs = [subprocess.Popen([sys.executable, "manage.py", "migrate_projects"], cwd=BACKEND, env=env,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(2)]
         codes = [r.wait(timeout=600) for r in runs]
@@ -334,8 +344,10 @@ class TheShapeIsTheLiveShape(PostgresCase):
         live = self._live()
         with self.cluster.connect(self.w["A"]["database"]) as conn:
             mine = catalog(conn, "engine")
-        # The one table the live shape predates: the mode marker (0021_engine_deployment_marker).
-        mine = {kind: {r for r in rows if r[0] != "engine_deployment"} for kind, rows in mine.items()}
+        # What the live shape predates: the mode marker (0021_engine_deployment_marker) and the one-system-target
+        # index (0022_one_system_target_per_system, 2026-10-06).
+        mine = {kind: {r for r in rows if r[0] != "engine_deployment" and r[1:2] != ("aisc_one_system_target_per_system",)}
+                for kind, rows in mine.items()}
         live["constraints"] = {
             (t, self.RENAMED.get(name, name), kind,
              d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
@@ -446,6 +458,7 @@ ROUTES = [
     ("GET", "/api/v1/projects/{pid}", None, "user"),
     ("PATCH", "/api/v1/projects/{pid}", {"name": "renamed"}, "user"),
     ("GET", "/api/v1/projects/by-name/{name}", None, "user"),
+    ("GET", "/api/v1/projects/by-name?name={name}", None, "user"),
     ("POST", "/api/v1/projects/for-platform/{platform}", None, "user"),
     ("GET", "/api/v1/projects/{pid}/aisystem", None, "user"),
     ("POST", "/api/v1/projects/{pid}/components", {"name": "x", "component_type": "llm"}, "user"),
@@ -488,7 +501,9 @@ ROUTES = [
     ("GET", "/api/v1/plugins/{plugin_pid}/display_icon", None, "user"),
     ("GET", "/api/v1/plugins/{plugin_pid}/input_definitions", None, "user"),
     ("GET", "/api/v1/plugins/{plugin_pid}/project_config_definitions", None, "user"),
-    ("PATCH", "/api/v1/plugins/{plugin_pid}/enabled", {"enabled": False}, "user"),
+    # switching a plugin takes the realm role admin, as removing it does (2026-10-06): an admin, so only the
+    # database can refuse it
+    ("PATCH", "/api/v1/plugins/{plugin_pid}/enabled", {"enabled": False}, "admin"),
     ("GET", "/api/v1/plugins/{plugin_pid}/configs", None, "user"),
     ("POST", "/api/v1/plugins/{plugin_pid}/configs/{config_id}/restore", None, "user"),
     ("POST", "/api/v1/plugins/{plugin_pid}/config", {"config": {}}, "user"),
@@ -526,7 +541,8 @@ NOT_BY_ID = {}
 #: Read routes that, called under A's own header, must find A's object: proves the
 #: 404 under B is the database's doing, not a broken route.
 CONTROLS = [
-    "/api/v1/projects/{pid}", "/api/v1/projects/by-name/{name}", "/api/v1/projects/{pid}/aisystem",
+    "/api/v1/projects/{pid}", "/api/v1/projects/by-name/{name}", "/api/v1/projects/by-name?name={name}",
+    "/api/v1/projects/{pid}/aisystem",
     "/api/v1/projects/{pid}/evaluations", "/api/v1/components/{component_pid}",
     "/api/v1/evaluations/{evaluation_pid}?include=plugin", "/api/v1/evaluations/{evaluation_pid}/plugins/status",
     "/api/v1/project/settings/{pid}", "/api/v1/stats/projects/{pid}/overview",

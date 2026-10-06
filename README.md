@@ -41,7 +41,10 @@ how the backend runs:
 | `configurator` | inside the Configurator | one PostgreSQL database per platform project; every `/api/*` call names its project in the `X-AISC-Project` header; sign-in is done by the Configurator's gateway, so the admin, auth, sessions and allauth apps are not loaded |
 
 Any other value stops the backend at start. `configurator` requires
-`DB_ENGINE=django.db.backends.postgresql` (only the test runner may use sqlite). A database
+`DB_ENGINE=django.db.backends.postgresql` (only the test runner may use sqlite), `RUN_TICKET_KEY`, the
+key of the run tickets the eval worker carries, different from `DJANGO_SECRET_KEY` and given to the
+backend only (the worker holds `DJANGO_SECRET_KEY` and runs plugin code), and `AUTH_ENABLED=true` (with it
+off the door checks no caller's membership or role). A database
 records the mode it was made in (migration 0021), and the backend refuses to migrate or serve a
 database made by the other mode.
 
@@ -126,7 +129,8 @@ uv run python manage.py test
 This runs on sqlite and needs no database server. Tests marked configurator-only skip unless
 `AISC_DEPLOYMENT=configurator` is set. The Postgres tests in
 `aisc_backend/tests/test_isolation_engine_db.py` skip unless `ENGINE_TEST_SUPERUSER_URL` points at
-a throwaway PostgreSQL; the docstring at the top of that file lists the setup. Never point tests at
+a throwaway PostgreSQL and `AISC_DEPLOYMENT=configurator` is set (without it they all skip and the run
+still says OK); the docstring at the top of that file lists the setup. Never point tests at
 the database of a running stack (port 5432).
 
 #### Useful URLs (standalone)
@@ -179,6 +183,9 @@ changed files, each with its reason, is `scripts/guard-frozen-intended.txt` in t
 - Does your plugin package export the plugin class correctly (so it can be discovered)?
 - If you changed dependencies: did you rebuild the image (`--build`)?
 - "AISC_DEPLOYMENT is configurator: DB_ENGINE must be ...": configurator mode needs PostgreSQL.
+- "RUN_TICKET_KEY must be set" / "must differ from DJANGO_SECRET_KEY": give the backend (not the worker)
+  a key of its own; the aisc repo's `scripts/secrets.sh` makes one.
+- "AUTH_ENABLED must be true": set `AUTH_ENABLED=true` for the backend (the aisc stack's compose does).
 - "this database was made by a ... engine": the database belongs to the other mode; use a
   database made by this mode.
 

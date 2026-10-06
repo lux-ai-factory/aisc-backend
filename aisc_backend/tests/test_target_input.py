@@ -141,7 +141,8 @@ class WhoAnswersTheForm(SimpleTestCase):
 
     def test_en1_configurator_answers_from_this_module(self):
         self.assertIn("target_input.input_definitions_with_target",
-                      self.handler(AISC_DEPLOYMENT="configurator", DB_ENGINE="django.db.backends.postgresql"))
+                      self.handler(AISC_DEPLOYMENT="configurator", DB_ENGINE="django.db.backends.postgresql",
+                                   DJANGO_SECRET_KEY="s", RUN_TICKET_KEY="t", AUTH_ENABLED="true"))
 
     def test_en1_standalone_answers_from_seans_route(self):
         self.assertIn("routers.plugin.get_plugin_input_definitions", self.handler(AISC_DEPLOYMENT="standalone"))

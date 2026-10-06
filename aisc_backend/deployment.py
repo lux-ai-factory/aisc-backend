@@ -12,7 +12,9 @@ from django.core.exceptions import ImproperlyConfigured
 STANDALONE = "standalone"
 CONFIGURATOR = "configurator"
 MODES = (STANDALONE, CONFIGURATOR)
-_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE")
+_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE", "RUN_TICKET_KEY", "DJANGO_SECRET_KEY", "AUTH_ENABLED")
+#: What settings.py's env.bool("AUTH_ENABLED") reads as on.
+_ON = {"t", "true", "on", "y", "yes", "1"}
 
 
 def settings_source(read: Callable[[str], str | None]) -> dict[str, str]:
@@ -51,6 +53,21 @@ def check_environment(env: Mapping[str, str] = os.environ, testing: bool | None 
         raise ImproperlyConfigured(
             f"AISC_DEPLOYMENT is {CONFIGURATOR}: DB_ENGINE must be django.db.backends.postgresql "
             "(one database per project)")
+    # The run tickets' key is the backend's alone: the eval worker holds DJANGO_SECRET_KEY (it decrypts
+    # plugin settings) and runs plugin code, which could otherwise mint a ticket for any run (2026-10-06).
+    if mode(env) == CONFIGURATOR and not testing:
+        key = (env.get("RUN_TICKET_KEY") or "").strip()
+        if not key:
+            raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: RUN_TICKET_KEY must be set "
+                                       "(the run tickets' key; never given to the eval worker)")
+        if key == (env.get("DJANGO_SECRET_KEY") or "").strip():
+            raise ImproperlyConfigured("RUN_TICKET_KEY must differ from DJANGO_SECRET_KEY, which the eval "
+                                       "worker holds")
+        # With AUTH_ENABLED off (settings.py's default) the door lets every caller past the membership and
+        # admin checks: any container on the backend network could read every project and install plugins.
+        if (env.get("AUTH_ENABLED") or "").strip().lower() not in _ON:
+            raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: AUTH_ENABLED must be true (without it "
+                                       "the door checks no caller's membership or role)")
 
 
 def is_configurator() -> bool:

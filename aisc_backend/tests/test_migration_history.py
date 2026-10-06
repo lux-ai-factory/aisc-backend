@@ -8,7 +8,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
 
 SEAN_LAST = ("aisc_backend", "0014_ai_system_and_project_config_squashed")
-OUR_LAST = ("aisc_backend", "0021_engine_deployment_marker")
+OUR_LAST = ("aisc_backend", "0022_one_system_target_per_system")
 
 
 class OneHistory(TransactionTestCase):

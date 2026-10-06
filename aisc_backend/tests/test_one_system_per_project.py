@@ -21,7 +21,7 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend import models as engine_models
 from aisc_backend.auth import keycloak
-from aisc_backend.models import AIComponent, AIComponentType, Project, ProjectStatus
+from aisc_backend.models import AIComponent, Project, ProjectStatus
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.project import router as project_router
 
@@ -84,12 +84,12 @@ class TheChainAfterSeans0014(TestCase):
         self.assertNotIn("0022_parts_belong_to_a_version_of_the_one_system", names)
         self.assertIn("0014_ai_system_and_project_config_squashed", names)
 
-    def test_s1_0021_is_the_leaf(self):
+    def test_s1_0022_is_the_leaf(self):
         # On this branch: 0019 is no_login_of_its_own, 0020 is the_database_is_the_project,
-        # and 0021_engine_deployment_marker is the leaf.
+        # 0021_engine_deployment_marker, and 0022_one_system_target_per_system is the leaf (2026-10-06).
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"),
-                         [("aisc_backend", "0021_engine_deployment_marker")])
+                         [("aisc_backend", "0022_one_system_target_per_system")])
         parents = loader.graph.node_map[("aisc_backend", "0019_no_login_of_its_own")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
                          {("aisc_backend", "0018_alter_project_platform_project_id")})

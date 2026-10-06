@@ -6,6 +6,7 @@ router stays his. Standalone has no platform, so this router is not mounted ther
 import uuid
 
 from asgiref.sync import sync_to_async
+from django.db import IntegrityError
 from ninja import Router
 
 from aisc_backend.audit.log import log_action
@@ -38,9 +39,18 @@ async def project_for_platform(request, platform_project_id: uuid.UUID):
         return existing[0]
 
     name = await sync_to_async(platform_project_name)(platform_project_id)
-    project = await project_repository.create(
-        name or f"project-{str(platform_project_id)[:8]}", platform_project_id
-    )
+    try:
+        project = await project_repository.create(
+            name or f"project-{str(platform_project_id)[:8]}", platform_project_id
+        )
+    except IntegrityError:
+        # Two first visits at once (the home page and the install dialog both call this): the other one
+        # made the row between the lookup and the create (one_project_per_platform_project). Its row is
+        # this one's answer.
+        made = await project_repository.filter(platform_project_id=platform_project_id)
+        if not made:
+            raise
+        return made[0]
     await sync_to_async(log_action)(
         request, action="create", resource_type="project",
         resource_id=str(project.pid),

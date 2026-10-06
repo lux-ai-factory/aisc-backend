@@ -39,8 +39,16 @@ def _configurator() -> bool:
     return getattr(settings, "AISC_DEPLOYMENT", None) == deployment.CONFIGURATOR
 
 
+def _system_target_exists(system, value) -> bool:
+    from aisc_backend.models import AIComponent
+
+    return AIComponent.objects.filter(system=system, json_value__value=value).exists()
+
+
 @sync_to_async
 def _ensure_system_target() -> None:
+    from django.db import IntegrityError, transaction
+
     from aisc_backend.models import AIComponent, AISystem, Project
 
     project = Project.objects.filter(platform_project_id__isnull=False).first()
@@ -50,9 +58,16 @@ def _ensure_system_target() -> None:
     if system is None:
         return
     value = system_reference(project.platform_project_id)
-    if not AIComponent.objects.filter(system=system, json_value__value=value).exists():
-        AIComponent.objects.create(system=system, name=f"Target · System: {project.name}",
-                                   component_type="resource", json_value={"value": value})
+    if _system_target_exists(system, value):
+        return
+    # two forms loaded at once both find none: the unique index (migration 0022) refuses the second,
+    # which then has the one the first made (code review 2026-10-06)
+    try:
+        with transaction.atomic():
+            AIComponent.objects.create(system=system, name=f"Target · System: {project.name}",
+                                       component_type="resource", json_value={"value": value})
+    except IntegrityError:
+        pass
 
 
 async def ensure_system_target() -> None:

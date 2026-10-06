@@ -27,9 +27,11 @@ import hashlib
 import hmac
 import re
 import threading
+import time
 from contextvars import ContextVar
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import DEFAULT_DB_ALIAS, OperationalError, connections
 
 PID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
@@ -125,23 +127,46 @@ def normalise(pid) -> str:
     return text.lower()
 
 
+def _ticket_key() -> str:
+    """RUN_TICKET_KEY, which only the backend holds. Not DJANGO_SECRET_KEY: the eval worker holds that one
+    and runs plugin code (2026-10-06). Standalone (one project) keeps SECRET_KEY when it is unset."""
+    from aisc_backend import deployment
+
+    if settings.RUN_TICKET_KEY:
+        return settings.RUN_TICKET_KEY
+    if settings.AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+        raise ImproperlyConfigured("RUN_TICKET_KEY is not set: no run ticket can be made or checked")
+    return settings.SECRET_KEY
+
+
+def _now() -> int:
+    return int(time.time())
+
+
+def _signature(platform_pid, evaluation_pid, expires: int) -> str:
+    message = f"{normalise(platform_pid)}.{normalise(evaluation_pid)}.{expires}"
+    return hmac.new(_ticket_key().encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
 def run_ticket(platform_pid, evaluation_pid) -> str:
-    """I7.3: the run ticket, hex HMAC-SHA256 over `<platform pid>.<evaluation pid>`
-    with DJANGO_SECRET_KEY. Minted when an editor starts a run; the worker only
-    carries it, and the door checks it on every internal call."""
-    message = f"{normalise(platform_pid)}.{normalise(evaluation_pid)}"
-    return hmac.new(settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+    """I7.3: the run ticket, `<expiry>.<hex HMAC-SHA256 over <platform pid>.<evaluation pid>.<expiry>>`
+    with RUN_TICKET_KEY. Minted when an editor starts a run; the worker only carries it, and the door
+    checks it on every internal call. It lasts RUN_TICKET_TTL_SECONDS (a day, longer than any run), so one
+    seen in a log or kept by a plugin opens nothing for ever (code review 2026-10-06)."""
+    expires = _now() + int(getattr(settings, "RUN_TICKET_TTL_SECONDS", 24 * 60 * 60))
+    return f"{expires}.{_signature(platform_pid, evaluation_pid, expires)}"
 
 
 def ticket_is_valid(platform_pid, evaluation_pid, ticket) -> bool:
-    """Whether this ticket was minted for this project and this evaluation."""
-    if not ticket:
+    """Whether this ticket was minted for this project and this evaluation, and has not expired."""
+    expires, _, mac = str(ticket or "").partition(".")
+    if not (expires.isdigit() and mac):
         return False
     try:
-        expected = run_ticket(platform_pid, evaluation_pid)
+        expected = _signature(platform_pid, evaluation_pid, int(expires))
     except NotAPid:
         return False
-    return hmac.compare_digest(expected, str(ticket))
+    return hmac.compare_digest(expected, mac) and int(expires) > _now()
 
 
 def database_name(pid) -> str:

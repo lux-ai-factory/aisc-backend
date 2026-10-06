@@ -1,10 +1,42 @@
 import os
 import sys
+import unittest
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.test import SimpleTestCase
+from django.db import connection
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from aisc_backend import deployment
+
+
+class TheConfiguratorNeedsTheBearerCheck(SimpleTestCase):
+    """AUTH_ENABLED (settings.py) defaults off, and with it off the door lets every caller past the membership
+    and admin checks (project_door.py): in the Configurator any container on the backend network could read
+    every project and install plugins. So the Configurator refuses to start without it (review 2026-10-06)."""
+
+    def env(self, **more):
+        return {"AISC_DEPLOYMENT": "configurator", "DB_ENGINE": "django.db.backends.postgresql",
+                "DJANGO_SECRET_KEY": "s", "RUN_TICKET_KEY": "t", **more}
+
+    def test_unset_is_refused(self):
+        with self.assertRaisesRegex(ImproperlyConfigured, "AUTH_ENABLED"):
+            deployment.check_environment(self.env(), testing=False)
+
+    def test_false_is_refused(self):
+        for off in ("false", "0", "no", "off", ""):
+            with self.assertRaisesRegex(ImproperlyConfigured, "AUTH_ENABLED"):
+                deployment.check_environment(self.env(AUTH_ENABLED=off), testing=False)
+
+    def test_true_starts(self):
+        for on in ("true", "True", "1", "yes", "on"):
+            deployment.check_environment(self.env(AUTH_ENABLED=on), testing=False)
+
+    def test_standalone_needs_none(self):
+        deployment.check_environment({"DB_ENGINE": "django.db.backends.postgresql"}, testing=False)
+
+    def test_the_settings_source_carries_it(self):
+        self.assertEqual(deployment.settings_source({"AUTH_ENABLED": "true"}.get), {"AUTH_ENABLED": "true"})
 
 
 class TheMode(SimpleTestCase):
@@ -28,7 +60,9 @@ class TheMode(SimpleTestCase):
             deployment.check_environment({"AISC_DEPLOYMENT": "configurator",
                                           "DB_ENGINE": "django.db.backends.sqlite3"}, testing=False)
         deployment.check_environment({"AISC_DEPLOYMENT": "configurator",
-                                      "DB_ENGINE": "django.db.backends.postgresql"}, testing=False)
+                                      "DB_ENGINE": "django.db.backends.postgresql",
+                                      "DJANGO_SECRET_KEY": "s", "RUN_TICKET_KEY": "t", "AUTH_ENABLED": "true"},
+                                     testing=False)
 
     def test_the_test_runner_may_run_configurator_on_one_sqlite_database(self):
         deployment.check_environment({"AISC_DEPLOYMENT": "configurator",
@@ -51,7 +85,9 @@ class SettingsSource(SimpleTestCase):
         )
 
     def test_absent_names_are_omitted_so_mode_still_defaults_to_standalone(self):
-        reader = lambda name: None
+        def reader(name):
+            return None
+
         self.assertEqual(deployment.settings_source(reader), {})
         self.assertEqual(deployment.mode(deployment.settings_source(reader)), deployment.STANDALONE)
 
@@ -63,12 +99,6 @@ class SettingsSource(SimpleTestCase):
             reader = {"AISC_DEPLOYMENT": "configurator"}.get
             self.assertEqual(deployment.mode(deployment.settings_source(reader)), deployment.CONFIGURATOR)
 
-
-import unittest
-
-from django.conf import settings
-from django.db import connection
-from django.test import TestCase, override_settings
 
 _STANDALONE_RUN = settings.AISC_DEPLOYMENT == deployment.STANDALONE
 

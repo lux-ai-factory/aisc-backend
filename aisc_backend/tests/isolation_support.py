@@ -54,6 +54,11 @@ DEPLOYED_ENV = {
     "DB_HOST": "127.0.0.1",
     "DB_PORT": "1",  # nothing listens there: the probe must not need a database
     "DB_SCHEMA": "engine",
+    # the run tickets' key, the backend's alone (deployment.check_environment refuses to start without it)
+    "DJANGO_SECRET_KEY": "not-the-django-secret",
+    "RUN_TICKET_KEY": "not-a-real-ticket-key",
+    # the Configurator refuses to start without the door's bearer check (deployment.check_environment)
+    "AUTH_ENABLED": "true",
 }
 
 
@@ -311,11 +316,9 @@ class ApiCaller:
                                         "X-AISC-Project": str(project)}, body)
 
     def as_worker(self, method, path, project, evaluation, body=None):
-        from django.conf import settings
-        import hashlib
-        import hmac
+        from aisc_backend import projectdb
 
-        ticket = hmac.new(settings.SECRET_KEY.encode(), f"{project}.{evaluation}".encode(),
-                          hashlib.sha256).hexdigest()
+        # the backend's own minting (with its expiry since 2026-10-06), so this cannot drift from it
+        ticket = projectdb.run_ticket(project, evaluation)
         return self.call(method, path, {"X-Internal-Secret": INTERNAL_KEY, "X-AISC-Project": str(project),
                                         "X-AISC-Run": ticket, "X-AISC-Evaluation": str(evaluation)}, body)

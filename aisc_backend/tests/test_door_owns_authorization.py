@@ -28,6 +28,18 @@ class TheDoorsOwnRules(DoorCase):
             self.assertEqual((r.status_code, json.loads(r.content)["detail"]),
                              (403, "this needs the 'admin' role"), (method, path))
 
+    def test_switching_a_plugin_on_or_off_takes_admin(self):
+        """PATCH .../enabled flips the flag DELETE flips: an editor could otherwise switch back on a plugin an
+        admin removed (code review 2026-10-06)."""
+        path = f"/api/v1/plugins/{uuid.uuid4()}/enabled"
+        with self.as_role("editor"):
+            r = self.call("PATCH", path, {"X-AISC-Project": A_PID, "Authorization": self.bearer()}, {"enabled": True})
+        self.assertEqual((r.status_code, json.loads(r.content)["detail"]), (403, "this needs the 'admin' role"))
+        with self.as_role("editor"):
+            r = self.call("PATCH", path, {"X-AISC-Project": A_PID, "Authorization": self.bearer(("admin",))},
+                          {"enabled": True})
+        self.assertNotEqual(r.status_code, 403, r.content)
+
     def test_a_stranger_gets_nothing_about_a_file_or_a_task(self):
         # pins today's door (strangers are 404 before any route); may pass before the change
         for path in ("/api/v1/files/dataset/x.csv", "/api/v1/files/artifact/y.zip",
