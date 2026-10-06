@@ -6,7 +6,7 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
+from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput, InputAdapter
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.metric import Metric
@@ -44,10 +44,17 @@ metric_repository = BaseRepository(model=Metric)
 evaluation_plugin_repository = EvaluationPluginRepository()
 
 
+class InputAdapterInSchema(Schema):
+    adapter_class: str
+    package_name: str | None = None
+    version: str | None = None
+
+
 class EvaluationPluginInputInSchema(Schema):
     pid: uuid.UUID
     name: str
     value: dict | None = None
+    adapter: InputAdapterInSchema | None = None
 
 
 class EvaluationPluginInSchema(Schema):
@@ -109,12 +116,22 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 component = await ai_component_repository.get(input_data.pid)
                 if not component:
                     raise HttpError(400, f"Component {input_data.pid} not found")
+                adapter = None
+                if input_data.adapter:
+                    adapter = await InputAdapter.objects.acreate(
+                        name=input_data.adapter.adapter_class,
+                        description="",
+                        adapter_class=input_data.adapter.adapter_class,
+                        package_name=input_data.adapter.package_name,
+                        version=input_data.adapter.version,
+                    )
 
                 evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,
                     name=input_data.name,
                     component=component,
                     value=input_data.value or {},
+                    adapter=adapter,
                 )
                 await evaluation_input.asave()
 

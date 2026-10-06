@@ -75,6 +75,18 @@ class PluginConfigProjectConfig(Base):
         ]
 
 
+class InputAdapter(Base):
+    """A selected input adapter (package + version + class) applied to a plugin input."""
+    adapter_class = models.CharField(max_length=255)
+    package_name = models.CharField(max_length=255, null=True, blank=True)
+    version = models.CharField(max_length=50, null=True, blank=True)
+
+    def __str__(self):
+        pkg = self.package_name or "(plugin package)"
+        ver = f"=={self.version}" if self.version else ""
+        return f"{pkg}{ver}:{self.adapter_class}"
+
+
 class EvaluationInput(Base):
     """An input bound to an evaluation plugin run.
 
@@ -90,6 +102,10 @@ class EvaluationInput(Base):
         "AIComponent", related_name="evaluation_inputs", on_delete=models.PROTECT
     )
     value = models.JSONField(blank=True, default=dict)
+
+    adapter = models.ForeignKey(
+        "InputAdapter", null=True, blank=True, on_delete=models.CASCADE, related_name="input_files"
+    )
 
     class Meta:
         unique_together = ("evaluation_plugin", "name")

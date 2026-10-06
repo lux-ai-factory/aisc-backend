@@ -13,6 +13,7 @@ class EvaluationInputOutSchema(Schema):
     input_type: str
     input_file: AIComponentOutSchema
     value: dict = Field(default={})
+    adapter: dict | None = None
 
     @staticmethod
     def resolve_input_type(obj):
@@ -21,6 +22,17 @@ class EvaluationInputOutSchema(Schema):
     @staticmethod
     def resolve_input_file(obj):
         return obj.component
+
+    @staticmethod
+    def resolve_adapter(obj):
+        adapter = obj.adapter
+        if adapter is None:
+            return None
+        return {
+            "adapter_class": adapter.adapter_class,
+            "package_name": adapter.package_name,
+            "version": adapter.version,
+        }
 
 class PluginConfigOutSchema(ModelSchema):
     project_config_selections: list[ProjectConfigSelectionSchema] = Field(default=[])

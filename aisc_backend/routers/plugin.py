@@ -56,6 +56,13 @@ class PackageAvailableSchema(Schema):
     source: str
 
 
+class AdapterAvailableSchema(Schema):
+    package_name: str
+    version: str
+    adapter_class: str
+    source: str
+
+
 @router.get("", response=list[PackageAvailableSchema])
 async def get_plugins(request):
     packages_dict = plugin_loader.list_packages(refresh=True)
@@ -70,6 +77,25 @@ async def get_plugins(request):
             ))
 
     return available_packages
+
+
+@router.get("/adapters", response=list[AdapterAvailableSchema])
+async def get_adapters(request):
+    """Catalog of available input adapters for the evaluation form (separate from the plugins page)."""
+    adapters_dict = plugin_loader.list_adapters(refresh=True)
+
+    available_adapters = []
+    for pkg_name, versions_dict in adapters_dict.items():
+        for version, meta in versions_dict.items():
+            for adapter_class in meta.get("adapter_classes", []):
+                available_adapters.append(AdapterAvailableSchema(
+                    package_name=pkg_name,
+                    version=version,
+                    adapter_class=adapter_class,
+                    source=meta.get("source", "unknown"),
+                ))
+
+    return available_adapters
 
 
 @router.get("/{plugin_pid}/feature_flags", response=dict)
