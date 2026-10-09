@@ -1,4 +1,4 @@
-name: AISC-backend build pipeline
+name: Build and push image
 
 on:
   push:
