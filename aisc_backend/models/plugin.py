@@ -93,6 +93,9 @@ class EvaluationInput(Base):
     Points at an AIComponent that supplies the data. Only dataset/model/file
     components carry a stored artifact; other component types expose their
     input data through this same link.
+
+    Adapters form an ordered pass-through chain
+    (``EvaluationInputAdapter.order``); an empty chain means "no adapter".
     """
 
     evaluation_plugin = models.ForeignKey(
@@ -103,12 +106,42 @@ class EvaluationInput(Base):
     )
     value = models.JSONField(blank=True, default=dict)
 
-    adapter = models.ForeignKey(
-        "InputAdapter", null=True, blank=True, on_delete=models.CASCADE, related_name="input_files"
+    adapters = models.ManyToManyField(
+        "InputAdapter",
+        blank=True,
+        through="EvaluationInputAdapter",
+        related_name="evaluation_inputs",
     )
 
     class Meta:
         unique_together = ("evaluation_plugin", "name")
+
+    def ordered_adapters(self):
+        cache = getattr(self, "_prefetched_objects_cache", {}) or {}
+        if "adapter_links" in cache:
+            return [link.adapter for link in sorted(cache["adapter_links"], key=lambda l: l.order)]
+        return [link.adapter for link in self.adapter_links.order_by("order").select_related("adapter")]
+
+
+class EvaluationInputAdapter(models.Model):
+    """Ordered link between an evaluation input and one adapter in its chain."""
+
+    evaluation_input = models.ForeignKey(
+        "EvaluationInput", related_name="adapter_links", on_delete=models.CASCADE
+    )
+    adapter = models.ForeignKey(
+        "InputAdapter", related_name="input_links", on_delete=models.CASCADE
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("evaluation_input", "order"),
+                name="unique_evaluation_input_adapter_order",
+            ),
+        ]
 
 
 class EvaluationPluginStatus(models.TextChoices):
