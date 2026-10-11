@@ -22,8 +22,7 @@ def build_evaluation_queryset(include: str = "", include_all: bool = False):
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__plugin_config__setting_mappings__project_config")
 
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__adapters")
-        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__adapter_links__adapter")
+        evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__adapter")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__evaluation_inputs__component__source_dataset")
         evaluation_queryset = evaluation_queryset.prefetch_related("evaluation_plugins__artifacts")
@@ -82,7 +81,6 @@ class EvaluationRepository(BaseRepository[Evaluation]):
             Evaluation.objects
             .prefetch_related("evaluation_plugins")
             .prefetch_related("evaluation_plugins__evaluation_inputs__component__system__project")
-            .prefetch_related("evaluation_plugins__evaluation_inputs__adapter_links__adapter")
             .aget(pid=evaluation_pid)
         )
 

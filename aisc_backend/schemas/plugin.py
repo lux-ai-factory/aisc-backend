@@ -13,41 +13,7 @@ class EvaluationInputOutSchema(Schema):
     input_type: str
     input_file: AIComponentOutSchema
     value: dict = Field(default={})
-    adapters: list[dict] = Field(default=[])
-
-    @staticmethod
-    def _adapter_to_dict(adapter):
-        return {
-            "adapter_class": adapter.adapter_class,
-            "package_name": adapter.package_name,
-            "version": adapter.version,
-        }
-
-    @staticmethod
-    def _ordered_adapters(obj):
-        cache = getattr(obj, "_prefetched_objects_cache", {}) or {}
-        if "adapter_links" in cache:
-            links = list(cache["adapter_links"])
-            return [link.adapter for link in sorted(links, key=lambda l: l.order)]
-        if "adapters" in cache:
-            return list(cache["adapters"])
-        if hasattr(obj, "adapter_links"):
-            try:
-                links = list(obj.adapter_links.all())
-                if links:
-                    return [link.adapter for link in sorted(links, key=lambda l: l.order)]
-            except Exception:
-                pass
-        if hasattr(obj, "adapters") and hasattr(obj.adapters, "all"):
-            try:
-                return list(obj.adapters.all())
-            except Exception:
-                return []
-        return []
-
-    @staticmethod
-    def resolve_adapters(obj):
-        return [EvaluationInputOutSchema._adapter_to_dict(a) for a in EvaluationInputOutSchema._ordered_adapters(obj)]
+    adapter: dict | None = None
 
     @staticmethod
     def resolve_input_type(obj):
@@ -56,6 +22,17 @@ class EvaluationInputOutSchema(Schema):
     @staticmethod
     def resolve_input_file(obj):
         return obj.component
+
+    @staticmethod
+    def resolve_adapter(obj):
+        adapter = obj.adapter
+        if adapter is None:
+            return None
+        return {
+            "adapter_class": adapter.adapter_class,
+            "package_name": adapter.package_name,
+            "version": adapter.version,
+        }
 
 class PluginConfigOutSchema(ModelSchema):
     project_config_selections: list[ProjectConfigSelectionSchema] = Field(default=[])
