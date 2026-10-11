@@ -7,6 +7,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput, InputAdapter
+from aisc_backend.models.plugin import EvaluationInputAdapter
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.metric import Metric
@@ -54,7 +55,7 @@ class EvaluationPluginInputInSchema(Schema):
     pid: uuid.UUID
     name: str
     value: dict | None = None
-    adapter: InputAdapterInSchema | None = None
+    adapters: list[InputAdapterInSchema] = []
 
 
 class EvaluationPluginInSchema(Schema):
@@ -116,24 +117,27 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 component = await ai_component_repository.get(input_data.pid)
                 if not component:
                     raise HttpError(400, f"Component {input_data.pid} not found")
-                adapter = None
-                if input_data.adapter:
-                    adapter = await InputAdapter.objects.acreate(
-                        name=input_data.adapter.adapter_class,
-                        description="",
-                        adapter_class=input_data.adapter.adapter_class,
-                        package_name=input_data.adapter.package_name,
-                        version=input_data.adapter.version,
-                    )
-
                 evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,
                     name=input_data.name,
                     component=component,
                     value=input_data.value or {},
-                    adapter=adapter,
                 )
                 await evaluation_input.asave()
+
+                for order, adapter_ref in enumerate(input_data.adapters):
+                    adapter_row = await InputAdapter.objects.acreate(
+                        name=adapter_ref.adapter_class,
+                        description="",
+                        adapter_class=adapter_ref.adapter_class,
+                        package_name=adapter_ref.package_name,
+                        version=adapter_ref.version,
+                    )
+                    await EvaluationInputAdapter.objects.acreate(
+                        evaluation_input=evaluation_input,
+                        adapter=adapter_row,
+                        order=order,
+                    )
 
         evaluation_plugins.append(run_plugin)
 

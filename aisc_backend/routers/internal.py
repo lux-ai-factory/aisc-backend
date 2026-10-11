@@ -49,6 +49,12 @@ class SelectionProjectConfigSchema(Schema):
     json_value: dict[str, Any]
 
 
+class AdapterChainItemSchema(Schema):
+    adapter_class: str
+    package_name: str | None = None
+    version: str | None = None
+
+
 class EvaluationPluginInputSchema(Schema):
     name: str
     component_type: str
@@ -58,6 +64,7 @@ class EvaluationPluginInputSchema(Schema):
     endpoint_url: str | None = None
     secret_key: str | None = None
     secret_encrypted_value: str | None = None
+    adapters: list[AdapterChainItemSchema] = Field(default_factory=list)
 
 
 class PluginsStatusResponse(Schema):
@@ -130,6 +137,15 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
     for evaluation_plugin in list(evaluation.evaluation_plugins.all()):
         entries = []
         for inp in list(evaluation_plugin.evaluation_inputs.all()):
+            links = [link async for link in inp.adapter_links.order_by("order").select_related("adapter")]
+            chain = [
+                AdapterChainItemSchema(
+                    adapter_class=link.adapter.adapter_class,
+                    package_name=link.adapter.package_name,
+                    version=link.adapter.version,
+                )
+                for link in links
+            ]
             component = inp.component
             config = (
                 LLMConfig.model_validate(component.json_value or {})
@@ -154,6 +170,7 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
                 endpoint_url=endpoint_url,
                 secret_key=secret_key,
                 secret_encrypted_value=secret_encrypted_value,
+                adapters=chain,
             ))
         result[str(evaluation_plugin.pid)] = entries
     return result
