@@ -3,9 +3,11 @@ import uuid
 from ninja import Router
 from ninja.errors import HttpError
 
-from aisc_backend.models import ProjectConfig, ProjectConfigCategory
+from aisc_backend.models import AIComponentType, ProjectConfig, ProjectConfigCategory
+from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
+from aisc_backend.routers.project import derive_datashape
 from aisc_backend.schemas.project_config import (
     ProjectConfigInSchema,
     ProjectConfigOutSchema,
@@ -17,10 +19,21 @@ from aisc_backend.utils.encryption import encrypt_value
 router = Router(tags=["project settings"])
 project_config_repository = ProjectConfigRepository()
 project_repository = ProjectRepository()
+ai_component_repository = AIComponentRepository()
 
 
 def _masked(value: str) -> str:
     return value[:4] + "..." + value[-4:] if len(value) > 8 else "..." + value[-4:]
+
+
+@router.post("/{project_pid}/derive-features", response=dict)
+async def derive_features_from_dataset(request, project_pid: uuid.UUID, source_dataset_pid: uuid.UUID):
+    """Derive the data shape (features) from a dataset component so the UI can
+    show/preview it before the datashape component is created."""
+    source_dataset = await ai_component_repository.get(source_dataset_pid)
+    if source_dataset is None or source_dataset.component_type != AIComponentType.DATASET:
+        raise HttpError(400, "source_dataset_pid must reference a dataset component")
+    return await derive_datashape(source_dataset)
 
 
 @router.get("/{project_pid}", response=list[ProjectConfigOutSchema])
