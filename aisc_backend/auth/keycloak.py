@@ -21,10 +21,11 @@ from ninja.security import HttpBearer
 
 logger = logging.getLogger(__name__)
 
-# --- config (added to config/settings.py in step 2) ---
+# --- config (set in config/settings.py) ---
 KEYCLOAK_JWKS_URL = getattr(settings, "KEYCLOAK_JWKS_URL", "")
 KEYCLOAK_ISSUER = getattr(settings, "KEYCLOAK_ISSUER", "")
 AUTH_ENABLED = getattr(settings, "AUTH_ENABLED", False)
+ACCEPTED_CLIENTS = tuple(getattr(settings, "ENGINE_ACCEPTED_CLIENTS", ("aisc-gateway", "aisc-webapp")))
 
 # Cache the JWKS client so Keycloak's public keys are fetched once, not per request.
 _jwks_client: PyJWKClient | None = None
@@ -41,10 +42,16 @@ def _get_jwks_client() -> PyJWKClient:
 def verify_token(token: str) -> dict:
     """
     Verify a Keycloak access token; return its claims (a dict).
-    Raise jwt.PyJWTError (or a subclass) if invalid / expired / tampered / wrong issuer.
+    Raise jwt.PyJWTError (or a subclass) if invalid / expired / tampered / wrong issuer, or issued
+    to a client this engine does not accept.
     """
     key = _get_jwks_client().get_signing_key_from_jwt(token)
-    return jwt.decode(token, key.key, algorithms=["RS256"], issuer=KEYCLOAK_ISSUER, options={"verify_aud": False})
+    claims = jwt.decode(token, key.key, algorithms=["RS256"], issuer=KEYCLOAK_ISSUER, options={"verify_aud": False})
+    # Keycloak names the client a token was issued to in azp; aud lists the services it may call
+    # and is often just "account", so azp is what tells a token of another client of the realm apart.
+    if claims.get("azp") not in ACCEPTED_CLIENTS:
+        raise jwt.InvalidTokenError(f"issued to {claims.get('azp')!r}, not to a client this engine accepts")
+    return claims
 
 
 def get_roles(claims: dict) -> list[str]:

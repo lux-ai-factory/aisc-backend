@@ -9,6 +9,7 @@ from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
 from pydantic import Field
 
+from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_backend.models import Evaluation, EvaluationStatus, Observation, Metric, Measurement
@@ -268,43 +269,52 @@ async def create_evaluation_measures(
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
-    for evaluation_plugin_uuid, measures in data.items():
-        # Create a new Observation for each plugin
+    async def record():
+        # the measures and their ledger event commit together
+        count = 0
+        for evaluation_plugin_uuid, measures in data.items():
+            # Create a new Observation for each plugin
 
-        evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
-        plugin = evaluation_plugin.plugin_config.plugin
+            evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
+            plugin = evaluation_plugin.plugin_config.plugin
 
-        observation = Observation(
-            observer="AISC System",
-            tool=str(plugin),
-            evaluation=evaluation,
-        )
-        observation = await observation_repository.save(observation)
-
-        measurement_objs = []
-        for measure_in_schema in measures:
-            measure_in_schema.description = (
-                ""
-                if measure_in_schema.description is None
-                else measure_in_schema.description
+            observation = Observation(
+                observer="AISC System",
+                tool=str(plugin),
+                evaluation=evaluation,
             )
+            observation = await observation_repository.save(observation)
 
-            # Get or create Metric
-            try:
-                metric = await metric_repository.get_one(name=measure_in_schema.name)
-            except ObjectDoesNotExist:
-                metric = await metric_repository.save(
-                    Metric(name=measure_in_schema.name)
+            measurement_objs = []
+            for measure_in_schema in measures:
+                measure_in_schema.description = (
+                    ""
+                    if measure_in_schema.description is None
+                    else measure_in_schema.description
                 )
 
-            # Save Measure associated with the Observation
-            measure_in_schema.observation = observation
-            measure_in_schema.metric = metric
+                # Get or create Metric
+                try:
+                    metric = await metric_repository.get_one(name=measure_in_schema.name)
+                except ObjectDoesNotExist:
+                    metric = await metric_repository.save(
+                        Metric(name=measure_in_schema.name)
+                    )
 
-            measurement_objs.append(Measurement(**measure_in_schema.model_dump()))
+                # Save Measure associated with the Observation
+                measure_in_schema.observation = observation
+                measure_in_schema.metric = metric
 
-        if measurement_objs:
-            await measurement_repository.bulk_create(measurement_objs)
+                measurement_objs.append(Measurement(**measure_in_schema.model_dump()))
+
+            if measurement_objs:
+                await measurement_repository.bulk_create(measurement_objs)
+            count += len(measurement_objs)
+        await sync_to_async(ledger.emit_for_run)(
+            "engine.measures.recorded", evaluation.pid, item_type="evaluation", item_id=evaluation.pid,
+            details={"count": count})
+
+    await ledger.atomically(record)
 
     await sync_to_async(log_action)(
         request, action="record_measures", resource_type="evaluation",
@@ -347,7 +357,15 @@ async def upload_evaluation_artifact(
         data=file.name,
         evaluation_plugin=evaluation_plugin
     )
-    artifact = await artifact_repository.save(artifact)
+
+    async def record():
+        saved = await artifact_repository.save(artifact)
+        await sync_to_async(ledger.emit_for_run)(
+            "engine.artifact.uploaded", evaluation.pid, item_type="artifact", item_id=saved.pid,
+            details={"size": file.size})
+        return saved
+
+    artifact = await ledger.atomically(record)
 
     await sync_to_async(log_action)(
         request, action="upload_artifact", resource_type="evaluation",

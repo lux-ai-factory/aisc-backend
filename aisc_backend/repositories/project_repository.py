@@ -10,13 +10,13 @@ class ProjectRepository(BaseRepository[Project]):
     def __init__(self):
         super().__init__(Project)
 
-    async def create(self, name: str) -> Project:
+    async def create(self, name: str, platform_project_id=None) -> Project:
         project = Project(
             name=name,
+            platform_project_id=platform_project_id,
             status=ProjectStatus.Created
         )
-        await project.asave()
-        return project
+        return await self.save(project)
 
 
     async def get_with_related(self, pid: uuid.UUID) -> Project:

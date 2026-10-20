@@ -14,9 +14,24 @@ from corsheaders.defaults import default_headers
 from environs import env
 from django.core.management.utils import get_random_secret_key
 
+import sys
+
+from aisc_backend import deployment
+
 empty_str_to_none = lambda v: v if v and v.strip() else None
 
 env.read_env()
+
+_deployment_env = deployment.settings_source(lambda name: env.str(name, default=None))
+deployment.check_environment(_deployment_env)
+AISC_DEPLOYMENT = deployment.mode(_deployment_env)
+# The run tickets' key (projectdb.run_ticket), the backend's alone: never DJANGO_SECRET_KEY, which the eval
+# worker holds. The configurator refuses to start without it (deployment.check_environment); the test
+# runner gets one of its own.
+RUN_TICKET_KEY = (_deployment_env.get("RUN_TICKET_KEY") or "").strip() or (
+    get_random_secret_key() if sys.argv[1:2] == ["test"] else "")
+# How long a run ticket lasts: a day, longer than any run.
+RUN_TICKET_TTL_SECONDS = env.int("RUN_TICKET_TTL_SECONDS", default=24 * 60 * 60)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -70,6 +85,8 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'ninja.compatibility.files.fix_request_files_middleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    # The witnessed request id each ledger event cites (aisc_backend.ledger).
+    'aisc_backend.ledger.RequestId',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -105,6 +122,36 @@ DATABASES = {
         "PORT": env("DB_PORT", ""),
     }
 }
+DATABASE_ROUTERS = []
+PROJECT_DATABASE_TEMPLATE = None
+# One database per project: the Configurator on Postgres (read through
+# _deployment_env, so a value set in .env counts). Standalone is always one database.
+PROJECT_DATABASES = deployment.project_databases(_deployment_env)
+
+
+if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+    # The Configurator owns projects and sign-in: no login of our own (migration
+    # 0019 dropped its tables, and Django's accounts, sessions and admin with them,
+    # so their apps must not come back and remake them), one database per project
+    # behind the door, memberships from the platform.
+    _NO_LOGIN_APPS = ("django.contrib.admin", "django.contrib.auth", "django.contrib.sessions",
+                      "django.contrib.messages")
+    INSTALLED_APPS = [a for a in INSTALLED_APPS
+                      if a not in _NO_LOGIN_APPS and not a.startswith(("allauth", "ninja_jwt"))]
+    # The door right after CORS (every
+    # /api/* call names its project in X-AISC-Project).
+    MIDDLEWARE = [m for m in MIDDLEWARE
+                  if "allauth" not in m and not m.startswith(("django.contrib.sessions.",
+                                                               "django.contrib.auth.",
+                                                               "django.contrib.messages."))]
+    MIDDLEWARE.insert(MIDDLEWARE.index("corsheaders.middleware.CorsMiddleware") + 1,
+                      "aisc_backend.project_door.ProjectDoor")
+    TEMPLATES[0]["OPTIONS"]["context_processors"] = [
+        c for c in TEMPLATES[0]["OPTIONS"]["context_processors"]
+        if not c.startswith(("django.contrib.auth.", "django.contrib.messages."))]
+    if PROJECT_DATABASES:
+        from aisc_backend.projectdb import configurator_databases
+        DATABASES, DATABASE_ROUTERS, PROJECT_DATABASE_TEMPLATE = configurator_databases(env)
 
 
 # Password validation
@@ -151,7 +198,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 ALLOWED_HOSTS = ['*']
 
-# Need to add this to make the app work behind a reverse proxy. Without it, even with CRSF and CORS properly configured, django will consider the request unsafe
+# Need to add this to make the app work behind a reverse proxy. Without it, even with CSRF and CORS properly configured, django will consider the request unsafe
 ENABLE_SSL_PROXY = env.bool("ENABLE_SSL_PROXY", default=False)
 
 if ENABLE_SSL_PROXY:
@@ -163,7 +210,9 @@ if ENABLE_SSL_PROXY:
 CORS_ALLOW_CREDENTIALS = True
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 CORS_ALLOWED_ORIGINS = env.list('BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
-CRSF_TRUSTED_ORIGINS = env.list('BACKEND_CRSF_TRUSTED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
+    # The SPA names its project in this header on every call.
+    CORS_ALLOW_HEADERS = (*default_headers, "x-aisc-project")
 
 
 
@@ -207,6 +256,10 @@ AUTH_ENABLED = env.bool("AUTH_ENABLED", default=False)
 KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
+# The clients whose tokens are accepted (the token's azp): the gateway, and the engine's own browser app
+# when it runs standalone. A token issued to any other client of the realm is refused like a bad one.
+ENGINE_ACCEPTED_CLIENTS = [c.strip() for c in env.list("ENGINE_ACCEPTED_CLIENTS", ["aisc-gateway", "aisc-webapp"])
+                           if c.strip()]
 
 # --- Model listing TLS ---
 # Controls TLS certificate verification when listing models from an

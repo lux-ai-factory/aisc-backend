@@ -4,6 +4,7 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
 from aisc_backend.models.common import StorageContainer
@@ -37,6 +38,17 @@ evaluation_plugin_repository = EvaluationPluginRepository()
 ai_component_repository = AIComponentRepository()
 project_config_repository = ProjectConfigRepository()
 plugin_config_repository = BaseRepository(model=PluginConfig)
+
+
+def _package_event(action: str, package_name: str, version: str, **details) -> None:
+    ledger.emit(action, item_type="plugin", item_id=package_name,
+                details={"package": package_name, "version": version, **details})
+
+
+def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict) -> None:
+    """A plugin's configuration in the ledger: which settings it uses, by key, never their values."""
+    ledger.emit("engine.plugin.configured", item_type="plugin", item_id=plugin_pid,
+                content={"config_id": plugin_config.id, "config": plugin_config.config, "settings": settings})
 
 
 class PluginConfigStateResponse(Schema):
@@ -108,6 +120,9 @@ class CreatePluginsRequest(Schema):
     package_name: str
     version: str
     project_uuid: uuid.UUID
+    # Set when the install came from the catalogue (both modes). Optional so a deep link or a
+    # direct API call still works; it is then recorded as no origin at all.
+    catalogue_slug: str | None = None
 
 
 @router.post("", response=list[PluginOutSchema])
@@ -115,39 +130,55 @@ async def create_plugins(request, data: CreatePluginsRequest):
     project = await project_repository.get(data.project_uuid, True)
 
     plugins_package_dict = plugin_loader.load_package(data.package_name, data.version)
-    created_plugins = []
 
-    for plugin_name, plugin_obj in plugins_package_dict.items():
-        # Look up ANY Plugin row for this (package, version, name, project) —
-        # including soft-disabled ones — so the toggle re-uses the existing
-        # row and the historical eval data stays attached.
-        existing = await plugin_repository.find_by_identity(
-            project, data.package_name, data.version, plugin_name
-        )
-
-        if existing is not None:
-            project_plugin = existing
-        else:
-            project_plugin = Plugin(
-                name=plugin_name,
-                display_name=plugin_obj.display_name,
-                package_name=data.package_name,
-                version=data.version,
-                project=project,
-                enabled=True,
+    async def install():
+        # the rows and the install's one ledger event commit together
+        created_plugins = []
+        reused = True
+        for plugin_name, plugin_obj in plugins_package_dict.items():
+            # Look up ANY Plugin row for this (package, version, name, project) —
+            # including soft-disabled ones — so the toggle re-uses the existing
+            # row and the historical eval data stays attached.
+            existing = await plugin_repository.find_by_identity(
+                project, data.package_name, data.version, plugin_name
             )
-            project_plugin = await plugin_repository.create(project_plugin)
 
-        created_plugins.append(project_plugin)
+            if existing is not None:
+                project_plugin = existing
+                # An older row may not know where it came from. Learn it, but never
+                # unlearn it: an install without an origin says nothing about the
+                # origin already recorded.
+                if data.catalogue_slug and not project_plugin.catalogue_slug:
+                    project_plugin.catalogue_slug = data.catalogue_slug
+                    await plugin_repository.save(project_plugin)
+            else:
+                reused = False
+                project_plugin = Plugin(
+                    name=plugin_name,
+                    display_name=plugin_obj.display_name,
+                    package_name=data.package_name,
+                    version=data.version,
+                    catalogue_slug=data.catalogue_slug,
+                    project=project,
+                    enabled=True,
+                )
+                project_plugin = await plugin_repository.create(project_plugin)
 
-    if created_plugins and all(not p.enabled for p in created_plugins):
-        for p in created_plugins:
-            p.enabled = True
-            await plugin_repository.save(p)
+            created_plugins.append(project_plugin)
+
+        if created_plugins and all(not p.enabled for p in created_plugins):
+            for p in created_plugins:
+                p.enabled = True
+                await plugin_repository.save(p)
+        await sync_to_async(_package_event)("plugin.installed", data.package_name, data.version, reused=reused)
+        return created_plugins
+
+    created_plugins = await ledger.atomically(install)
 
     await sync_to_async(log_action)(
         request, action="install", resource_type="plugin", resource_id=data.package_name,
         metadata={"version": data.version, "projectPid": str(data.project_uuid),
+                  "catalogueSlug": data.catalogue_slug,
                   "plugins": [p.name for p in created_plugins]})
 
     return created_plugins
@@ -170,26 +201,29 @@ async def refresh_plugins(request, data: RefreshPluginRequest):
     )
     existing_by_name = {p.name: p for p in existing}
 
-    result = []
-    for plugin_name, plugin_obj in plugins_package_dict.items():
-        if plugin_name in existing_by_name:
-            project_plugin = existing_by_name[plugin_name]
-            project_plugin.display_name = plugin_obj.display_name
-            await plugin_repository.save(project_plugin)
-        else:
-            project_plugin = Plugin(
-                name=plugin_name,
-                display_name=plugin_obj.display_name,
-                package_name=data.package_name,
-                version=data.version,
-                project=project,
-                enabled=True,
-            )
-            project_plugin = await plugin_repository.create(project_plugin)
+    async def refresh():
+        result = []
+        for plugin_name, plugin_obj in plugins_package_dict.items():
+            if plugin_name in existing_by_name:
+                project_plugin = existing_by_name[plugin_name]
+                project_plugin.display_name = plugin_obj.display_name
+                await plugin_repository.save(project_plugin)
+            else:
+                project_plugin = Plugin(
+                    name=plugin_name,
+                    display_name=plugin_obj.display_name,
+                    package_name=data.package_name,
+                    version=data.version,
+                    project=project,
+                    enabled=True,
+                )
+                project_plugin = await plugin_repository.create(project_plugin)
 
-        result.append(project_plugin)
+            result.append(project_plugin)
+        await sync_to_async(_package_event)("plugin.refreshed", data.package_name, data.version)
+        return result
 
-    return result
+    return await ledger.atomically(refresh)
 
 
 class DeletePluginsRequest(Schema):
@@ -207,10 +241,15 @@ async def delete_plugin(request, data: DeletePluginsRequest):
     plugins = await plugin_repository.list_by_package(
         data.project_uuid, data.package_name, data.version
     )
-    for plugin in plugins:
-        if plugin.enabled:
-            plugin.enabled = False
-            await plugin_repository.save(plugin)
+
+    async def remove():
+        for plugin in plugins:
+            if plugin.enabled:
+                plugin.enabled = False
+                await plugin_repository.save(plugin)
+        await sync_to_async(_package_event)("plugin.removed", data.package_name, data.version)
+
+    await ledger.atomically(remove)
     await sync_to_async(log_action)(
         request, action="disable", resource_type="plugin", resource_id=data.package_name,
         metadata={"version": data.version, "projectPid": str(data.project_uuid)})
@@ -227,7 +266,13 @@ async def update_plugin_enabled(
 ):
     plugin = await plugin_repository.get(plugin_pid)
     plugin.enabled = data.enabled
-    await plugin_repository.save(plugin)
+
+    async def toggle():
+        await plugin_repository.save(plugin)
+        await sync_to_async(ledger.emit)("engine.plugin.toggled", item_type="plugin", item_id=plugin_pid,
+                                         details={"enabled": data.enabled})
+
+    await ledger.atomically(toggle)
     await sync_to_async(log_action)(
         request, action="toggle", resource_type="plugin",
         resource_id=str(plugin_pid), metadata={"enabled": data.enabled})
@@ -257,7 +302,14 @@ async def restore_plugin_config(
         raise HttpError(404, f"Plugin config {config_id} not found")
 
     plugin.current_config = config
-    await plugin_repository.save(plugin)
+    settings = {mapping.plugin_config_key: str(mapping.project_config.pid)
+                for mapping in await plugin_repository.get_setting_mappings(config)}
+
+    async def restore():
+        await plugin_repository.save(plugin)
+        await sync_to_async(_configured)(plugin_pid, config, settings)
+
+    await ledger.atomically(restore)
 
     return plugin
 
@@ -278,16 +330,24 @@ async def update_plugin_config_state(
         raise HttpError(400, "Config is required")
 
     plugin_config = PluginConfig(plugin=project_plugin, config=data.config)
-    plugin_config = await plugin_config_repository.save(plugin_config)
 
-    try:
-        await project_config_repository.save_plugin_config_mappings(
-            plugin_config, project_plugin.project.pid, data.project_config_selections
-        )
-    except ProjectConfig.DoesNotExist:
-        raise HttpError(400, "Selected project config does not belong to this project")
-    project_plugin.current_config = plugin_config
-    await plugin_repository.save(project_plugin)
+    async def configure():
+        saved = await plugin_config_repository.save(plugin_config)
+        try:
+            await project_config_repository.save_plugin_config_mappings(
+                saved, project_plugin.project.pid, data.project_config_selections
+            )
+        except ProjectConfig.DoesNotExist:
+            raise HttpError(400, "Selected project config does not belong to this project")
+        project_plugin.current_config = saved
+        await plugin_repository.save(project_plugin)
+        settings = {selection.plugin_config_key: str(selection.project_config_pid)
+                    for selection in data.project_config_selections
+                    if selection.plugin_config_key and selection.project_config_pid}
+        await sync_to_async(_configured)(plugin_pid, saved, settings)
+        return saved
+
+    plugin_config = await ledger.atomically(configure)
 
     config, schema, ui_schema = plugin_obj.on_config_change(plugin_config.config)
 

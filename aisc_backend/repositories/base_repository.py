@@ -9,9 +9,18 @@ import uuid
 import logging
 from typing import Any
 
-from django.db import models
+from asgiref.sync import sync_to_async
+from django.db import models, router, transaction
 
 logger = logging.getLogger(__name__)
+
+
+@sync_to_async
+def _save_in_one_transaction(instance: models.Model) -> None:
+    """Save the row in a transaction of its own, so the ledger event its signal queues
+    (aisc_backend.signals.ledger) commits with it, or neither does."""
+    with transaction.atomic(using=router.db_for_write(type(instance), instance=instance)):
+        instance.save()
 
 class BaseRepository[T: models.Model]:
     model: type[T]
@@ -28,7 +37,7 @@ class BaseRepository[T: models.Model]:
 
     async def save(self, instance: T) -> T:
         if isinstance(instance, self.model):
-            await instance.asave()
+            await _save_in_one_transaction(instance)
         return instance
 
 
@@ -60,13 +69,13 @@ class BaseRepository[T: models.Model]:
         if hasattr(data, 'model_dump'):
             data = data.model_dump()
             instance = self.model(**data)
-            await instance.asave()
+            await _save_in_one_transaction(instance)
         elif hasattr(data, '_meta'):
             instance = data
-            await instance.asave()
+            await _save_in_one_transaction(instance)
         else:
             instance = self.model(**data)
-            await instance.asave()
+            await _save_in_one_transaction(instance)
         return instance
 
 

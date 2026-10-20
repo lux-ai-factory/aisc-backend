@@ -35,9 +35,6 @@ class ProjectConfigRepository(BaseRepository[ProjectConfig]):
     async def get_by_project(self, project_pid: uuid.UUID) -> list[ProjectConfig]:
         return [project_config async for project_config in ProjectConfig.objects.filter(project__pid=project_pid)]
 
-    async def get_by_category(self, project_pid: uuid.UUID, category: str) -> list[ProjectConfig]:
-        return [project_config async for project_config in ProjectConfig.objects.filter(project__pid=project_pid, category=category)]
-
     async def get_secret_by_key(self, project_pid: uuid.UUID, key: str) -> ProjectConfig | None:
         return await ProjectConfig.objects.filter(
             project__pid=project_pid,

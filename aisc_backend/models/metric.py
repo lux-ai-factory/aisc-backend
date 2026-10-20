@@ -11,12 +11,6 @@ class MetricCategory(Base):
 class Metric(Base):
     type_spec = models.CharField(max_length=255)
 
-    def get_derived_by(self) -> list['Derived']:
-        return list(self.derived_by.all())
-
-    def get_categories(self) -> list[MetricCategory]:
-        return list(self.categories.all())
-
     def get_measurements(self) -> list[Measurement]:
         return self.measurements.all()
 

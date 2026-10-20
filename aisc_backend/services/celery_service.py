@@ -1,10 +1,14 @@
 import uuid
 
+from asgiref.sync import sync_to_async
 from celery import Celery
 from celery.result import AsyncResult
 from celery.states import SUCCESS
+from django.db import router, transaction
+from ninja.errors import HttpError
 
 from aisc_plugin_interface import TaskProgress
+from aisc_backend import deployment, ledger, projectdb
 from config.settings import CELERY_BROKER_URL, REDIS_BACKEND_URL, CELERY_APP_NAME
 
 celery: Celery = Celery(
@@ -12,12 +16,60 @@ celery: Celery = Celery(
 )
 
 RUN_EVAL_TASK = "aisc_eval.celery_tasks.run_evaluation"
-RUN_PLUGIN_TASK = "aisc_eval.celery_tasks.run_plugin"
+
+
+async def _platform_pid_of(evaluation_uuid: uuid.UUID) -> str:
+    """The platform project this run belongs to: the one the door admitted, or
+    (outside a request, one database) the platform link of its engine project."""
+    admitted = projectdb.admitted_pid.get()
+    if admitted:
+        return projectdb.normalise(admitted)
+    from aisc_backend.models.evaluation import Evaluation
+
+    evaluation = await Evaluation.objects.select_related("project").aget(pid=evaluation_uuid)
+    linked = evaluation.project.platform_project_id if evaluation.project else None
+    if linked is None:
+        raise HttpError(409, "this evaluation belongs to no platform project, so no run can be started for it")
+    return projectdb.normalise(linked)
+
+
+@sync_to_async
+def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
+    """Send the run to the worker with its start in the project's ledger, in one transaction: the
+    worker's events cite the start, so it is written before the worker can call back, and it is
+    rolled back when the message cannot be sent. The evaluation is the run."""
+    from aisc_backend.models import Evaluation, EvaluationPlugin
+
+    using = router.db_for_write(Evaluation)
+    with transaction.atomic(using=using):
+        if ledger.on():
+            plugins = list(EvaluationPlugin.objects.using(using).filter(evaluation__pid=evaluation_uuid)
+                           .order_by("id").values_list("plugin_config__plugin__name", flat=True))
+            ledger.emit(ledger.RUN_REQUESTED, item_type="evaluation", item_id=evaluation_uuid,
+                        run_id=evaluation_uuid, details={"plugins": plugins}, using=using)
+        return send()
 
 
 async def run_evaluation(evaluation_uuid: uuid.UUID):
-    run_evaluation_task_result = celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid])
-    return run_evaluation_task_result
+    """Dispatch a run: run_evaluation(evaluation_pid), as the upstream worker takes it, in both modes.
+
+    Configurator: the run also travels in the
+    Celery message headers, under aisc_run: the platform pid, the evaluation pid and the
+    ticket that binds the run to both. The worker copies that header onto every task it
+    publishes and sends the three back on every internal call; the door checks them. No DSN
+    is sent: the door opens the project's database from the platform pid.
+    """
+    if not deployment.is_configurator():
+        return await _recorded_and_sent(evaluation_uuid,
+                                        lambda: celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid]))
+    platform_pid = await _platform_pid_of(evaluation_uuid)
+    evaluation_pid = projectdb.normalise(evaluation_uuid)
+    ticket = projectdb.run_ticket(platform_pid, evaluation_pid)
+    return await _recorded_and_sent(evaluation_uuid, lambda: celery.send_task(
+        RUN_EVAL_TASK,
+        args=[evaluation_uuid],
+        headers={"aisc_run": {"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket}},
+    ))
 
 
 async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProgress]:

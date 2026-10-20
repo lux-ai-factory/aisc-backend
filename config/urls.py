@@ -15,13 +15,13 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.contrib import admin
 from django.urls import path, include
 
 from ninja import Router
 
 from aisc_backend.routers.app import router as app_router
 from aisc_backend.routers.project import router as project_router
+from aisc_backend.routers.project_by_name import router as project_by_name_router
 from aisc_backend.routers.component import router as component_router
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.plugin import router as plugin_router
@@ -32,11 +32,14 @@ from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
 from aisc_backend.routers.internal import router as internal_router
 from aisc_backend.routers.project_config import router as project_config_router
+from aisc_backend.routers.platform_project import router as platform_project_router
+from aisc_backend.routers.target_input import router as target_input_router
 
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.utils.logging_ninja_api import LoggingNinjaAPI
 from aisc_backend.utils.exception_handlers import register_exception_handlers
 from config.settings import APP_NAME
+from aisc_backend import deployment
 
 # Deny-by-default: KeycloakAuth() is the API-wide default, so EVERY endpoint requires a valid token.
 # (KeycloakAuth lets everyone through while AUTH_ENABLED is False, so dev is unaffected; in prod with
@@ -49,6 +52,14 @@ v1_router = Router()
 
 v1_router.add_router("/app", app_router)
 # Our endpoints
+if deployment.is_configurator():
+    # The engine's row for a platform project; before /projects so its path is matched first.
+    v1_router.add_router("/projects/for-platform", platform_project_router)
+    # Every evaluation names its target: before /plugins, so the evaluation
+    # form's input definitions come from here (upstream's handler's, plus `target`).
+    v1_router.add_router("/plugins", target_input_router)
+# A project by any name ("/" included): before /projects, whose /{pid} would take "by-name".
+v1_router.add_router("/projects/by-name", project_by_name_router)
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/components", component_router)
 v1_router.add_router("/evaluations", evaluation_router)
@@ -64,8 +75,17 @@ api.add_router("/v1/", v1_router)
 api.add_router("/v1/internal", internal_router)
 
 
-urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("_allauth/", include("allauth.headless.urls")),
+if deployment.is_standalone():
+    # The upstream login: the admin site and allauth. The Configurator signs people in at its gateway.
+    from django.contrib import admin
+
+    urlpatterns = [
+        path("admin/", admin.site.urls),
+        path("_allauth/", include("allauth.headless.urls")),
+    ]
+else:
+    urlpatterns = []
+
+urlpatterns += [
     path("api/", api.urls),
 ]

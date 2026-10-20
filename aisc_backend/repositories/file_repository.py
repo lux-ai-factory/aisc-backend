@@ -30,7 +30,7 @@ def _get_s3_client() -> BaseClient:
 def bucket_exists(bucket_name: str) -> bool:
     s3_client = _get_s3_client()
     try:
-        response = s3_client.head_bucket(Bucket=bucket_name)
+        s3_client.head_bucket(Bucket=bucket_name)
     except ClientError as e:
         logging.error(e)
         return False
@@ -42,7 +42,7 @@ def upload_file(file: File, bucket_name: str, object_name: str = None) -> bool:
 
     s3_client = _get_s3_client()
     try:
-        response = s3_client.upload_fileobj(file, bucket_name, object_name)
+        s3_client.upload_fileobj(file, bucket_name, object_name)
     except ClientError as e:
         logging.error(e)
         return False

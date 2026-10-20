@@ -9,7 +9,12 @@ from typing import Optional, Dict, Any
 from allauth.headless.tokens.sessions import SessionTokenStrategy
 from ninja_jwt.tokens import RefreshToken
 from django.http import HttpRequest
-# from my_application.routers.token import TokenPairOut
+from ninja import Schema
+
+
+class TokenPairOut(Schema):
+    refresh_token: str
+    access_token: str
 
 
 class SessionAndJWTStrategy(SessionTokenStrategy):

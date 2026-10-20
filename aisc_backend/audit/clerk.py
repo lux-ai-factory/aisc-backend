@@ -71,6 +71,22 @@ def _build_summary(actor: str, action: str, resource_type: str, resource_id: str
     return line
 
 
+#: What immudb says when the clerk's login is over: its token expired (IMMUDB_TOKEN_EXPIRY_TIME) or
+#: immudb restarted. Its messages, lower-cased, besides the UNAUTHENTICATED status.
+_ENDED_SESSION = ("please login", "not logged in", "invalid token", "token has expired", "session not found")
+
+
+def _session_ended(exc: Exception) -> bool:
+    """Whether a call failed only because the clerk is no longer logged in."""
+    try:
+        status = exc.code().name if callable(getattr(exc, "code", None)) else ""
+    except Exception:  # noqa: BLE001 - not a gRPC error after all
+        status = ""
+    details = exc.details() if callable(getattr(exc, "details", None)) else ""
+    text = f"{details or ''} {exc}".lower()
+    return status == "UNAUTHENTICATED" or any(m in text for m in _ENDED_SESSION)
+
+
 class AuditClerk:
     """Single writer to the immudb audit ledger. Connects + provisions lazily on first use."""
 
@@ -100,6 +116,21 @@ class AuditClerk:
             self._client = client
             logger.info("immudb audit clerk ready (db=%r)", db)
 
+    def _run(self, op):
+        """op(client) on the logged-in client. When immudb has ended the clerk's login, log in again and run it
+        once more; without this every audit write is lost until the engine restarts."""
+        self.connect()
+        try:
+            return op(self._client)
+        except Exception as exc:
+            if not _session_ended(exc):
+                raise
+            logger.info("immudb: the audit clerk's login ended; logging in again")
+            with self._lock:
+                self._client = None
+            self.connect()
+            return op(self._client)
+
     def write_event(
         self,
         actor: str,
@@ -122,10 +153,8 @@ class AuditClerk:
           outcome       - ok | failed
           metadata      - WHY/details: dict of what actually changed (stored as JSON)
         """
-        self.connect()
-        assert self._client is not None
         metadata = metadata or {}
-        self._client.sqlExec(
+        self._run(lambda client: client.sqlExec(
             _INSERT,
             params={
                 "occurred_at": datetime.now(timezone.utc),
@@ -140,16 +169,15 @@ class AuditClerk:
                 "summary": _build_summary(actor, action, resource_type, resource_id,
                                           source_app, source_ip, outcome, metadata),
             },
-        )
+        ))
 
     def list_events(self, limit: int = 100) -> list[dict]:
         """Read recent audit events (newest first). ADMIN-only use (gated at the endpoint)."""
-        self.connect()
-        assert self._client is not None
-        rows = self._client.sqlQuery(
+        # read in full inside the retry: the rows are a stream, and an ended login surfaces as they are read
+        rows = self._run(lambda client: list(client.sqlQuery(
             "SELECT id, occurred_at, actor, action, resource_type, resource_id, "
             "source_app, source_ip, outcome, metadata, summary FROM audit_log;"
-        )
+        )))
         events = []
         for r in rows:
             e = dict(zip(_COLUMNS, r))
@@ -165,11 +193,12 @@ class AuditClerk:
         server's cryptographic proof against the saved state — if the server tampered, this raises/fails.
         Returns True iff the cryptographic verification passes.
         """
-        self.connect()
-        assert self._client is not None
+        def probe(client):
+            client.verifiedSet(b"audit:_integrity_probe", b"ok")
+            return client.verifiedGet(b"audit:_integrity_probe")
+
         try:
-            self._client.verifiedSet(b"audit:_integrity_probe", b"ok")
-            res = self._client.verifiedGet(b"audit:_integrity_probe")
+            res = self._run(probe)
             return getattr(res, "value", None) == b"ok"
         except Exception as e:  # noqa: BLE001
             logger.warning("immudb verify() failed: %s", e)

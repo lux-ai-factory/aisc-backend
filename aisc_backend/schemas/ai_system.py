@@ -4,18 +4,6 @@ import uuid
 from aisc_backend.models.ai_system import AISystem, AIComponent
 
 
-class AISystemOutSchema(ModelSchema):
-    class Meta:
-        model = AISystem
-        fields = ["pid", "name", "description"]
-
-
-class AIComponentPidOutSchema(ModelSchema):
-    class Meta:
-        model = AIComponent
-        fields = ["pid"]
-
-
 class AIComponentOutSchema(ModelSchema):
     source_dataset_pid: uuid.UUID | None = Field(default=None, alias="source_dataset.pid")
 
