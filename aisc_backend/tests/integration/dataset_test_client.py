@@ -8,12 +8,9 @@ from aisc_backend.routers.component import router, UploadComponentFileResponse
 
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.utils.file_utils import csv_bytes_to_parquet_bytes
-
 client = TestAsyncClient(router)
 
 csv_file_content = b"feature1,feature2,target\n1,2,0\n3,4,1\n"
-parquet_file_content = csv_bytes_to_parquet_bytes(csv_file_content)
 
 
 async def upload_dataset_file(pid: uuid.UUID) -> UploadComponentFileResponse:
@@ -43,7 +40,7 @@ async def get_dataset_file_data(pid: uuid.UUID) -> StreamingHttpResponse:
         patch("aisc_backend.routers.component.file_repository.get_object", new_callable=MagicMock) as mock_get_object_response,
     ):
         mock_bucket_exists_response.return_value = True
-        mock_get_object_response.return_value = {'Body': parquet_file_content}
+        mock_get_object_response.return_value = {'Body': csv_file_content}
 
         response = await client.get(f'/{pid}/data')
         return response

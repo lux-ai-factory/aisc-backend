@@ -46,11 +46,12 @@ class KeycloakVerifyTokenTest(SimpleTestCase):
             self.addCleanup(patcher.stop)
             patcher.start()
 
-    def _make_token(self, *, roles=None, issuer=ISSUER, exp_delta_seconds=300, key=None):
+    def _make_token(self, *, roles=None, issuer=ISSUER, exp_delta_seconds=300, key=None, azp="aisc-gateway"):
         now = datetime.datetime.now(datetime.timezone.utc)
         payload = {
             "preferred_username": "tester",
             "iss": issuer,
+            "azp": azp,
             "iat": now,
             "exp": now + datetime.timedelta(seconds=exp_delta_seconds),
             "realm_access": {"roles": roles or []},
@@ -79,6 +80,26 @@ class KeycloakVerifyTokenTest(SimpleTestCase):
         with self.assertRaises(jwt.PyJWTError):
             keycloak.verify_token(token)
 
+    # --- which client the token was issued to (azp) ---
+    def test_the_gateway_and_the_engine_s_own_app_are_accepted(self):
+        for client in ("aisc-gateway", "aisc-webapp"):
+            with self.subTest(client=client):
+                self.assertEqual(keycloak.verify_token(self._make_token(azp=client))["azp"], client)
+
+    def test_a_token_issued_to_another_client_of_the_realm_is_rejected(self):
+        for client in ("aisc-report-composer", "", None):
+            with self.subTest(client=client), self.assertRaises(jwt.PyJWTError):
+                keycloak.verify_token(self._make_token(azp=client))
+
+    def test_a_token_issued_to_another_client_is_401(self):
+        self.assertIsNone(keycloak.KeycloakAuth().authenticate(mock.Mock(), self._make_token(azp="other")))
+
+    def test_the_accepted_clients_are_a_setting(self):
+        with mock.patch.object(keycloak, "ACCEPTED_CLIENTS", ("other",)):
+            self.assertEqual(keycloak.verify_token(self._make_token(azp="other"))["azp"], "other")
+            with self.assertRaises(jwt.PyJWTError):
+                keycloak.verify_token(self._make_token(azp="aisc-gateway"))
+
     # --- authorization (require_role) ---
     def test_require_role_admin_allows_admin(self):
         token = self._make_token(roles=["admin"])
@@ -90,3 +111,18 @@ class KeycloakVerifyTokenTest(SimpleTestCase):
         token = self._make_token(roles=["primary-user"])
         result = keycloak.require_role("admin").authenticate(mock.Mock(), token)
         self.assertIsNone(result)
+
+
+class AcceptedClientsSetting(SimpleTestCase):
+    def test_the_default_is_the_gateway_and_the_engine_s_own_app(self):
+        from django.conf import settings
+
+        self.assertEqual(list(settings.ENGINE_ACCEPTED_CLIENTS), ["aisc-gateway", "aisc-webapp"])
+        self.assertEqual(list(keycloak.ACCEPTED_CLIENTS), ["aisc-gateway", "aisc-webapp"])
+
+    def test_it_is_read_comma_separated(self):
+        from aisc_backend.tests.isolation_support import settings_probe
+
+        result = settings_probe("from django.conf import settings\nout = list(settings.ENGINE_ACCEPTED_CLIENTS)",
+                                {"ENGINE_ACCEPTED_CLIENTS": "aisc-gateway, other-client"})
+        self.assertEqual(result, {"ok": True, "out": ["aisc-gateway", "other-client"]})

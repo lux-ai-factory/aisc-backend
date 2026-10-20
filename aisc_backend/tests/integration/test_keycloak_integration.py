@@ -69,7 +69,7 @@ class KeycloakIntegrationTest(SimpleTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["username"], "user")
 
-    # --- Phase 6: deny-by-default. Go through the REAL api with the ASGI client (the app runs ASGI). ---
+    # --- Deny by default. Go through the REAL api with the ASGI client (the app runs ASGI). ---
     async def test_deny_by_default_blocks_anonymous_on_real_endpoint(self):
         # /app/app-name used to be open; the API-wide KeycloakAuth now requires a token.
         # (Auth rejects before the handler, so no DB is touched — safe in SimpleTestCase.)

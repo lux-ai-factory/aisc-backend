@@ -90,3 +90,93 @@ class AuditClerkUnitTest(SimpleTestCase):
         self.assertIn("project", summary)
         self.assertIn("p-9", summary)
         self.assertIn("name=Demo", summary)
+
+
+class _RpcError(Exception):
+    """A gRPC error as the immudb SDK raises it: a status code and the server's message."""
+
+    def __init__(self, code_name: str, details: str):
+        super().__init__(details)
+        self._code_name, self._details = code_name, details
+
+    def code(self):
+        import grpc
+
+        return getattr(grpc.StatusCode, self._code_name)
+
+    def details(self):
+        return self._details
+
+
+class AnEndedSessionIsOpenedAgain(SimpleTestCase):
+    """immudb ends a login when its token expires (IMMUDB_TOKEN_EXPIRY_TIME) and at every restart. The clerk
+    logs in again and retries the call once, instead of losing every audit write until the engine restarts."""
+
+    def _clerk(self, clients):
+        patcher = mock.patch.object(clerk_mod, "ImmudbClient", side_effect=clients)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for client in clients:
+            client.databaseList.return_value = [b"auditdb"]
+        return clerk_mod.AuditClerk()
+
+    def test_a_write_after_the_session_ended_logs_in_again_and_is_written(self):
+        for ended in (_RpcError("UNAUTHENTICATED", "invalid token"), _RpcError("UNKNOWN", "token has expired"),
+                      _RpcError("UNKNOWN", "session not found"), _RpcError("UNKNOWN", "please login")):
+            with self.subTest(ended=ended.details()):
+                first, second = mock.MagicMock(), mock.MagicMock()
+                c = self._clerk([first, second])
+                c.connect()
+                first.sqlExec.side_effect = ended
+                c.write_event(actor="admin", action="delete", resource_type="project")
+                second.login.assert_called_once()
+                self.assertIn("INSERT", second.sqlExec.call_args_list[-1].args[0])
+
+    def test_any_other_failure_is_not_retried(self):
+        first, second = mock.MagicMock(), mock.MagicMock()
+        c = self._clerk([first, second])
+        c.connect()
+        first.sqlExec.side_effect = _RpcError("INVALID_ARGUMENT", "syntax error")
+        with self.assertRaises(_RpcError):
+            c.write_event(actor="admin", action="delete", resource_type="project")
+        second.login.assert_not_called()
+
+    def test_a_session_that_ends_again_right_away_is_not_retried_for_ever(self):
+        first, second = mock.MagicMock(), mock.MagicMock()
+        c = self._clerk([first, second])
+        c.connect()
+        first.sqlExec.side_effect = _RpcError("UNAUTHENTICATED", "invalid token")
+        second.sqlExec.side_effect = [None, _RpcError("UNAUTHENTICATED", "invalid token")]   # CREATE TABLE, then the insert
+        with self.assertRaises(_RpcError):
+            c.write_event(actor="admin", action="delete", resource_type="project")
+
+    def test_the_integrity_check_survives_an_ended_session_too(self):
+        first, second = mock.MagicMock(), mock.MagicMock()
+        c = self._clerk([first, second])
+        c.connect()
+        first.verifiedSet.side_effect = _RpcError("UNAUTHENTICATED", "invalid token")
+        second.verifiedGet.return_value = mock.Mock(value=b"ok")
+        self.assertTrue(c.verify())
+        second.login.assert_called_once()
+
+
+class AnEndedSessionFoundWhileReading(SimpleTestCase):
+    """After an immudb restart the server answers "not logged in", and a query's rows come back as a stream:
+    the refusal surfaces only when they are read, which must still be inside the retry."""
+
+    def test_reading_the_log_after_a_restart_logs_in_again(self):
+        first, second = mock.MagicMock(), mock.MagicMock()
+        for client in (first, second):
+            client.databaseList.return_value = [b"auditdb"]
+
+        def refused():
+            raise _RpcError("UNKNOWN", "not logged in")
+            yield  # a generator: the refusal comes when the rows are read
+
+        first.sqlQuery.side_effect = lambda *a, **k: refused()
+        second.sqlQuery.return_value = iter([])
+        with mock.patch.object(clerk_mod, "ImmudbClient", side_effect=[first, second]):
+            c = clerk_mod.AuditClerk()
+            c.connect()
+            self.assertEqual(c.list_events(), [])
+        second.login.assert_called_once()
