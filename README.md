@@ -75,10 +75,17 @@ unset, and this repo's `Dockerfile` runs `manage.py migrate` before it serves on
 
 ### B) Local development (developing **this backend**)
 
-Use this when you're changing Django code in this repo itself. The infrastructure (PostgreSQL,
-Redis, RabbitMQ, MinIO) can be started from the aisc folder with `uv run scripts/aisc.py start`. To start only the infrastructure,
-run `uv run scripts/aisc.py secrets` there. It prints this install's exact compose command. Add `up` and the
-infrastructure service names to it.
+Use this when you're changing Django code in this repo itself and run it on the host. Start only the
+infrastructure it needs (PostgreSQL, Redis, RabbitMQ, MinIO and immudb):
+
+1. Set `AISC_ADMIN_PORTS=on`, in the environment or in `env.local` in the aisc folder. The infrastructure
+   ports (5432, 6379, 5672, 9000 and 3322) are published, on `127.0.0.1` only, when it is set.
+2. In the aisc folder, run `uv run scripts/aisc.py secrets`. It prints this install's exact compose
+   command, which ends in `up -d`.
+3. Append the service names to that command: `postgres redis rabbitmq minio immudb`.
+
+`uv run scripts/aisc.py start` instead brings up everything, the backend containers included. Use it to
+run this module inside the full stack.
 
 #### Prerequisites
 - Python 3.12+
