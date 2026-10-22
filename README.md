@@ -54,9 +54,8 @@ database made by the other mode.
 
 ### A) Inside the AISC stack (the usual way)
 
-From the root of the `aisc` repository, follow its README: run `./scripts/secrets.sh` once, then
-start the stack with Docker Compose (`docker-compose.plugin_downloader.yml`,
-`docker-compose-infra.development.yml` and `docker-compose.development.yml`). This repo is built
+From the root of the `aisc` repository, follow its README: run `uv run scripts/aisc.py start`, which makes the
+secrets if they are missing and starts the stack. This repo is built
 into two services of `docker-compose.development.yml`, both with `AISC_DEPLOYMENT: configurator`:
 
 - **`aisc-backend-migrate`**: a one-shot that runs `manage.py migrate_projects`, which applies
@@ -77,8 +76,9 @@ unset, and this repo's `Dockerfile` runs `manage.py migrate` before it serves on
 ### B) Local development (developing **this backend**)
 
 Use this when you're changing Django code in this repo itself. The infrastructure (PostgreSQL,
-Redis, RabbitMQ, MinIO) can be started from the `aisc` repo root with
-`docker compose --env-file env.development -f docker-compose-infra.development.yml up`.
+Redis, RabbitMQ, MinIO) can be started from the aisc folder with `uv run scripts/aisc.py start`. To start only the infrastructure,
+run `uv run scripts/aisc.py secrets` there. It prints this install's exact compose command. Add `up` and the
+infrastructure service names to it.
 
 #### Prerequisites
 - Python 3.12+
