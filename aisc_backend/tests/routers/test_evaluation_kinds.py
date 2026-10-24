@@ -182,6 +182,14 @@ class EvaluationKinds(TestCase):
         response = await self.run_plugin(CardOrLocal, [])
         await self.assert_refused(response, "pick what is assessed: a target of the AI card or a local model file")
 
+    async def test_no_card_target_is_refused_for_a_card_plugin(self):
+        response = await self.run_plugin(CallsTheTarget, [("prompts", self.f.prompts)])
+        await self.assert_refused(response, "pick what is assessed: a target of the AI card")
+
+    async def test_no_local_model_file_is_refused_for_a_local_model_plugin(self):
+        response = await self.run_plugin(LocalOnly, [])
+        await self.assert_refused(response, "pick what is assessed: a local model file")
+
     async def test_a_connection_reference_is_refused_for_an_adopted_plugin(self):
         response = await self.run_plugin(CallsTheTarget, [("target", self.f.system_target),
                                                           ("prompts", self.f.connection)], connected=True)
@@ -283,6 +291,10 @@ class EvaluationKinds(TestCase):
         response = await self.run_plugin(OldDeclaration, [("target", self.f.system_target)], connected=True)
         await self.assert_accepted(response)
 
+    async def test_an_old_declaration_without_a_target_is_accepted(self):
+        response = await self.run_plugin(OldDeclaration, [])
+        await self.assert_accepted(response)
+
     async def test_a_plugin_that_declares_nothing_is_unchanged(self):
         response = await self.run_plugin(DeclaresNothing, [("target", self.f.other_projects_target)])
         await self.assert_accepted(response)
@@ -303,6 +315,8 @@ class StandaloneIsUnchanged(EvaluationKinds):
     test_a_card_target_for_a_local_model_plugin_is_refused = None
     test_both_kinds_at_once_are_refused = None
     test_neither_kind_is_refused_for_a_both_kinds_plugin = None
+    test_no_card_target_is_refused_for_a_card_plugin = None
+    test_no_local_model_file_is_refused_for_a_local_model_plugin = None
     test_a_connection_reference_is_refused_for_an_adopted_plugin = None
     test_an_old_declaration_is_refused_a_target_of_another_project = None
     test_an_old_declaration_that_calls_its_target_is_refused_one_without_a_connection = None

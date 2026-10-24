@@ -116,7 +116,7 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
     `inputs` are the run's (input name, component) pairs. A card target is the `target` input, a
     mirror of one of this project's card targets (`target:<platform pid>/<key>`), connected when
     the plugin's card access calls it; a local model file is the plugin's local model input; a plugin
-    declaring both is given one of them. An older declaration alone (@system_under_test,
+    declaring one kind or both is given one of them. An older declaration alone (@system_under_test,
     @dataset_through_target, @assesses_inputs) is a card target, and may still be given a connection
     bound directly (`connection:<pid>/<name>`); a plugin declaring nothing is not checked."""
     kinds = target_kinds_of(plugin)
@@ -148,6 +148,10 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
             return "assess either a target of the AI card or a local model file, not both"
         if card is None and local is None:
             return "pick what is assessed: a target of the AI card or a local model file"
+    if adopted and kinds == (CARD,) and card is None:
+        return "pick what is assessed: a target of the AI card"
+    if adopted and kinds == (LOCAL_MODEL,) and local is None:
+        return "pick what is assessed: a local model file"
     return None
 
 
