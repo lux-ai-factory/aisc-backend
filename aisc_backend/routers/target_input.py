@@ -202,20 +202,31 @@ def _empty(value) -> bool:
         _empty(v) for v in (value.values() if isinstance(value, dict) else value)))
 
 
+_NO_DEFAULT = object()  # the field states no default
+_NO_VALUE = object()  # a parent's default is None: the field has no value
+
+
 def _walk_fields(node: dict, ui: dict, defs: dict, prefix: str, seen: frozenset, default, hidden: bool,
                  asked: list, hidden_fields: dict) -> None:
     """Every leaf field of the form: its dotted name into ``asked``, or, when the form hides it (it or a
     parent with ui:widget hidden), into ``hidden_fields`` with whether its default is empty. A parent's
-    default (a nested model's instance) gives its fields' defaults, as Pydantic does."""
+    default (a nested model's instance) gives its fields' defaults, as Pydantic does; a parent whose
+    default is None gives its fields no value, whatever their own defaults."""
     props, seen = _properties(node, defs, seen)
     for name, sub in props.items():
         sub_ui = ui.get(name) if isinstance(ui.get(name), dict) else {}
         sub_hidden = hidden or sub_ui.get("ui:widget") == "hidden"  # filled by the platform, not asked
-        sub_default = default[name] if isinstance(default, dict) and name in default else sub.get("default")
+        if default is _NO_VALUE:
+            sub_default = _NO_VALUE
+        elif isinstance(default, dict) and name in default:
+            sub_default = default[name]
+        else:
+            sub_default = sub.get("default", _NO_DEFAULT)
         if _properties(sub, defs, seen)[0]:
-            _walk_fields(sub, sub_ui, defs, f"{prefix}{name}.", seen, sub_default, sub_hidden, asked, hidden_fields)
+            below = _NO_VALUE if sub_default is None else sub_default
+            _walk_fields(sub, sub_ui, defs, f"{prefix}{name}.", seen, below, sub_hidden, asked, hidden_fields)
         elif sub_hidden:
-            hidden_fields[prefix + name] = _empty(sub_default)
+            hidden_fields[prefix + name] = sub_default in (_NO_VALUE, _NO_DEFAULT) or _empty(sub_default)
         else:
             asked.append(prefix + name)
 

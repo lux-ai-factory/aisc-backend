@@ -99,6 +99,22 @@ class HidesAFallback(BaseEvaluationPlugin[FallbackForm]):
     form_ui_schema = {"target_model_id": {"ui:widget": "hidden"}, "target": {"ui:widget": "hidden"}}
 
 
+class PinnedEndpoint(BaseModel):
+    base_url: str = ""
+    model: str = "plugins-own-pinned-model"
+
+
+class NoEndpointByDefault(BaseModel):
+    rounds: int = 3
+    target: PinnedEndpoint | None = None
+
+
+@assesses(card=inputs_access())
+class HidesAnEndpointThatIsNoneByDefault(BaseEvaluationPlugin[NoEndpointByDefault]):
+    """A hidden nested field whose default is None: its fields have no value, whatever their own defaults."""
+    form_ui_schema = {"target": {"ui:widget": "hidden"}}
+
+
 def instance_of(cls):
     """An instance of the plugin class (the fixtures leave evaluate abstract: a subclass gives it)."""
     return type(cls.__name__, (cls,), {"evaluate": lambda self, config_data: None})()
@@ -173,6 +189,11 @@ class TheDeclarations(SimpleTestCase):
                          {"target.base_url": True, "target.model": False, "target_model_id": False})
         self.assertEqual(out["fallback"]["config_fields"], ["rounds"])
         self.assertNotIn("plugins-own", json.dumps(list(out.values())))
+
+    def test_the_fields_of_a_hidden_parent_whose_default_is_none_are_empty(self):
+        out, _ = self.declarations({"none": HidesAnEndpointThatIsNoneByDefault})
+        self.assertEqual(out["none"]["hidden_config_fields"], {"target.base_url": True, "target.model": True})
+        self.assertEqual(out["none"]["config_fields"], ["rounds"])
 
     def test_a_plugin_that_does_not_load_is_left_out_not_the_whole_list(self):
         rows = [row("chat"), row("broken")]
