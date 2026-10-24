@@ -166,8 +166,10 @@ class AISystemRouteAnswersWithTheProjectsSystem(TestCase):
         self.assertEqual(set(response.json()), {"pid", "name", "description", "components"})
 
 
-class EvaluationTaskWithoutThePlatform(TestCase):
-    """POST /api/v1/evaluations/task no longer depends on the platform."""
+class EvaluationOfAPluginThatDeclaresNoTarget(TestCase):
+    """POST /api/v1/evaluations/task, for a plugin that declares nothing it assesses, asks the
+    platform nothing: it is accepted with the platform down, and its inputs are not checked
+    against a version of the AI card."""
 
     async def _project_with_part(self):
         project = await Project.objects.acreate(name="MCAS", status=ProjectStatus.Ready)
