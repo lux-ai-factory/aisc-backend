@@ -292,6 +292,25 @@ class Runs(Recording):
         _, uploaded = await events()
         self.assertRunEvent(uploaded, "engine.artifact.uploaded", "artifact", artifact.pid, {"size": 8})
 
+    async def test_marking_a_run_local_names_the_input_and_the_file_only(self):
+        from aisc_backend.models import EvaluationInput
+
+        with unrecorded():
+            model = await AIComponent.objects.acreate(component_type=AIComponentType.MODEL, system=self.system,
+                                                      name="model.onnx", description="", data="")
+            evaluation_input = await EvaluationInput.objects.acreate(
+                evaluation_plugin=self.evaluation_plugin, name="model", component=model,
+                value={"local_model": {"file": "model.onnx"}})
+        await self._start()
+        marker = {"local_model": {"file": "model.onnx", "sha256": "ab" * 32}}
+        res = await self._as_the_worker("patch", f"/evaluations/{self.evaluation.pid}/inputs/"
+                                                 f"{evaluation_input.pid}/value", json={"value": marker})
+        self.assertEqual(res.status_code, 200, res.text)
+        _, marked = await events()
+        self.assertRunEvent(marked, "engine.evaluation.input_marked_local", "evaluation", self.evaluation.pid,
+                            {"input": "model", "file": "model.onnx", "sha256": "ab" * 32})
+        self.assertNotIn(INTERNAL_SECRET, json.dumps(marked))
+
     async def test_a_run_whose_start_was_not_recorded_records_nothing(self):
         with unrecorded():
             await self._start()

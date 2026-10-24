@@ -232,7 +232,16 @@ async def store_evaluation_input_value(
     except EvaluationInput.DoesNotExist:
         raise HttpError(404, "No input of this evaluation found")
     evaluation_input.value = data.value.model_dump()
-    await evaluation_input.asave(update_fields=["value"])
+    local_model = data.value.local_model
+
+    async def record():
+        # the marker and its ledger event commit together
+        await evaluation_input.asave(update_fields=["value"])
+        await sync_to_async(ledger.emit_for_run)(
+            "engine.evaluation.input_marked_local", evaluation_pid, item_type="evaluation", item_id=evaluation_pid,
+            details={"input": evaluation_input.name, "file": local_model.file, "sha256": local_model.sha256})
+
+    await ledger.atomically(record)
 
     await sync_to_async(log_action)(
         request, action="store_input_value", resource_type="evaluation",
