@@ -2,12 +2,13 @@
 
 The evaluation form reads a plugin's input definitions from GET /plugins/{pid}/input_definitions
 (routers/plugin.py, upstream's). config/urls.py mounts this router in front of it in configurator
-mode: the same answer, plus one required `resource` input, `target`: the system, or the component
-of its AI card, that the evaluation is about. The platform keeps the targets and mirrors each as a
-component of this project whose value is `target:<platform pid>/<key>`. The form's own check asks
-every run for it, and upstream's create route stores the pick as an ordinary EvaluationInput: with
-the card version stamp on the evaluation, every result says what it assessed. A plugin that
-declares `target` itself (the plugin interface's system_under_test) keeps its own.
+mode: the same inputs, arranged so that every evaluation names what it assesses. An AI card target
+is the `resource` input `target`: the system, or the component of its AI card, that the evaluation
+is about. The platform keeps the targets and mirrors each as a component of this project whose value
+is `target:<platform pid>/<key>`. The form's own check asks every run for the inputs marked required,
+and upstream's create route stores each pick as an ordinary EvaluationInput: with the card version
+stamp on the evaluation, every result says what it assessed. A plugin that assesses only a local
+model file is given no `target`; one that declares `target` itself keeps its own.
 
 A plugin that declares what it assesses (the plugin interface's @assesses, or one of the older
 declarations alone, read as an AI card target) is asked for it first, and only for the kinds it
@@ -77,13 +78,13 @@ def _ensure_system_target() -> None:
     from aisc_backend.models import AIComponent, AISystem, Project
 
     project = Project.objects.filter(platform_project_id__isnull=False).first()
-    if project is None or not system_target_offered(project):
+    if project is None:
         return
     system = AISystem.objects.filter(project=project).first()
     if system is None:
         return
     value = system_reference(project.platform_project_id)
-    if _system_target_exists(system, value):
+    if _system_target_exists(system, value) or not system_target_offered(project):
         return
     # two forms loaded at once both find none: the unique index (migration 0022) refuses the second,
     # which then has the one the first made

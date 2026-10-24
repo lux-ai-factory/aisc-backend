@@ -91,6 +91,12 @@ class OldDeclaration(BaseEvaluationPlugin):
     pass
 
 
+@with_prompts
+@helper_model("judge", "Judge model", required=True)
+class HelperButNothingAssessed(BaseEvaluationPlugin):
+    pass
+
+
 @override_settings(AISC_DEPLOYMENT="configurator")
 class TheTargetInput(SimpleTestCase):
     def definitions(self, *defs):
@@ -203,6 +209,13 @@ class WhatIsAssessedComesFirst(SimpleTestCase):
             ("target", target_input.TARGET_LABEL, InputType.RESOURCE, True)])
         ensured.assert_awaited_once()
 
+    def test_a_plugin_with_a_helper_but_nothing_assessed_keeps_todays_form(self):
+        out, _ = self.form(HelperButNothingAssessed)
+        self.assertEqual(self.shown(out), [
+            ("helper:judge", "Judge model", InputType.LLM, True),
+            ("prompts", "Prompts", InputType.DATASET, True),
+            ("target", target_input.TARGET_LABEL, InputType.RESOURCE, True)])
+
 
 @override_settings(AISC_DEPLOYMENT="standalone")
 class StandaloneIsUnchanged(SimpleTestCase):
@@ -281,6 +294,14 @@ class NoSystemTargetBeforeTheAICard(TestCase):
         latest.assert_called_once_with(self.project.platform_project_id, using=self.project._state.db)
         with mock.patch.object(target_input, "latest_system_pid_sync", return_value=uuid.uuid4()):
             self.assertTrue(target_input.system_target_offered(self.project))
+
+    def test_an_already_mirrored_system_costs_no_card_version_query(self):
+        from aisc_backend.models import AIComponent
+        AIComponent.objects.create(system=self.system, name="AI card · System: Research", component_type="resource",
+                                   json_value={"value": target_input.system_reference(self.project.platform_project_id)})
+        with mock.patch.object(target_input, "latest_system_pid_sync") as latest:
+            async_to_sync(target_input.ensure_system_target)()
+        latest.assert_not_called()
 
     def test_a_card_only_plugins_target_options_have_no_system_without_a_card_version(self):
         from aisc_backend.models import AIComponent
