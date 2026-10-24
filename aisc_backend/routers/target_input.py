@@ -230,14 +230,25 @@ def config_fields(plugin) -> list[str]:
     return sorted(_asked_fields(schema, ui, schema.get("$defs") or {}, "", frozenset()))
 
 
+def _readable_config_fields(plugin) -> tuple[list[str], bool]:
+    """(config_fields, unreadable): a form that cannot be built leaves the test listed, flagged."""
+    try:
+        return config_fields(plugin), False
+    except Exception:
+        logger.exception("the config form of %s could not be built for its declarations", type(plugin).__name__)
+        return [], True
+
+
 def declaration(row, plugin) -> dict:
     kinds = target_kinds_of(plugin)
+    fields, unreadable = _readable_config_fields(plugin)
     return {"pid": str(row.pid), "name": row.name, "display_name": row.display_name,
             "package_name": row.package_name, "version": row.version,
             "target_kinds": list(kinds), "card_protocols": list(card_protocols_of(plugin)),
             "card_needs_connection": CARD in kinds and card_needs_connection(plugin),
             "adopted": getattr(plugin, "target_kinds", None) is not None,
-            "helper_roles": _helper_roles(plugin), "config_fields": config_fields(plugin)}
+            "helper_roles": _helper_roles(plugin), "config_fields": fields,
+            "config_fields_unreadable": unreadable}
 
 
 @router.get("/declarations", response=list[dict])

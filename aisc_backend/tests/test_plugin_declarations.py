@@ -21,7 +21,7 @@ from django.test import SimpleTestCase, override_settings
 from aisc_backend.routers import target_input
 from aisc_backend.tests.test_target_input import CardOnly, CardOrLocal, LocalOnly, OldDeclaration, ReadsItsInputs, \
     TwoHelpers, Unadopted
-from aisc_plugin_interface import BaseEvaluationPlugin, InputType, assesses, evaluation_input, \
+from aisc_plugin_interface import BaseEvaluationPlugin, InputType, assesses, evaluation_input, inputs_access, \
     system_under_test_access
 
 
@@ -45,6 +45,19 @@ class WithAConfigForm(BaseEvaluationPlugin[AskingConfig]):
     form_ui_schema = {"target_api_key": {"ui:widget": "hidden"}, "target": {"base_url": {"ui:widget": "hidden"}}}
 
 
+class SchemaThatDoesNotBuild(BaseModel):
+    rounds: int = 3
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        raise TypeError("a field type with no JSON schema")
+
+
+@assesses(card=inputs_access())
+class FormThatDoesNotBuild(BaseEvaluationPlugin[SchemaThatDoesNotBuild]):
+    pass
+
+
 def row(name, display_name=None):
     return SimpleNamespace(pid=uuid.uuid4(), name=name, display_name=display_name or name.title(),
                            package_name=f"aisc-{name}", version="1.0.0")
@@ -63,10 +76,14 @@ class TheDeclarations(SimpleTestCase):
     def test_each_enabled_plugin_says_what_it_assesses_and_how_it_reaches_a_card_target(self):
         out, rows = self.declarations({"chat": CardOnly, "inputs": ReadsItsInputs, "local": LocalOnly,
                                        "both": CardOrLocal, "old": OldDeclaration, "plain": Unadopted})
-        self.assertEqual(out["chat"], {"pid": str(rows[0].pid), "name": "chat", "display_name": "Chat",
-                                       "package_name": "aisc-chat", "version": "1.0.0", "target_kinds": ["card"],
-                                       "card_protocols": ["openai"], "card_needs_connection": True,
-                                       "adopted": True, "helper_roles": ["judge"], "config_fields": []})
+        # the keys the platform's target page reads (platform_service/targets.py), unchanged
+        page_keys = ("pid", "name", "display_name", "package_name", "version", "target_kinds", "card_protocols",
+                     "card_needs_connection")
+        self.assertEqual({k: out["chat"][k] for k in page_keys},
+                         {"pid": str(rows[0].pid), "name": "chat", "display_name": "Chat",
+                          "package_name": "aisc-chat", "version": "1.0.0", "target_kinds": ["card"],
+                          "card_protocols": ["openai"], "card_needs_connection": True})
+        self.assertEqual((out["chat"]["adopted"], out["chat"]["helper_roles"]), (True, ["judge"]))
         self.assertEqual((out["inputs"]["target_kinds"], out["inputs"]["card_needs_connection"]), (["card"], False))
         self.assertEqual((out["local"]["target_kinds"], out["local"]["card_needs_connection"]), (["local_model"], False))
         self.assertEqual(out["both"]["target_kinds"], ["card", "local_model"])
@@ -90,6 +107,12 @@ class TheDeclarations(SimpleTestCase):
         self.assertEqual(out["form"]["config_fields"], ["note", "rounds", "target.model"])
         self.assertEqual(out["plain"]["config_fields"], [])
         self.assertNotIn("never-shown-default", json.dumps(list(out.values())))
+
+    def test_a_config_form_that_cannot_be_built_is_flagged_and_the_test_still_listed(self):
+        out, _ = self.declarations({"broken": FormThatDoesNotBuild, "form": WithAConfigForm})
+        self.assertEqual((out["broken"]["config_fields"], out["broken"]["config_fields_unreadable"]), ([], True))
+        self.assertEqual(out["broken"]["target_kinds"], ["card"])
+        self.assertFalse(out["form"]["config_fields_unreadable"])
 
     def test_a_plugin_that_does_not_load_is_left_out_not_the_whole_list(self):
         rows = [row("chat"), row("broken")]
