@@ -67,8 +67,10 @@ class EvaluationPluginInputSchema(Schema):
     endpoint_url: str | None = None
     secret_key: str | None = None
     secret_encrypted_value: str | None = None
-    #: the plugin's local model file (@assesses(local_model=...)): a run on it is not an AI card run
-    local_model: bool = False
+    #: the plugin's local model file (@assesses(local_model=...)): a run on it is not an AI card run;
+    #: None, with local_model_unknown, for a model file of a plugin the backend could not load
+    local_model: bool | None = False
+    local_model_unknown: bool = False
 
 
 class PluginsStatusResponse(Schema):
@@ -168,22 +170,34 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
                 endpoint_url=endpoint_url,
                 secret_key=secret_key,
                 secret_encrypted_value=secret_encrypted_value,
-                local_model=inp.name == local_model_input and component.component_type == "model",
+                **_local_model_flags(inp.name, component.component_type, local_model_input),
             ))
         result[str(evaluation_plugin.pid)] = entries
     return result
 
 
-async def _local_model_input(evaluation_plugin_pid: uuid.UUID) -> str | None:
+#: the plugin could not be loaded: which input is its local model file is not known
+UNKNOWN = object()
+
+
+def _local_model_flags(input_name: str, component_type: str, local_model_input) -> dict:
+    if component_type != "model":
+        return {"local_model": False, "local_model_unknown": False}
+    if local_model_input is UNKNOWN:
+        return {"local_model": None, "local_model_unknown": True}
+    return {"local_model": input_name == local_model_input, "local_model_unknown": False}
+
+
+async def _local_model_input(evaluation_plugin_pid: uuid.UUID):
     """The name of the plugin's local model input, read from its class (the worker may not load
-    plugin classes); None when it declares none or cannot be loaded here."""
+    plugin classes); None when it declares none, UNKNOWN when it cannot be loaded here."""
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
     plugin = evaluation_plugin.plugin_config.plugin
     try:
         plugin_class = plugin_routes.plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
     except Exception:
-        logger.warning("plugin %s could not be loaded to find its local model input", plugin)
-        return None
+        logger.warning("plugin %s could not be loaded to find its local model input", plugin, exc_info=True)
+        return UNKNOWN
     return getattr(plugin_class, "local_model_input", None)
 
 

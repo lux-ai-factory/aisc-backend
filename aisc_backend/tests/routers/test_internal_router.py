@@ -205,18 +205,39 @@ class LocalModelInputTestCase(TestCase):
         entry = await self._inputs(BaseEvaluationPlugin)
         self.assertFalse(entry["local_model"])
 
-    async def test_a_plugin_that_cannot_be_loaded_marks_nothing(self):
+    async def _inputs_unloadable(self):
         with (
             patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}),
             patch.object(plugin_routes.plugin_loader, "load_plugin", side_effect=KeyError("not installed")),
+            self.assertLogs(internal.logger, "WARNING") as logs,
         ):
             response = await client.get(
                 f"/evaluations/{self.evaluation.pid}/inputs", headers={"X-Internal-Secret": INTERNAL_SECRET},
             )
         self.assertEqual(200, response.status_code)
-        [entry] = response.data[str(self.evaluation_plugin.pid)]
-        self.assertFalse(entry["local_model"])
+        self.assertTrue(logs.records[0].exc_info, "the load failure is logged with its traceback")
+        return response.data[str(self.evaluation_plugin.pid)]
 
+    async def test_a_model_input_of_a_plugin_that_cannot_be_loaded_is_unknown(self):
+        [entry] = await self._inputs_unloadable()
+        self.assertIsNone(entry["local_model"])
+        self.assertTrue(entry["local_model_unknown"])
+
+    async def test_other_inputs_of_a_plugin_that_cannot_be_loaded_are_not_unknown(self):
+        prompts = await AIComponent.objects.acreate(
+            name="prompts", description="", data="p.csv", component_type=AIComponentType.DATASET,
+            system=self.system,
+        )
+        await self.model_input.adelete()
+        await EvaluationInput.objects.acreate(
+            evaluation_plugin=self.evaluation_plugin, name="prompts", component=prompts, value={})
+        [entry] = await self._inputs_unloadable()
+        self.assertFalse(entry["local_model"])
+        self.assertFalse(entry["local_model_unknown"])
+
+    async def test_a_loaded_plugin_leaves_nothing_unknown(self):
+        entry = await self._inputs(ScoresALocalModel)
+        self.assertFalse(entry["local_model_unknown"])
 
 class StoreInputValueTestCase(TestCase):
     """The worker stores what a run was on (a local model file's name and hash) on its input."""
