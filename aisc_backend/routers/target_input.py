@@ -168,10 +168,11 @@ def _enabled_plugins() -> list:
 
 
 def declaration(row, plugin) -> dict:
+    kinds = target_kinds_of(plugin)
     return {"pid": str(row.pid), "name": row.name, "display_name": row.display_name,
             "package_name": row.package_name, "version": row.version,
-            "target_kinds": list(target_kinds_of(plugin)), "card_protocols": list(card_protocols_of(plugin)),
-            "card_needs_connection": CARD in target_kinds_of(plugin) and card_needs_connection(plugin)}
+            "target_kinds": list(kinds), "card_protocols": list(card_protocols_of(plugin)),
+            "card_needs_connection": CARD in kinds and card_needs_connection(plugin)}
 
 
 @router.get("/declarations", response=list[dict])
@@ -180,8 +181,7 @@ async def plugin_declarations(request):
     for row in await _enabled_plugins():
         try:
             plugin = plugin_routes.plugin_loader.load_plugin(row.package_name, row.name, row.version)
-        except Exception:  # one test that does not load must not hide the others
-            logger.exception("plugin %s %s could not be loaded for its declarations", row.package_name, row.name)
-            continue
-        out.append(declaration(row, plugin))
+            out.append(declaration(row, plugin))
+        except Exception:  # one test that does not load, or whose declaration is odd, must not hide the others
+            logger.exception("plugin %s %s: its declarations could not be read", row.package_name, row.name)
     return out

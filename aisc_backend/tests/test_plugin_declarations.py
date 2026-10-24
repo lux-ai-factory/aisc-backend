@@ -58,6 +58,13 @@ class TheDeclarations(SimpleTestCase):
             out = async_to_sync(target_input.plugin_declarations)(mock.Mock())
         self.assertEqual([d["name"] for d in out], ["chat"])
 
+    def test_a_plugin_whose_declaration_cannot_be_read_is_left_out_not_the_whole_list(self):
+        class Odd(Unadopted):
+            target_kinds = 5  # not a tuple of kinds: reading it raises
+
+        out, _ = self.declarations({"chat": CardOnly, "odd": Odd})
+        self.assertEqual(list(out), ["chat"])
+
     def test_the_route_is_on_the_configurator_plugins_router(self):
         paths = {path for path, _ in target_input.router.path_operations.items()}
         self.assertIn("/declarations", paths)
