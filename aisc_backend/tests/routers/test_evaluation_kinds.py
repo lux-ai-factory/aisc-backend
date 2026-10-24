@@ -218,9 +218,10 @@ class EvaluationKinds(TestCase):
         response = await self.run_plugin(OldDeclaration, [("target", self.f.other_projects_target)])
         await self.assert_refused(response, "AI card · System: Elsewhere is not a target of this project's AI card")
 
-    async def test_an_old_declaration_is_refused_a_connection_reference(self):
-        response = await self.run_plugin(OldDeclaration, [("target", self.f.connection)])
-        await self.assert_refused(response, "Scoring API is a connection: what is assessed is a target of the AI card")
+    async def test_an_old_declaration_accepts_a_connection_reference(self):
+        # a connection bound directly, as the older declarations allow: only @assesses refuses it
+        response = await self.run_plugin(OldDeclaration, [("target", self.f.connection)], connected=False)
+        await self.assert_accepted(response)
 
     async def test_an_old_declaration_that_calls_its_target_is_refused_one_without_a_connection(self):
         response = await self.run_plugin(OldDeclaration, [("target", self.f.system_target)], connected=False)
@@ -257,7 +258,6 @@ class StandaloneIsUnchanged(EvaluationKinds):
     test_neither_kind_is_refused_for_a_both_kinds_plugin = None
     test_a_connection_reference_is_refused_for_an_adopted_plugin = None
     test_an_old_declaration_is_refused_a_target_of_another_project = None
-    test_an_old_declaration_is_refused_a_connection_reference = None
     test_an_old_declaration_that_calls_its_target_is_refused_one_without_a_connection = None
 
 

@@ -117,14 +117,18 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
     mirror of one of this project's card targets (`target:<platform pid>/<key>`), connected when
     the plugin's card access calls it; a local model file is the plugin's local model input; a plugin
     declaring both is given one of them. An older declaration alone (@system_under_test,
-    @dataset_through_target, @assesses_inputs) is a card target; a plugin declaring nothing is not checked."""
+    @dataset_through_target, @assesses_inputs) is a card target, and may still be given a connection
+    bound directly (`connection:<pid>/<name>`); a plugin declaring nothing is not checked."""
     kinds = target_kinds_of(plugin)
     if not kinds:
         return None
+    adopted = getattr(plugin, "target_kinds", None) is not None  # what @assesses sets
     for _, component in inputs:
-        if _reference(component).startswith("connection:"):
+        if adopted and _reference(component).startswith("connection:"):
             return f"{component.name} is a connection: what is assessed is a target of the AI card"
     card = next((component for name, component in inputs if name == TARGET), None)
+    if card is not None and _reference(card).startswith("connection:"):
+        return None  # a connection bound directly, as an older declaration may take it
     local_input = getattr(plugin, "local_model_input", None)
     local = next((component for name, component in inputs if local_input and name == local_input), None)
     if card is not None:
