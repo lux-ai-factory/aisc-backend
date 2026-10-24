@@ -236,6 +236,22 @@ class Runs(Recording):
         self.assertRunEvent(event, "engine.evaluation.run_requested", "evaluation", self.evaluation.pid,
                             {"plugins": ["DemoPlugin"]})
 
+    async def test_a_run_local_from_its_creation_says_so_when_it_starts(self):
+        from aisc_backend.models import EvaluationInput
+
+        with unrecorded():
+            model = await AIComponent.objects.acreate(component_type=AIComponentType.MODEL, system=self.system,
+                                                      name="model.onnx", description="", data="")
+            await EvaluationInput.objects.acreate(evaluation_plugin=self.evaluation_plugin, name="model",
+                                                  component=model, value={"local_model": {"file": "model.onnx"}})
+            await EvaluationInput.objects.acreate(evaluation_plugin=self.evaluation_plugin, name="dataset",
+                                                  component=model, value={"threshold": 3})
+        await self._start()
+        [event] = await events()
+        self.assertRunEvent(event, "engine.evaluation.run_requested", "evaluation", self.evaluation.pid,
+                            {"plugins": ["DemoPlugin"],
+                             "local_models": [{"plugin": "DemoPlugin", "input": "model", "file": "model.onnx"}]})
+
     async def test_a_run_that_could_not_be_sent_is_not_recorded(self):
         from aisc_backend.services import celery_service
 

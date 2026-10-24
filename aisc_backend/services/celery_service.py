@@ -33,6 +33,18 @@ async def _platform_pid_of(evaluation_uuid: uuid.UUID) -> str:
     return projectdb.normalise(linked)
 
 
+def _local_models(evaluation_uuid: uuid.UUID, using: str) -> list[dict]:
+    """The inputs the engine marked local when it created the run: the plugin, the input and the
+    file's name (its hash comes with the worker's marker, engine.evaluation.input_marked_local)."""
+    from aisc_backend.models import EvaluationInput
+
+    inputs = (EvaluationInput.objects.using(using).filter(evaluation_plugin__evaluation__pid=evaluation_uuid)
+              .order_by("id").values_list("evaluation_plugin__plugin_config__plugin__name", "name", "value"))
+    return [{"plugin": plugin, "input": name, "file": value["local_model"].get("file")}
+            for plugin, name, value in inputs
+            if isinstance(value, dict) and isinstance(value.get("local_model"), dict)]
+
+
 @sync_to_async
 def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
     """Send the run to the worker with its start in the project's ledger, in one transaction: the
@@ -45,8 +57,12 @@ def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
         if ledger.on():
             plugins = list(EvaluationPlugin.objects.using(using).filter(evaluation__pid=evaluation_uuid)
                            .order_by("id").values_list("plugin_config__plugin__name", flat=True))
+            details = {"plugins": plugins}
+            local_models = _local_models(evaluation_uuid, using)
+            if local_models:
+                details["local_models"] = local_models
             ledger.emit(ledger.RUN_REQUESTED, item_type="evaluation", item_id=evaluation_uuid,
-                        run_id=evaluation_uuid, details={"plugins": plugins}, using=using)
+                        run_id=evaluation_uuid, details=details, using=using)
         return send()
 
 
