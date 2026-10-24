@@ -6,6 +6,7 @@ import uuid
 
 from pathlib import Path
 from urllib import error, request as urlrequest
+from urllib.parse import quote
 from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
@@ -91,7 +92,7 @@ def card_target_connected(platform_pid, key: str) -> bool | None:
         logger.warning("PLATFORM_URL or PLATFORM_ENGINE_TOKEN is not set: a card target's connection is not checked")
         return None
     try:
-        status, body = _get(f"{base}/internal/projects/{platform_pid}/targets/{key}/reachable",
+        status, body = _get(f"{base}/internal/projects/{platform_pid}/targets/{quote(key, safe='')}/reachable",
                             {"X-AISC-Service-Token": token})
     except Exception as exc:  # noqa: BLE001 - the platform is down, or the URL is wrong
         logger.warning("the platform can't be reached (%s): a card target's connection is not checked",

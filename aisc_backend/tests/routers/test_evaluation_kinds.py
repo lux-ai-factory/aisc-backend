@@ -346,6 +346,15 @@ class CardTargetConnected(SimpleTestCase):
             self.assertEqual(url, REACHABLE.format(pid=pid))
             self.assertEqual(headers, {"X-AISC-Service-Token": "engine-reachable-token"})
 
+    def test_the_target_key_is_quoted_in_the_address(self):
+        pid = uuid.uuid4()
+        get = mock.Mock(return_value=(200, {"connected": True, "protocol": None}))
+        with mock.patch.dict("os.environ", ASKING, clear=True), \
+             mock.patch.object(evaluation_routes, "_get", get):
+            evaluation_routes.card_target_connected(pid, "models/scorer?v=2")
+        url, _ = get.call_args.args
+        self.assertEqual(url, f"http://platform:8000/internal/projects/{pid}/targets/models%2Fscorer%3Fv%3D2/reachable")
+
     def test_without_the_token_or_the_address_it_cannot_tell_and_says_so_without_secrets(self):
         for missing in ASKING:
             env = {k: v for k, v in ASKING.items() if k != missing}
