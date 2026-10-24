@@ -31,7 +31,9 @@ from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
 from aisc_backend.audit.log import log_action
 from aisc_backend.routers.plugin import plugin_loader
+from aisc_backend.routers.target_input import CARD, LOCAL_MODEL, TARGET, _configurator
 from aisc_backend.services.project_config_matching import validate_plugin_settings
+from aisc_plugin_interface import card_needs_connection, target_kinds_of
 
 router = Router(tags=["evaluation"])
 
@@ -60,6 +62,66 @@ class CreateEvaluationRequest(Schema):
     plugins_to_run: list[EvaluationPluginInSchema]
 
 
+def card_target_connected(platform_pid, key: str) -> bool | None:
+    """Whether the card target `key` of the platform project has a connection; None when the engine
+    cannot tell. The platform knows (its internal target resolve route answers 404 "no_endpoint"),
+    but that route is guarded by the connections token, which the engine does not hold, and it
+    answers with the connection's key: so the engine does not ask, and the worker's run finds out."""
+    return None
+
+
+def _reference(component) -> str:
+    value = component.json_value
+    return str(value.get("value") or "") if isinstance(value, dict) else ""
+
+
+def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> str | None:
+    """Why the run's inputs assess something the plugin did not declare (@assesses), or None.
+
+    `inputs` are the run's (input name, component) pairs. A card target is the `target` input, a
+    mirror of one of this project's card targets (`target:<platform pid>/<key>`), connected when
+    the plugin's card access calls it; a local model file is the plugin's local model input; a plugin
+    declaring both is given one of them. A plugin with no @assesses is not checked."""
+    if not isinstance(getattr(plugin, "target_kinds", None), tuple):  # what @assesses sets
+        return None
+    kinds = target_kinds_of(plugin)
+    for _, component in inputs:
+        if _reference(component).startswith("connection:"):
+            return f"{component.name} is a connection: what is assessed is a target of the AI card"
+    card = next((component for name, component in inputs if name == TARGET), None)
+    local = next((component for name, component in inputs
+                  if plugin.local_model_input and name == plugin.local_model_input), None)
+    if card is not None:
+        if CARD not in kinds:
+            return "it assesses a local model file, not a target of the AI card"
+        if card.component_type == "model":
+            return "it assesses targets of the AI card, not a local model file"
+        own = f"target:{project.platform_project_id}/"
+        reference = _reference(card)
+        if project.platform_project_id is None or not reference.startswith(own):
+            return f"{card.name} is not a target of this project's AI card"
+        if card_needs_connection(plugin) and card_target_connected(project.platform_project_id,
+                                                                   reference[len(own):]) is False:
+            return f"{card.name} has no connection: set one under Manage, Components and connections"
+    if kinds == (CARD, LOCAL_MODEL):
+        if card is not None and local is not None:
+            return "assess either a target of the AI card or a local model file, not both"
+        if card is None and local is None:
+            return "pick what is assessed: a target of the AI card or a local model file"
+    return None
+
+
+async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> None:
+    pairs = []
+    for input_data in inputs or []:
+        component = await AIComponent.objects.filter(pid=input_data.pid).afirst()
+        if component is not None:  # an unknown component is refused below, as before
+            pairs.append((input_data.name, component))
+    reason = check_assessed(plugin, pairs, project)
+    if reason:
+        raise HttpError(422, f"{plugin_row.display_name}: {reason}")
+
+
 @router.post("/task", response=EvaluationOutSchema)
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
@@ -76,6 +138,8 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
             plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+            if _configurator():
+                await _refuse_what_was_not_declared(plugin, plugin_obj, plugin_to_run.inputs, project)
             selected_settings = [
                 mapping.project_config
                 async for mapping in plugin.current_config.setting_mappings.select_related("project_config").all()
