@@ -24,6 +24,10 @@ from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers import internal
 from aisc_backend.routers.internal import router as internal_router
+from aisc_backend.routers import plugin as plugin_routes
+from aisc_plugin_interface import (
+    BaseEvaluationPlugin, InputType, OnnxInputProvider, assesses, evaluation_input, onnx,
+)
 
 client = TestAsyncClient(internal_router)
 
@@ -148,3 +152,67 @@ class InternalEvaluationInputsTestCase(TestCase):
         self.assertEqual(entry["endpoint_url"], "http://example.com")
         self.assertEqual(entry["secret_key"], "k")
         self.assertEqual(entry["secret_encrypted_value"], "cipher")
+
+
+@assesses(local_model=onnx(input="model"))
+@evaluation_input(name="model", label="Model", input_provider_class=OnnxInputProvider, input_type=InputType.MODEL)
+class ScoresALocalModel(BaseEvaluationPlugin):
+    pass
+
+
+class LocalModelInputTestCase(TestCase):
+    """The worker learns from the inputs which one is the plugin's local model file (the plugin
+    class says so, and the worker may not load it), and stores what it ran on there."""
+
+    def setUp(self):
+        self.project = Project.objects.create(name="proj", status=ProjectStatus.Ready)
+        self.system = AISystem.objects.create(project=self.project, name="sys", description="")
+        self.model_file = AIComponent.objects.create(
+            name="scoring.onnx", description="", data="0c5e7a1b-stored.onnx",
+            component_type=AIComponentType.MODEL, system=self.system,
+        )
+        self.evaluation = Evaluation.objects.create(status=EvaluationStatus.Pending, project=self.project)
+        plugin = Plugin.objects.create(
+            name="ScoresALocalModel", display_name="Scores", package_name="scores-pkg", version="1.0.0",
+            project=self.project,
+        )
+        self.evaluation_plugin = EvaluationPlugin.objects.create(
+            evaluation=self.evaluation, plugin_config=PluginConfig.objects.create(plugin=plugin, config={})
+        )
+        self.model_input = EvaluationInput.objects.create(
+            evaluation_plugin=self.evaluation_plugin, name="model", component=self.model_file, value={}
+        )
+
+    async def _inputs(self, plugin_class):
+        with (
+            patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}),
+            patch.object(plugin_routes.plugin_loader, "load_plugin", return_value=plugin_class),
+        ):
+            response = await client.get(
+                f"/evaluations/{self.evaluation.pid}/inputs", headers={"X-Internal-Secret": INTERNAL_SECRET},
+            )
+        self.assertEqual(200, response.status_code)
+        [entry] = response.data[str(self.evaluation_plugin.pid)]
+        return entry
+
+    async def test_the_plugins_local_model_input_is_marked_with_its_file_name(self):
+        entry = await self._inputs(ScoresALocalModel)
+        self.assertTrue(entry["local_model"])
+        self.assertEqual(entry["component_name"], "scoring.onnx")
+        self.assertEqual(entry["pid"], str(self.model_input.pid))
+
+    async def test_a_model_input_of_a_plugin_without_a_local_model_is_not_marked(self):
+        entry = await self._inputs(BaseEvaluationPlugin)
+        self.assertFalse(entry["local_model"])
+
+    async def test_a_plugin_that_cannot_be_loaded_marks_nothing(self):
+        with (
+            patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}),
+            patch.object(plugin_routes.plugin_loader, "load_plugin", side_effect=KeyError("not installed")),
+        ):
+            response = await client.get(
+                f"/evaluations/{self.evaluation.pid}/inputs", headers={"X-Internal-Secret": INTERNAL_SECRET},
+            )
+        self.assertEqual(200, response.status_code)
+        [entry] = response.data[str(self.evaluation_plugin.pid)]
+        self.assertFalse(entry["local_model"])

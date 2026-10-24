@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -21,10 +22,13 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
+from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 from aisc_plugin_interface import LLMConfig
+
+logger = logging.getLogger(__name__)
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
@@ -51,14 +55,18 @@ class SelectionProjectConfigSchema(Schema):
 
 
 class EvaluationPluginInputSchema(Schema):
+    pid: uuid.UUID | None = None
     name: str
     component_type: str
+    component_name: str = ""
     data: str
     json_value: dict[str, Any] = Field(default_factory=dict)
     value: dict[str, Any] = Field(default_factory=dict)
     endpoint_url: str | None = None
     secret_key: str | None = None
     secret_encrypted_value: str | None = None
+    #: the plugin's local model file (@assesses(local_model=...)): a run on it is not an AI card run
+    local_model: bool = False
 
 
 class PluginsStatusResponse(Schema):
@@ -129,6 +137,7 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
 
     result: dict[str, list[EvaluationPluginInputSchema]] = {}
     for evaluation_plugin in list(evaluation.evaluation_plugins.all()):
+        local_model_input = await _local_model_input(evaluation_plugin.pid)
         entries = []
         for inp in list(evaluation_plugin.evaluation_inputs.all()):
             component = inp.component
@@ -147,17 +156,33 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
                 if secret_row is not None:
                     secret_encrypted_value = secret_row.encrypted_value
             entries.append(EvaluationPluginInputSchema(
+                pid=inp.pid,
                 name=inp.name,
                 component_type=component.component_type,
+                component_name=component.name,
                 data=component.data,
                 json_value=component.json_value,
                 value=inp.value,
                 endpoint_url=endpoint_url,
                 secret_key=secret_key,
                 secret_encrypted_value=secret_encrypted_value,
+                local_model=inp.name == local_model_input and component.component_type == "model",
             ))
         result[str(evaluation_plugin.pid)] = entries
     return result
+
+
+async def _local_model_input(evaluation_plugin_pid: uuid.UUID) -> str | None:
+    """The name of the plugin's local model input, read from its class (the worker may not load
+    plugin classes); None when it declares none or cannot be loaded here."""
+    evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
+    plugin = evaluation_plugin.plugin_config.plugin
+    try:
+        plugin_class = plugin_routes.plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    except Exception:
+        logger.warning("plugin %s could not be loaded to find its local model input", plugin)
+        return None
+    return getattr(plugin_class, "local_model_input", None)
 
 
 @router.get("/evaluations/{evaluation_pid}/plugins/status", response=PluginsStatusResponse)
