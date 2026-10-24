@@ -192,7 +192,7 @@ class EvaluationTaskWithoutThePlatform(TestCase):
         await plugin.asave()
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
         with mock.patch("aisc_backend.routers.evaluation.plugin_loader.load_plugin",
-                        return_value=mock.Mock(project_config_definitions=[])), \
+                        return_value=mock.Mock(project_config_definitions=[], target_kinds=())), \
              mock.patch("aisc_backend.routers.evaluation.validate_plugin_settings",
                         new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch("aisc_backend.routers.evaluation.celery_service.run_evaluation",

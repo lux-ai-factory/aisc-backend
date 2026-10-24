@@ -611,7 +611,7 @@ class TheStartRouteMintsTheTicket(TestCase):
         send = mock.Mock(return_value=mock.Mock(task_id=str(uuid.uuid4())))
         with mock.patch.object(keycloak, "AUTH_ENABLED", False), \
              mock.patch("aisc_backend.routers.evaluation.plugin_loader.load_plugin",
-                        return_value=mock.Mock(project_config_definitions=[])), \
+                        return_value=mock.Mock(project_config_definitions=[], target_kinds=())), \
              mock.patch("aisc_backend.routers.evaluation.validate_plugin_settings",
                         new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(celery_service.celery, "send_task", new=send):

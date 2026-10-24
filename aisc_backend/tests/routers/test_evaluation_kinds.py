@@ -1,11 +1,11 @@
 """An evaluation is refused when what it assesses is not what the plugin declared.
 
 In configurator mode POST /evaluations/task checks, for a plugin that declares what it assesses
-(@assesses), that the run names only a declared kind: a card target of this project (with a
+(@assesses, or an older declaration alone, read as a card target), that the run names only a
+declared kind: a card target of this project (with a
 connection when the plugin's card access calls the target), or the plugin's local model file, and
 for a plugin declaring both, exactly one of them. A refusal is a 422 naming the plugin and the
-reason, and nothing is stored. Plugins that declare nothing, or only an older declaration, and
-standalone mode are unchanged.
+reason, and nothing is stored. Plugins that declare nothing, and standalone mode, are unchanged.
 """
 import unittest.mock as mock
 import uuid
@@ -79,6 +79,11 @@ class CardOrLocal(BaseEvaluationPlugin):
 
 @system_under_test(protocols=("openai",), env=ENV)
 class OldDeclaration(BaseEvaluationPlugin):
+    pass
+
+
+@system_under_test(protocols=("openai",), env=ENV, required=False)
+class OldOptionalDeclaration(BaseEvaluationPlugin):
     pass
 
 
@@ -208,8 +213,27 @@ class EvaluationKinds(TestCase):
 
     # unchanged
 
-    async def test_an_old_declaration_is_unchanged(self):
-        response = await self.run_plugin(OldDeclaration, [("target", self.f.connection)], connected=False)
+    # an older declaration alone is read as a card target, and checked as one
+
+    async def test_an_old_declaration_is_refused_a_target_of_another_project(self):
+        response = await self.run_plugin(OldDeclaration, [("target", self.f.other_projects_target)])
+        await self.assert_refused(response, "AI card · System: Elsewhere is not a target of this project's AI card")
+
+    async def test_an_old_declaration_is_refused_a_connection_reference(self):
+        response = await self.run_plugin(OldDeclaration, [("target", self.f.connection)])
+        await self.assert_refused(response, "Scoring API is a connection: what is assessed is a target of the AI card")
+
+    async def test_an_old_declaration_that_calls_its_target_is_refused_one_without_a_connection(self):
+        response = await self.run_plugin(OldDeclaration, [("target", self.f.system_target)], connected=False)
+        await self.assert_refused(response, "AI card · System: MCAS has no connection: set one under Manage,"
+                                            " Components and connections")
+
+    async def test_an_old_optional_declaration_accepts_a_target_without_a_connection(self):
+        response = await self.run_plugin(OldOptionalDeclaration, [("target", self.f.system_target)], connected=False)
+        await self.assert_accepted(response)
+
+    async def test_an_old_declaration_accepts_a_connected_target_of_this_project(self):
+        response = await self.run_plugin(OldDeclaration, [("target", self.f.system_target)], connected=True)
         await self.assert_accepted(response)
 
     async def test_a_plugin_that_declares_nothing_is_unchanged(self):
@@ -233,3 +257,7 @@ class StandaloneIsUnchanged(EvaluationKinds):
     test_both_kinds_at_once_are_refused = None
     test_neither_kind_is_refused_for_a_both_kinds_plugin = None
     test_a_connection_reference_is_refused_for_an_adopted_plugin = None
+    test_an_old_declaration_is_refused_a_target_of_another_project = None
+    test_an_old_declaration_is_refused_a_connection_reference = None
+    test_an_old_declaration_that_calls_its_target_is_refused_one_without_a_connection = None
+
