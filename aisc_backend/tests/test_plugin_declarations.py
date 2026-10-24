@@ -58,6 +58,40 @@ class FormThatDoesNotBuild(BaseEvaluationPlugin[SchemaThatDoesNotBuild]):
     pass
 
 
+class NarrowForm(BaseModel):
+    rounds: int = 3
+
+
+class WiderForm(NarrowForm):
+    threshold: float = 0.5
+    target_model_id: str = ""
+
+
+@assesses(card=inputs_access())
+class OverridesItsForm(BaseEvaluationPlugin[NarrowForm]):
+    """Its form is another model than its generic argument, as ClassificationPerformancePlugin's."""
+    form_ui_schema = {"target_model_id": {"ui:widget": "hidden"}}
+
+    @property
+    def config_type(self):
+        return WiderForm
+
+
+@assesses(card=inputs_access())
+class ChangesItsForm(BaseEvaluationPlugin[NarrowForm]):
+    """Its form is shaped at run time (on_config_change), as the engine's form shows it."""
+
+    def on_config_change(self, form_data):
+        schema, ui = self.get_full_schema()
+        schema = {**schema, "properties": {**schema["properties"], "added": {"type": "string"}}}
+        return form_data, schema, {**ui, "rounds": {"ui:widget": "hidden"}}
+
+
+def instance_of(cls):
+    """An instance of the plugin class (the fixtures leave evaluate abstract: a subclass gives it)."""
+    return type(cls.__name__, (cls,), {"evaluate": lambda self, config_data: None})()
+
+
 def row(name, display_name=None):
     return SimpleNamespace(pid=uuid.uuid4(), name=name, display_name=display_name or name.title(),
                            package_name=f"aisc-{name}", version="1.0.0")
@@ -67,7 +101,8 @@ def row(name, display_name=None):
 class TheDeclarations(SimpleTestCase):
     def declarations(self, classes):
         rows = [row(name) for name in classes]
-        load = mock.Mock(side_effect=lambda package, name, version: classes[name])
+        # the loader gives an instance of each plugin class, as the engine's plugin loader does
+        load = mock.Mock(side_effect=lambda package, name, version: instance_of(classes[name]))
         with mock.patch.object(target_input, "_enabled_plugins", mock.AsyncMock(return_value=rows)), \
              mock.patch.object(target_input.plugin_routes.plugin_loader, "load_plugin", load):
             out = async_to_sync(target_input.plugin_declarations)(mock.Mock())
@@ -114,13 +149,18 @@ class TheDeclarations(SimpleTestCase):
         self.assertEqual(out["broken"]["target_kinds"], ["card"])
         self.assertFalse(out["form"]["config_fields_unreadable"])
 
+    def test_the_config_fields_are_those_of_the_form_the_engine_shows(self):
+        out, _ = self.declarations({"wider": OverridesItsForm, "changed": ChangesItsForm})
+        self.assertEqual(out["wider"]["config_fields"], ["rounds", "threshold"])
+        self.assertEqual(out["changed"]["config_fields"], ["added"])
+
     def test_a_plugin_that_does_not_load_is_left_out_not_the_whole_list(self):
         rows = [row("chat"), row("broken")]
 
         def load(package, name, version):
             if name == "broken":
                 raise RuntimeError("no such package")
-            return CardOnly
+            return instance_of(CardOnly)
         with mock.patch.object(target_input, "_enabled_plugins", mock.AsyncMock(return_value=rows)), \
              mock.patch.object(target_input.plugin_routes.plugin_loader, "load_plugin", mock.Mock(side_effect=load)):
             out = async_to_sync(target_input.plugin_declarations)(mock.Mock())

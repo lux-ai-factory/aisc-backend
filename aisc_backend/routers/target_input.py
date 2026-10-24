@@ -24,7 +24,6 @@ project has an AI card version, though: a project used only for the engine has n
 """
 import logging
 import uuid
-from typing import get_args, get_origin
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -34,7 +33,7 @@ from aisc_backend import deployment
 from aisc_backend.repositories.system_version_repository import latest_system_pid_sync
 from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.plugin import get_plugin_input_definitions as upstream_input_definitions
-from aisc_plugin_interface import BaseEvaluationPlugin, InputDefinition, InputType, helper_roles_of, target_kinds_of
+from aisc_plugin_interface import InputDefinition, InputType, helper_roles_of, target_kinds_of
 from aisc_plugin_interface.assesses import card_needs_connection, card_protocols_of
 from aisc_plugin_interface.helpers import HELPER_INPUT_PREFIX, helper_input_name
 
@@ -181,16 +180,6 @@ def _helper_roles(plugin) -> list[str]:
     return roles
 
 
-def _config_model(plugin):
-    """The Pydantic model of the plugin's config form (BaseEvaluationPlugin[Config]), or None."""
-    for cls in plugin.__mro__:
-        for base in cls.__dict__.get("__orig_bases__", ()):
-            if get_origin(base) is BaseEvaluationPlugin:
-                model = get_args(base)[0]
-                return model if hasattr(model, "model_json_schema") else None
-    return None
-
-
 def _properties(node: dict, defs: dict, seen: frozenset) -> tuple[dict, frozenset]:
     """The properties of a schema node, through $ref, allOf, anyOf and oneOf (a reference followed once)."""
     ref = node.get("$ref")
@@ -220,14 +209,11 @@ def _asked_fields(node: dict, ui: dict, defs: dict, prefix: str, seen: frozenset
 
 
 def config_fields(plugin) -> list[str]:
-    """The names of the config fields the plugin's form asks a person for (dotted when nested): the
-    hidden ones are left out, and no default or value is read."""
-    model = _config_model(plugin)
-    if model is None:
-        return []
-    schema = model.model_json_schema(mode="validation")
-    ui = getattr(plugin, "form_ui_schema", None) or {}
-    return sorted(_asked_fields(schema, ui, schema.get("$defs") or {}, "", frozenset()))
+    """The names of the config fields the plugin's form asks a person for (dotted when nested), read from
+    the schema and ui schema the engine's form shows (on_config_change with no data, as the config
+    routes of routers/plugin.py): the hidden ones are left out, and no default or value is read."""
+    _, schema, ui = plugin.on_config_change(None)
+    return sorted(_asked_fields(schema, ui or {}, schema.get("$defs") or {}, "", frozenset()))
 
 
 def _readable_config_fields(plugin) -> tuple[list[str], bool]:
