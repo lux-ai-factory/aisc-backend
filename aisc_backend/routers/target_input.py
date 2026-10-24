@@ -9,8 +9,17 @@ every run for it, and upstream's create route stores the pick as an ordinary Eva
 the card version stamp on the evaluation, every result says what it assessed. A plugin that
 declares `target` itself (the plugin interface's system_under_test) keeps its own.
 
-The system target is made sure of here, so there is always one to pick, even before anybody has
-opened the platform's targets page: the platform finds it again by its value and renames it.
+A plugin that declares what it assesses (the plugin interface's @assesses, or one of the older
+declarations alone, read as an AI card target) is asked for it first, and only for the kinds it
+declares: the form lists, for each input, the project's components of that input's type, so an AI card
+target is a `resource` input (the platform's mirrors) and a local model file is the plugin's own
+`model` input (files uploaded in Settings); the other kind cannot be picked. Then come the plugin's
+other inputs, then its helper models (`helper:<role>`), labelled apart: they are never what is
+assessed. A plugin that declares nothing keeps the form as it was.
+
+The system target is made sure of here, so there is one to pick even before anybody has opened the
+platform's targets page: the platform finds it again by its value and renames it. Not before the
+project has an AI card version, though: a project used only for the engine has no AI card targets.
 """
 import logging
 import uuid
@@ -20,8 +29,11 @@ from django.conf import settings
 from ninja import Router
 
 from aisc_backend import deployment
+from aisc_backend.repositories.system_version_repository import latest_system_pid_sync
+from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.plugin import get_plugin_input_definitions as upstream_input_definitions
-from aisc_plugin_interface import InputDefinition, InputType
+from aisc_plugin_interface import InputDefinition, InputType, helper_roles_of, target_kinds_of
+from aisc_plugin_interface.helpers import helper_input_name
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +41,13 @@ router = Router(tags=["plugin"])
 
 TARGET = "target"
 TARGET_LABEL = "Target of the assessment (the system, or one of its components)"
+CARD, LOCAL_MODEL = "card", "local_model"
+#: (AI card target, local model file) labels, by what the plugin assesses
+ASSESSED_LABELS = {
+    (CARD,): ("What is assessed (AI card)", None),
+    (LOCAL_MODEL,): (None, "What is assessed (local model file)"),
+    (CARD, LOCAL_MODEL): ("What is assessed: from the AI card", "What is assessed: or a local model file"),
+}
 
 
 def system_reference(platform_pid) -> str:
@@ -45,6 +64,12 @@ def _system_target_exists(system, value) -> bool:
     return AIComponent.objects.filter(system=system, json_value__value=value).exists()
 
 
+def system_target_offered(project) -> bool:
+    """Whether the project's system is a target: once the project has an AI card version (the one each
+    evaluation is stamped with, signals/system_stamp.py)."""
+    return latest_system_pid_sync(project.platform_project_id, using=project._state.db) is not None
+
+
 @sync_to_async
 def _ensure_system_target() -> None:
     from django.db import IntegrityError, transaction
@@ -52,7 +77,7 @@ def _ensure_system_target() -> None:
     from aisc_backend.models import AIComponent, AISystem, Project
 
     project = Project.objects.filter(platform_project_id__isnull=False).first()
-    if project is None:
+    if project is None or not system_target_offered(project):
         return
     system = AISystem.objects.filter(project=project).first()
     if system is None:
@@ -64,7 +89,7 @@ def _ensure_system_target() -> None:
     # which then has the one the first made
     try:
         with transaction.atomic():
-            AIComponent.objects.create(system=system, name=f"Target · System: {project.name}",
+            AIComponent.objects.create(system=system, name=f"AI card · System: {project.name} · not connected",
                                        component_type="resource", json_value={"value": value})
     except IntegrityError:
         pass
@@ -74,17 +99,57 @@ async def ensure_system_target() -> None:
     await _ensure_system_target()
 
 
+async def loaded_plugin(plugin_pid: uuid.UUID):
+    plugin = await plugin_routes.plugin_repository.get(plugin_pid)
+    return plugin_routes.plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+
+
+def _helper_label(role: str) -> str:
+    return f"Helper model · {role.capitalize()} (not assessed)"
+
+
+def form_inputs(definitions: list[InputDefinition], plugin) -> list[InputDefinition]:
+    """What is assessed (only the kinds the plugin declares), the plugin's other inputs, its helper models."""
+    kinds = target_kinds_of(plugin)
+    card_label, local_label = ASSESSED_LABELS[kinds]
+    required = len(kinds) == 1  # with both kinds a run assesses one or the other
+    by_name = {d.name: d for d in definitions}
+    assessed = []
+    if card_label:
+        own = by_name.get(TARGET) or InputDefinition(name=TARGET, label="", input_type=InputType.RESOURCE)
+        assessed.append(own.model_copy(update={"label": card_label, "input_type": InputType.RESOURCE,
+                                               "required": required}))
+    if local_label:
+        assessed.append(by_name[plugin.local_model_input].model_copy(update={"label": local_label,
+                                                                            "required": required}))
+    helper_names = {helper_input_name(role): role for role in helper_roles_of(plugin)}
+    helpers = [by_name[name].model_copy(update={"label": _helper_label(role)})
+               for name, role in helper_names.items() if name in by_name]
+    taken = {d.name for d in assessed} | helper_names.keys()
+    return [*assessed, *(d for d in definitions if d.name not in taken), *helpers]
+
+
+async def _ensure_system_target_quietly() -> None:
+    try:
+        await ensure_system_target()
+    except Exception:  # the definitions matter more than the mirror; the platform makes it too
+        logger.exception("the system target of this project could not be made sure of")
+
+
 @router.get("/{plugin_pid}/input_definitions", response=list[InputDefinition])
 async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
     definitions = list(await upstream_input_definitions(request, plugin_pid))
     if not _configurator():
         return definitions
+    plugin = await loaded_plugin(plugin_pid)
+    kinds = target_kinds_of(plugin)
+    if kinds:
+        if CARD in kinds:
+            await _ensure_system_target_quietly()
+        return form_inputs(definitions, plugin)
     if any(d.name == TARGET for d in definitions):
         # a plugin's own target (declared optional, for standalone) is required here
         return [d.model_copy(update={"required": True}) if d.name == TARGET else d for d in definitions]
-    try:
-        await ensure_system_target()
-    except Exception:  # the definitions matter more than the mirror; the platform makes it too
-        logger.exception("the system target of this project could not be made sure of")
+    await _ensure_system_target_quietly()
     return [*definitions,
             InputDefinition(name=TARGET, label=TARGET_LABEL, input_type=InputType.RESOURCE, required=True)]

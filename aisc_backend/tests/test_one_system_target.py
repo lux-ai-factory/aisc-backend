@@ -25,6 +25,10 @@ class OneSystemTarget(TransactionTestCase):
         self.project = Project.objects.create(name="MCAS", description="", platform_project_id=uuid.uuid4())
         self.system = AISystem.objects.create(name="MCAS", description="", project=self.project)
         self.value = target_input.system_reference(self.project.platform_project_id)
+        # the project has an AI card version, so its system is a target
+        offered = mock.patch.object(target_input, "latest_system_pid_sync", return_value=uuid.uuid4())
+        offered.start()
+        self.addCleanup(offered.stop)
 
     def targets(self):
         return AIComponent.objects.filter(system=self.system, json_value__value=self.value)
