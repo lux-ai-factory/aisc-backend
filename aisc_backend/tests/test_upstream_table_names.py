@@ -68,6 +68,7 @@ class UpstreamTableNames(TestCase):
             "0021_engine_deployment_marker",
             "0022_one_system_target_per_system",
             "0023_ledger_outbox",
+            "0024_drop_stored_langbite_judge_keys",
         ])
 
 

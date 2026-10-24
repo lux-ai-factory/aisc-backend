@@ -187,6 +187,9 @@ engine is not held to `origin/master`: the list below is what the branch changes
   `signals/ledger.py`) in the change's own transaction; `manage.py deliver_ledger_events` sends it
   to the platform (the `aisc-backend-ledger` service, the only engine process with the ledger
   token). A request id is kept only on a request the gateway sent.
+- **Stored LangBiTe judge keys**: migration 0024 removes `judge_api_key` and `judge_model` from
+  stored LangBiTe configurations, since the form that saved them in plain text no longer has them
+  and cannot clear them: the judge is now a helper model picked in the evaluation form.
 - **Audit log**: `audit/clerk.py` logs in to immudb again when immudb has ended its login.
 - **Tests** for all of the above under `aisc_backend/tests/`, including a check that the table
   names stay master's.
