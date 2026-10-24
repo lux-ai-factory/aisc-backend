@@ -230,6 +230,12 @@ class EvaluationKinds(TestCase):
         values = [i.value async for i in EvaluationInput.objects.all()]
         self.assertEqual(values, [{}, {}])
 
+    async def test_a_component_that_is_no_model_file_on_the_local_model_input_is_not_marked(self):
+        # as the worker, which marks only a model file
+        await self.assert_accepted(await self.run_plugin(LocalOnly, [("model", self.f.prompts)]))
+        stored = await EvaluationInput.objects.aget(name="model")
+        self.assertEqual(stored.value, {})
+
     # unchanged
 
     # an older declaration alone is read as a card target, and checked as one

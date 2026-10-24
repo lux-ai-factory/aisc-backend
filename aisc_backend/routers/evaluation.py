@@ -166,8 +166,9 @@ async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> 
 def _local_marker(plugin, input_name: str, component) -> dict | None:
     """A run on the plugin's local model file is local from its creation: its model input says so
     ({"local_model": {"file"}}) before the worker replaces it with the full marker, with the file's
-    hash, so a pending, running or failed local run is never taken for an AI card run."""
-    if input_name != getattr(plugin, "local_model_input", None):
+    hash, so a pending, running or failed local run is never taken for an AI card run. Only a model
+    file is marked, as the worker does."""
+    if input_name != getattr(plugin, "local_model_input", None) or component.component_type != "model":
         return None
     return {"local_model": {"file": component.name}}
 
