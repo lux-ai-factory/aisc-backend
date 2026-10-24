@@ -163,12 +163,21 @@ async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> 
         raise HttpError(422, f"{plugin_row.display_name}: {reason}")
 
 
+def _local_marker(plugin, input_name: str, component) -> dict | None:
+    """A run on the plugin's local model file is local from its creation: its model input says so
+    ({"local_model": {"file"}}) before the worker replaces it with the full marker, with the file's
+    hash, so a pending, running or failed local run is never taken for an AI card run."""
+    if input_name != getattr(plugin, "local_model_input", None):
+        return None
+    return {"local_model": {"file": component.name}}
+
+
 @router.post("/task", response=EvaluationOutSchema)
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
     # Resolve and validate plugins before writing anything to DB
-    resolved: list[tuple[EvaluationPluginInSchema, object]] = []
+    resolved: list[tuple[EvaluationPluginInSchema, object, object]] = []
     validation_errors = {"missing": [], "invalid": [], "ambiguous": []}
     for plugin_to_run in data.plugins_to_run:
         plugin = next(
@@ -191,7 +200,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             )
             for key in validation_errors:
                 validation_errors[key].extend(setting_errors[key])
-            resolved.append((plugin_to_run, plugin.current_config))
+            resolved.append((plugin_to_run, plugin.current_config, plugin_obj))
         else:
             raise HttpError(400, f"Plugin {plugin_to_run.name} is not enabled for this project")
 
@@ -202,7 +211,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
-    for plugin_to_run, plugin_config in resolved:
+    for plugin_to_run, plugin_config, plugin_obj in resolved:
         run_plugin = EvaluationPlugin(
             plugin_config=plugin_config, evaluation=evaluation
         )
@@ -219,7 +228,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                     evaluation_plugin=run_plugin,
                     name=input_data.name,
                     component=component,
-                    value=input_data.value or {},
+                    value=_local_marker(plugin_obj, input_data.name, component) or input_data.value or {},
                 )
                 await evaluation_input.asave()
 

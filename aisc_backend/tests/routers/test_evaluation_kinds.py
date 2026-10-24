@@ -210,6 +210,26 @@ class EvaluationKinds(TestCase):
         response = await self.run_plugin(CardOrLocal, [("model", self.f.model_file)])
         await self.assert_accepted(response)
 
+    # a run on a local model file is marked local from its creation, so it is never taken for a card
+    # run while pending, running or failed; the worker later stores the full marker, with the hash
+
+    async def test_a_local_run_is_marked_local_from_its_creation(self):
+        await self.assert_accepted(await self.run_plugin(LocalOnly, [("model", self.f.model_file)]))
+        stored = await EvaluationInput.objects.aget(name="model")
+        self.assertEqual(stored.value, {"local_model": {"file": "scorer.onnx"}})
+
+    async def test_a_both_kinds_plugin_run_on_its_model_file_is_marked_local(self):
+        await self.assert_accepted(await self.run_plugin(CardOrLocal, [("model", self.f.model_file)]))
+        stored = await EvaluationInput.objects.aget(name="model")
+        self.assertEqual(stored.value, {"local_model": {"file": "scorer.onnx"}})
+
+    async def test_a_card_run_stores_no_local_marker(self):
+        await self.assert_accepted(await self.run_plugin(CallsTheTarget, [("target", self.f.system_target),
+                                                                          ("prompts", self.f.prompts)],
+                                                         connected=True))
+        values = [i.value async for i in EvaluationInput.objects.all()]
+        self.assertEqual(values, [{}, {}])
+
     # unchanged
 
     # an older declaration alone is read as a card target, and checked as one
