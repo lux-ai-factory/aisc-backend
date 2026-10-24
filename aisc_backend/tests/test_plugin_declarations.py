@@ -4,18 +4,45 @@ The platform lists, under each target, the installed tests that can assess it: t
 include an AI card target, and of those that call the target only for a target that has a
 connection. GET /plugins/declarations gives it, per enabled plugin of the project, what the plugin
 interface reads from the plugin class: its target kinds, the protocols its tool speaks to a card
-target's connection, and whether a card target must have one.
+target's connection, and whether a card target must have one. For the plugin check
+(scripts/verify-plugins.sh) it also says whether the plugin adopted @assesses, its helper roles, and the
+names of the config fields its form asks a person for (names only, never a value).
 """
+import json
 import unittest.mock as mock
 import uuid
 from types import SimpleNamespace
+
+from pydantic import BaseModel
 
 from asgiref.sync import async_to_sync
 from django.test import SimpleTestCase, override_settings
 
 from aisc_backend.routers import target_input
 from aisc_backend.tests.test_target_input import CardOnly, CardOrLocal, LocalOnly, OldDeclaration, ReadsItsInputs, \
-    Unadopted
+    TwoHelpers, Unadopted
+from aisc_plugin_interface import BaseEvaluationPlugin, InputType, assesses, evaluation_input, \
+    system_under_test_access
+
+
+class Endpoint(BaseModel):
+    base_url: str = ""
+    model: str = ""
+
+
+class AskingConfig(BaseModel):
+    rounds: int = 3
+    note: str = "never-shown-default"
+    target: Endpoint = Endpoint()
+    target_api_key: str = ""
+
+
+@assesses(card=system_under_test_access(protocols=("openai",), fields={"target.base_url": "base_url",
+                                                                       "target_api_key": "api_key"}))
+@evaluation_input(name="helper:critic", label="Critic", input_type=InputType.LLM)
+class WithAConfigForm(BaseEvaluationPlugin[AskingConfig]):
+    # what the platform fills is hidden from the person; target.model is still asked for
+    form_ui_schema = {"target_api_key": {"ui:widget": "hidden"}, "target": {"base_url": {"ui:widget": "hidden"}}}
 
 
 def row(name, display_name=None):
@@ -38,13 +65,31 @@ class TheDeclarations(SimpleTestCase):
                                        "both": CardOrLocal, "old": OldDeclaration, "plain": Unadopted})
         self.assertEqual(out["chat"], {"pid": str(rows[0].pid), "name": "chat", "display_name": "Chat",
                                        "package_name": "aisc-chat", "version": "1.0.0", "target_kinds": ["card"],
-                                       "card_protocols": ["openai"], "card_needs_connection": True})
+                                       "card_protocols": ["openai"], "card_needs_connection": True,
+                                       "adopted": True, "helper_roles": ["judge"], "config_fields": []})
         self.assertEqual((out["inputs"]["target_kinds"], out["inputs"]["card_needs_connection"]), (["card"], False))
         self.assertEqual((out["local"]["target_kinds"], out["local"]["card_needs_connection"]), (["local_model"], False))
         self.assertEqual(out["both"]["target_kinds"], ["card", "local_model"])
         self.assertEqual((out["old"]["target_kinds"], out["old"]["card_protocols"]), (["card"], ["openai"]))
         self.assertEqual((out["plain"]["target_kinds"], out["plain"]["card_protocols"],
                           out["plain"]["card_needs_connection"]), ([], [], False))
+
+    def test_each_plugin_says_whether_it_adopted_the_declaration_of_what_it_assesses(self):
+        out, _ = self.declarations({"chat": CardOnly, "local": LocalOnly, "old": OldDeclaration, "plain": Unadopted})
+        self.assertEqual({name: d["adopted"] for name, d in out.items()},
+                         {"chat": True, "local": True, "old": False, "plain": False})
+
+    def test_each_plugin_gives_its_helper_roles_with_a_helper_input_declared_by_hand(self):
+        out, _ = self.declarations({"two": TwoHelpers, "form": WithAConfigForm, "plain": Unadopted})
+        self.assertEqual(out["two"]["helper_roles"], ["judge", "attacker"])
+        self.assertEqual(out["form"]["helper_roles"], ["critic"])
+        self.assertEqual(out["plain"]["helper_roles"], [])
+
+    def test_each_plugin_gives_the_names_of_the_config_fields_a_person_is_asked_for_never_a_value(self):
+        out, _ = self.declarations({"form": WithAConfigForm, "plain": Unadopted})
+        self.assertEqual(out["form"]["config_fields"], ["note", "rounds", "target.model"])
+        self.assertEqual(out["plain"]["config_fields"], [])
+        self.assertNotIn("never-shown-default", json.dumps(list(out.values())))
 
     def test_a_plugin_that_does_not_load_is_left_out_not_the_whole_list(self):
         rows = [row("chat"), row("broken")]

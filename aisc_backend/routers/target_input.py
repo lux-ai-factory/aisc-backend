@@ -24,6 +24,7 @@ project has an AI card version, though: a project used only for the engine has n
 """
 import logging
 import uuid
+from typing import get_args, get_origin
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -33,9 +34,9 @@ from aisc_backend import deployment
 from aisc_backend.repositories.system_version_repository import latest_system_pid_sync
 from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.plugin import get_plugin_input_definitions as upstream_input_definitions
-from aisc_plugin_interface import InputDefinition, InputType, helper_roles_of, target_kinds_of
+from aisc_plugin_interface import BaseEvaluationPlugin, InputDefinition, InputType, helper_roles_of, target_kinds_of
 from aisc_plugin_interface.assesses import card_needs_connection, card_protocols_of
-from aisc_plugin_interface.helpers import helper_input_name
+from aisc_plugin_interface.helpers import HELPER_INPUT_PREFIX, helper_input_name
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,9 @@ async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
 
 # What each installed test declares about what it assesses: the platform's target page lists, under
 # each target, the tests that can assess it (an AI card target; one that calls it only if connected).
+# The plugin check (scripts/verify-plugins.sh) reads the same list: whether the test adopted @assesses
+# (an older declaration alone reads as card), its helper roles, and the names of the config fields its
+# form asks a person for, so a test still asking for its target there is caught. Names only, never values.
 
 @sync_to_async
 def _enabled_plugins() -> list:
@@ -167,12 +171,73 @@ def _enabled_plugins() -> list:
     return list(Plugin.objects.filter(enabled=True).order_by("package_name", "name"))
 
 
+def _helper_roles(plugin) -> list[str]:
+    """The roles of @helper_model, then of any helper:<role> input declared by hand."""
+    roles = list(helper_roles_of(plugin))
+    for d in getattr(plugin, "_input_definitions", []):
+        role = d.name[len(HELPER_INPUT_PREFIX):] if d.name.startswith(HELPER_INPUT_PREFIX) else None
+        if role and role not in roles:
+            roles.append(role)
+    return roles
+
+
+def _config_model(plugin):
+    """The Pydantic model of the plugin's config form (BaseEvaluationPlugin[Config]), or None."""
+    for cls in plugin.__mro__:
+        for base in cls.__dict__.get("__orig_bases__", ()):
+            if get_origin(base) is BaseEvaluationPlugin:
+                model = get_args(base)[0]
+                return model if hasattr(model, "model_json_schema") else None
+    return None
+
+
+def _properties(node: dict, defs: dict, seen: frozenset) -> tuple[dict, frozenset]:
+    """The properties of a schema node, through $ref, allOf, anyOf and oneOf (a reference followed once)."""
+    ref = node.get("$ref")
+    if ref:
+        name = ref.rsplit("/", 1)[-1]
+        if name in seen or name not in defs:
+            return {}, seen
+        return _properties(defs[name], defs, seen | {name})
+    props = dict(node.get("properties") or {})
+    for key in ("allOf", "anyOf", "oneOf"):
+        for member in node.get(key) or ():
+            more, seen = _properties(member, defs, seen)
+            props.update(more)
+    return props, seen
+
+
+def _asked_fields(node: dict, ui: dict, defs: dict, prefix: str, seen: frozenset) -> list[str]:
+    names = []
+    props, seen = _properties(node, defs, seen)
+    for name, sub in props.items():
+        sub_ui = ui.get(name) if isinstance(ui.get(name), dict) else {}
+        if sub_ui.get("ui:widget") == "hidden":  # filled by the platform, not asked of a person
+            continue
+        nested = _asked_fields(sub, sub_ui, defs, f"{prefix}{name}.", seen)
+        names.extend(nested or [prefix + name])
+    return names
+
+
+def config_fields(plugin) -> list[str]:
+    """The names of the config fields the plugin's form asks a person for (dotted when nested): the
+    hidden ones are left out, and no default or value is read."""
+    model = _config_model(plugin)
+    if model is None:
+        return []
+    schema = model.model_json_schema(mode="validation")
+    ui = getattr(plugin, "form_ui_schema", None) or {}
+    return sorted(_asked_fields(schema, ui, schema.get("$defs") or {}, "", frozenset()))
+
+
 def declaration(row, plugin) -> dict:
     kinds = target_kinds_of(plugin)
     return {"pid": str(row.pid), "name": row.name, "display_name": row.display_name,
             "package_name": row.package_name, "version": row.version,
             "target_kinds": list(kinds), "card_protocols": list(card_protocols_of(plugin)),
-            "card_needs_connection": CARD in kinds and card_needs_connection(plugin)}
+            "card_needs_connection": CARD in kinds and card_needs_connection(plugin),
+            "adopted": getattr(plugin, "target_kinds", None) is not None,
+            "helper_roles": _helper_roles(plugin), "config_fields": config_fields(plugin)}
 
 
 @router.get("/declarations", response=list[dict])
