@@ -216,3 +216,59 @@ class LocalModelInputTestCase(TestCase):
         self.assertEqual(200, response.status_code)
         [entry] = response.data[str(self.evaluation_plugin.pid)]
         self.assertFalse(entry["local_model"])
+
+
+class StoreInputValueTestCase(TestCase):
+    """The worker stores what a run was on (a local model file's name and hash) on its input."""
+
+    MARKER = {"local_model": {"file": "scoring.onnx", "sha256": "ab" * 32}}
+
+    def setUp(self):
+        project = Project.objects.create(name="proj", status=ProjectStatus.Ready)
+        system = AISystem.objects.create(project=project, name="sys", description="")
+        model_file = AIComponent.objects.create(
+            name="scoring.onnx", description="", data="stored.onnx", component_type=AIComponentType.MODEL,
+            system=system,
+        )
+        plugin = Plugin.objects.create(name="P", display_name="P", package_name="p", version="1", project=project)
+        plugin_config = PluginConfig.objects.create(plugin=plugin, config={})
+
+        def evaluation_input():
+            evaluation = Evaluation.objects.create(status=EvaluationStatus.Pending, project=project)
+            evaluation_plugin = EvaluationPlugin.objects.create(evaluation=evaluation, plugin_config=plugin_config)
+            return evaluation, EvaluationInput.objects.create(
+                evaluation_plugin=evaluation_plugin, name="model", component=model_file, value={})
+
+        self.evaluation, self.input = evaluation_input()
+        self.other_evaluation, self.other_input = evaluation_input()
+
+    async def _patch(self, evaluation, input_pid, secret=INTERNAL_SECRET):
+        with patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}):
+            return await client.patch(
+                f"/evaluations/{evaluation.pid}/inputs/{input_pid}/value", json={"value": self.MARKER},
+                headers={"X-Internal-Secret": secret},
+            )
+
+    async def test_the_value_is_stored_on_the_input(self):
+        response = await self._patch(self.evaluation, self.input.pid)
+        self.assertEqual(200, response.status_code)
+        await self.input.arefresh_from_db()
+        self.assertEqual(self.MARKER, self.input.value)
+
+    async def test_an_input_of_another_evaluation_is_not_found(self):
+        response = await self._patch(self.evaluation, self.other_input.pid)
+        self.assertEqual(404, response.status_code)
+        await self.other_input.arefresh_from_db()
+        self.assertEqual({}, self.other_input.value)
+
+    async def test_a_call_without_the_internal_secret_is_refused(self):
+        response = await self._patch(self.evaluation, self.input.pid, secret="wrong")
+        self.assertEqual(401, response.status_code)
+        await self.input.arefresh_from_db()
+        self.assertEqual({}, self.input.value)
+
+    def test_the_door_checks_the_evaluation_in_the_path_against_the_run_ticket(self):
+        from aisc_backend import project_door
+
+        path = f"/api/v1/internal/evaluations/{self.evaluation.pid}/inputs/{self.input.pid}/value"
+        self.assertEqual(str(self.evaluation.pid), project_door._INTERNAL_EVALUATION_PATH.match(path).group(1))

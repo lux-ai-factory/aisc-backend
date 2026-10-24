@@ -13,7 +13,9 @@ from pydantic import Field
 from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
-from aisc_backend.models import Evaluation, EvaluationStatus, Observation, Metric, Measurement
+from aisc_backend.models import (
+    Evaluation, EvaluationInput, EvaluationStatus, Observation, Metric, Measurement,
+)
 from aisc_backend.models.artifact import Artifact
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
@@ -183,6 +185,31 @@ async def _local_model_input(evaluation_plugin_pid: uuid.UUID) -> str | None:
         logger.warning("plugin %s could not be loaded to find its local model input", plugin)
         return None
     return getattr(plugin_class, "local_model_input", None)
+
+
+class EvaluationInputValueSchema(Schema):
+    value: dict[str, Any]
+
+
+@router.patch("/evaluations/{evaluation_pid}/inputs/{input_pid}/value", response=str)
+async def store_evaluation_input_value(
+    request, evaluation_pid: uuid.UUID, input_pid: uuid.UUID, data: EvaluationInputValueSchema
+):
+    """Store what a run was on, on one of its inputs: for a local model file, the file's name and
+    hash, which keep the run apart from the AI card's."""
+    try:
+        evaluation_input = await EvaluationInput.objects.aget(
+            pid=input_pid, evaluation_plugin__evaluation__pid=evaluation_pid
+        )
+    except EvaluationInput.DoesNotExist:
+        raise HttpError(404, "No input of this evaluation found")
+    evaluation_input.value = data.value
+    await evaluation_input.asave(update_fields=["value"])
+
+    await sync_to_async(log_action)(
+        request, action="store_input_value", resource_type="evaluation",
+        resource_id=str(evaluation_pid), metadata={"input": evaluation_input.name})
+    return "ok"
 
 
 @router.get("/evaluations/{evaluation_pid}/plugins/status", response=PluginsStatusResponse)
