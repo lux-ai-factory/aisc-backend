@@ -8,7 +8,7 @@ from asgiref.sync import sync_to_async
 from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
@@ -201,8 +201,22 @@ async def _local_model_input(evaluation_plugin_pid: uuid.UUID):
     return getattr(plugin_class, "local_model_input", None)
 
 
+class LocalModelFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    file: str = Field(min_length=1, max_length=255)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LocalModelMarker(BaseModel):
+    """The only value the worker stores on an input: the local model file a run was on."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    local_model: LocalModelFile
+
+
 class EvaluationInputValueSchema(Schema):
-    value: dict[str, Any]
+    value: LocalModelMarker
 
 
 @router.patch("/evaluations/{evaluation_pid}/inputs/{input_pid}/value", response=str)
@@ -217,7 +231,7 @@ async def store_evaluation_input_value(
         )
     except EvaluationInput.DoesNotExist:
         raise HttpError(404, "No input of this evaluation found")
-    evaluation_input.value = data.value
+    evaluation_input.value = data.value.model_dump()
     await evaluation_input.asave(update_fields=["value"])
 
     await sync_to_async(log_action)(

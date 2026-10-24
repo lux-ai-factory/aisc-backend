@@ -263,12 +263,29 @@ class StoreInputValueTestCase(TestCase):
         self.evaluation, self.input = evaluation_input()
         self.other_evaluation, self.other_input = evaluation_input()
 
-    async def _patch(self, evaluation, input_pid, secret=INTERNAL_SECRET):
+    async def _patch(self, evaluation, input_pid, secret=INTERNAL_SECRET, value=None):
         with patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}):
             return await client.patch(
-                f"/evaluations/{evaluation.pid}/inputs/{input_pid}/value", json={"value": self.MARKER},
+                f"/evaluations/{evaluation.pid}/inputs/{input_pid}/value",
+                json={"value": self.MARKER if value is None else value},
                 headers={"X-Internal-Secret": secret},
             )
+
+    async def test_only_a_local_model_marker_is_accepted(self):
+        for value in (
+            {"value": "target:x/system"},
+            {"local_model": {"file": "scoring.onnx", "sha256": "not-a-hash"}},
+            {"local_model": {"file": "scoring.onnx", "sha256": "AB" * 32}},
+            {"local_model": {"file": "scoring.onnx"}},
+            {"local_model": {"file": 3, "sha256": "ab" * 32}},
+            {"local_model": {"file": "scoring.onnx", "sha256": "ab" * 32, "extra": 1}},
+            {"local_model": {"file": "scoring.onnx", "sha256": "ab" * 32}, "value": "target:x/system"},
+        ):
+            with self.subTest(value=value):
+                response = await self._patch(self.evaluation, self.input.pid, value=value)
+                self.assertEqual(422, response.status_code)
+                await self.input.arefresh_from_db()
+                self.assertEqual({}, self.input.value)
 
     async def test_the_value_is_stored_on_the_input(self):
         response = await self._patch(self.evaluation, self.input.pid)
