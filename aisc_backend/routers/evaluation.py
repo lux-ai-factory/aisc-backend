@@ -1,7 +1,11 @@
 import base64
+import json
+import logging
+import os
 import uuid
 
 from pathlib import Path
+from urllib import error, request as urlrequest
 from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
@@ -35,6 +39,8 @@ from aisc_backend.routers.target_input import CARD, LOCAL_MODEL, TARGET, _config
 from aisc_backend.services.project_config_matching import validate_plugin_settings
 from aisc_plugin_interface import card_needs_connection, target_kinds_of
 
+logger = logging.getLogger(__name__)
+
 router = Router(tags=["evaluation"])
 
 evaluation_repository = EvaluationRepository()
@@ -62,12 +68,41 @@ class CreateEvaluationRequest(Schema):
     plugins_to_run: list[EvaluationPluginInSchema]
 
 
+REACHABLE_TIMEOUT = 3  # seconds
+
+
+def _get(url: str, headers: dict) -> tuple[int, object]:
+    req = urlrequest.Request(url, method="GET", headers=headers)
+    try:
+        with urlrequest.urlopen(req, timeout=REACHABLE_TIMEOUT) as res:
+            return res.status, json.loads(res.read() or b"null")
+    except error.HTTPError as exc:
+        return exc.code, None
+
+
 def card_target_connected(platform_pid, key: str) -> bool | None:
-    """Whether the card target `key` of the platform project has a connection; None when the engine
-    cannot tell. The platform knows (its internal target resolve route answers 404 "no_endpoint"),
-    but that route is guarded by the connections token, which the engine does not hold, and it
-    answers with the connection's key: so the engine does not ask, and the worker's run finds out."""
-    return None
+    """Whether the card target `key` of the platform project has a connection, as the platform says
+    (GET /internal/projects/{pid}/targets/{key}/reachable, with PLATFORM_ENGINE_TOKEN: the answer
+    carries no key). None when the engine cannot tell: the evaluation is then accepted and its run
+    fails in the worker with the reason, as before."""
+    base = (os.environ.get("PLATFORM_URL") or "").rstrip("/")
+    token = os.environ.get("PLATFORM_ENGINE_TOKEN") or ""
+    if not base or not token:
+        logger.warning("PLATFORM_URL or PLATFORM_ENGINE_TOKEN is not set: a card target's connection is not checked")
+        return None
+    try:
+        status, body = _get(f"{base}/internal/projects/{platform_pid}/targets/{key}/reachable",
+                            {"X-AISC-Service-Token": token})
+    except Exception as exc:  # noqa: BLE001 - the platform is down, or the URL is wrong
+        logger.warning("the platform can't be reached (%s): a card target's connection is not checked",
+                       type(exc).__name__)
+        return None
+    connected = body.get("connected") if status == 200 and isinstance(body, dict) else None
+    if not isinstance(connected, bool):
+        logger.warning("the platform answered %s on whether target %s is reachable: its connection is not checked",
+                       status, key)
+        return None
+    return connected
 
 
 def _reference(component) -> str:
@@ -118,7 +153,8 @@ async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> 
         component = await AIComponent.objects.filter(pid=input_data.pid).afirst()
         if component is not None:  # an unknown component is refused below, as before
             pairs.append((input_data.name, component))
-    reason = check_assessed(plugin, pairs, project)
+    # the platform may be asked whether a card target has a connection: not on the event loop
+    reason = await sync_to_async(check_assessed, thread_sensitive=False)(plugin, pairs, project)
     if reason:
         raise HttpError(422, f"{plugin_row.display_name}: {reason}")
 

@@ -2,15 +2,14 @@
 
 In configurator mode POST /evaluations/task checks, for a plugin that declares what it assesses
 (@assesses, or an older declaration alone, read as a card target), that the run names only a
-declared kind: a card target of this project (with a
-connection when the plugin's card access calls the target), or the plugin's local model file, and
-for a plugin declaring both, exactly one of them. A refusal is a 422 naming the plugin and the
+declared kind: a card target of this project (with a connection when the plugin's card access calls
+the target), or the plugin's local model file, and for a plugin declaring both, exactly one of them. A refusal is a 422 naming the plugin and the
 reason, and nothing is stored. Plugins that declare nothing, and standalone mode, are unchanged.
 """
 import unittest.mock as mock
 import uuid
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.auth import keycloak
@@ -261,3 +260,79 @@ class StandaloneIsUnchanged(EvaluationKinds):
     test_an_old_declaration_is_refused_a_connection_reference = None
     test_an_old_declaration_that_calls_its_target_is_refused_one_without_a_connection = None
 
+
+ASKING = {"PLATFORM_URL": "http://platform:8000/", "PLATFORM_ENGINE_TOKEN": "engine-reachable-token"}
+REACHABLE = "http://platform:8000/internal/projects/{pid}/targets/system/reachable"
+
+
+class CardTargetConnected(SimpleTestCase):
+    """The engine asks the platform, with its own token; when it cannot, it cannot tell (None) and
+    accepts, and the run then fails in the worker with its reason."""
+
+    def ask(self, reply=None, raises=None, env=ASKING):
+        pid = uuid.uuid4()
+        get = mock.Mock(return_value=reply, side_effect=raises)
+        with mock.patch.dict("os.environ", env, clear=True), \
+             mock.patch.object(evaluation_routes, "_get", get):
+            answer = evaluation_routes.card_target_connected(pid, "system")
+        return answer, get, pid
+
+    def test_the_platforms_answer_is_the_answer(self):
+        for connected in (True, False):
+            answer, get, pid = self.ask(reply=(200, {"connected": connected, "protocol": None}))
+            self.assertIs(answer, connected)
+            url, headers = get.call_args.args
+            self.assertEqual(url, REACHABLE.format(pid=pid))
+            self.assertEqual(headers, {"X-AISC-Service-Token": "engine-reachable-token"})
+
+    def test_without_the_token_or_the_address_it_cannot_tell_and_says_so_without_secrets(self):
+        for missing in ASKING:
+            env = {k: v for k, v in ASKING.items() if k != missing}
+            with self.assertLogs("aisc_backend.routers.evaluation", "WARNING") as logged:
+                answer, get, _ = self.ask(env=env)
+            self.assertIsNone(answer)
+            get.assert_not_called()
+            self.assertNotIn("engine-reachable-token", "".join(logged.output))
+
+    def test_an_unreachable_platform_cannot_tell(self):
+        with self.assertLogs("aisc_backend.routers.evaluation", "WARNING") as logged:
+            answer, _, _ = self.ask(raises=OSError("connection refused"))
+        self.assertIsNone(answer)
+        self.assertNotIn("engine-reachable-token", "".join(logged.output))
+
+    def test_any_other_answer_cannot_tell(self):
+        for reply in ((503, {"detail": "closed"}), (401, {}), (404, {"detail": "no target 'system'"}),
+                      (200, {"connected": "yes"})):
+            with self.assertLogs("aisc_backend.routers.evaluation", "WARNING"):
+                answer, _, _ = self.ask(reply=reply)
+            self.assertIsNone(answer)
+
+    def test_it_asks_over_http(self):
+        import http.server
+        import json
+        import threading
+
+        seen = {}
+
+        class Platform(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen["path"], seen["token"] = self.path, self.headers.get("X-AISC-Service-Token")
+                body = json.dumps({"connected": False, "protocol": None}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Platform)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        pid = uuid.uuid4()
+        env = {**ASKING, "PLATFORM_URL": f"http://127.0.0.1:{server.server_port}"}
+        with mock.patch.dict("os.environ", env, clear=True):
+            self.assertIs(evaluation_routes.card_target_connected(pid, "system"), False)
+        self.assertEqual(seen, {"path": f"/internal/projects/{pid}/targets/system/reachable",
+                                "token": "engine-reachable-token"})
