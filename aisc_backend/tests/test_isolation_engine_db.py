@@ -79,8 +79,8 @@ def _seed(pid: str, label: str) -> dict:
 
     from aisc_backend import projectdb
     from aisc_backend.models import (
-        AIComponent, AISystem, Direct, Evaluation, EvaluationPlugin, Measurement, Observation, Plugin,
-        PluginConfig, Project, ProjectConfig,
+        AIComponent, AISystem, Direct, Evaluation, EvaluationInput, EvaluationPlugin, Measurement, Observation,
+        Plugin, PluginConfig, Project, ProjectConfig,
     )
     from aisc_backend.models.ai_system import AIComponentType
     from aisc_backend.models.artifact import Artifact
@@ -116,6 +116,8 @@ def _seed(pid: str, label: str) -> dict:
                                                task=uuid.uuid4())
         run = EvaluationPlugin.objects.create(evaluation=evaluation, plugin_config=plugin_config,
                                               name="probe", description="")
+        evaluation_input = EvaluationInput.objects.create(evaluation_plugin=run, name="model", description="",
+                                                          component=model, value={})
         artifact = Artifact.objects.create(evaluation_plugin=run, name="log.txt", description="",
                                            data=f"{uuid.uuid4()}.txt",
                                            storage_container=StorageContainer.Artifacts)
@@ -130,7 +132,8 @@ def _seed(pid: str, label: str) -> dict:
             "dataset_file": dataset.data, "model_file": model.data, "artifact_file": artifact.data,
             "project_config_pid": str(config.pid), "plugin_pid": str(plugin.pid),
             "config_id": plugin_config.id, "evaluation_pid": str(evaluation.pid),
-            "evaluation_plugin_pid": str(run.pid), "task": str(evaluation.task),
+            "evaluation_plugin_pid": str(run.pid), "evaluation_input_pid": str(evaluation_input.pid),
+            "task": str(evaluation.task),
             "system_id": str(evaluation.system_id) if evaluation.system_id else None,
         }
     finally:
@@ -527,6 +530,8 @@ ROUTES = [
     ("PATCH", "/api/v1/internal/evaluations/{evaluation_pid}/plugins/{evaluation_plugin_pid}/fail",
      {"error_message": "x"}, "worker"),
     ("POST", "/api/v1/internal/evaluations/{evaluation_pid}/measures", {"{evaluation_plugin_pid}": []}, "worker"),
+    ("PATCH", "/api/v1/internal/evaluations/{evaluation_pid}/inputs/{evaluation_input_pid}/value",
+     {"value": {"local_model": {"file": "clf.onnx", "sha256": "0"}}}, "worker"),
     ("POST", "/api/v1/internal/evaluations/{evaluation_pid}/artifacts",
      ("multipart", {"evaluation_plugin_uuid": "{evaluation_plugin_pid}"}), "worker"),
     ("GET", "/api/v1/internal/projects/settings/{pid}", None, "worker"),
