@@ -14,6 +14,7 @@ from pathlib import Path
 
 from asgiref.sync import async_to_sync
 from django.test import SimpleTestCase, override_settings
+from pydantic import BaseModel
 
 from aisc_backend.routers import target_input
 from aisc_plugin_interface import (
@@ -35,7 +36,11 @@ DATASET = InputDefinition(name="dataset", label="Dataset", input_type=InputType.
 ENV = {"AISC_TARGET_BASE_URL": "base_url"}
 
 
-class Unadopted(BaseEvaluationPlugin):
+class NoConfig(BaseModel):
+    """A config with no fields: the fixtures' config forms build, and ask for nothing."""
+
+
+class Unadopted(BaseEvaluationPlugin[NoConfig]):
     """A plugin that declares nothing about what it assesses."""
 
 
@@ -52,20 +57,20 @@ def with_model_file(cls):
 @helper_model("judge", "Judge model", required=True)
 @assesses(card=system_under_test_access(protocols=("openai",), env=ENV))
 @with_prompts
-class CardOnly(BaseEvaluationPlugin):
+class CardOnly(BaseEvaluationPlugin[NoConfig]):
     pass
 
 
 @assesses(card=inputs_access())
 @with_prompts
-class ReadsItsInputs(BaseEvaluationPlugin):
+class ReadsItsInputs(BaseEvaluationPlugin[NoConfig]):
     pass
 
 
 @assesses(local_model=onnx(input="model"))
 @with_model_file
 @with_prompts
-class LocalOnly(BaseEvaluationPlugin):
+class LocalOnly(BaseEvaluationPlugin[NoConfig]):
     pass
 
 
@@ -73,7 +78,7 @@ class LocalOnly(BaseEvaluationPlugin):
           local_model=onnx(input="model"))
 @with_prompts
 @with_model_file
-class CardOrLocal(BaseEvaluationPlugin):
+class CardOrLocal(BaseEvaluationPlugin[NoConfig]):
     pass
 
 
@@ -81,19 +86,19 @@ class CardOrLocal(BaseEvaluationPlugin):
 @assesses(card=system_under_test_access(protocols=("openai",), env=ENV))
 @with_prompts
 @helper_model("judge", "Judge model", required=True)
-class TwoHelpers(BaseEvaluationPlugin):
+class TwoHelpers(BaseEvaluationPlugin[NoConfig]):
     pass
 
 
 @system_under_test(protocols=("openai",), env=ENV)
 @with_prompts
-class OldDeclaration(BaseEvaluationPlugin):
+class OldDeclaration(BaseEvaluationPlugin[NoConfig]):
     pass
 
 
 @with_prompts
 @helper_model("judge", "Judge model", required=True)
-class HelperButNothingAssessed(BaseEvaluationPlugin):
+class HelperButNothingAssessed(BaseEvaluationPlugin[NoConfig]):
     pass
 
 

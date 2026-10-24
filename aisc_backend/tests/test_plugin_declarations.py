@@ -169,6 +169,8 @@ class TheDeclarations(SimpleTestCase):
         out, _ = self.declarations({"form": WithAConfigForm, "plain": Unadopted})
         self.assertEqual(out["form"]["config_fields"], ["note", "rounds", "target.model"])
         self.assertEqual(out["plain"]["config_fields"], [])
+        self.assertEqual({name: d["config_fields_unreadable"] for name, d in out.items()},
+                         {"form": False, "plain": False})
         self.assertNotIn("never-shown-default", json.dumps(list(out.values())))
 
     def test_a_config_form_that_cannot_be_built_is_flagged_and_the_test_still_listed(self):
