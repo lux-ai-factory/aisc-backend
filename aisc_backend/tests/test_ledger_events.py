@@ -344,6 +344,21 @@ class _FakePlugin:
         return config, {}, {}
 
 
+class _PluginWithSecrets(_FakePlugin):
+    """Marks its secret fields each way a config form can: format password (pydantic's SecretStr, or
+    json_schema_extra), writeOnly, the password widget, and a field of a nested model."""
+
+    def get_full_schema(self):
+        schema = {"properties": {"threshold": {"type": "number"},
+                                 "passphrase": {"type": "string", "format": "password"},
+                                 "sealed": {"type": "string", "writeOnly": True},
+                                 "auth_header": {"type": "string"},
+                                 "judge": {"$ref": "#/$defs/Judge"}},
+                  "$defs": {"Judge": {"properties": {"model": {"type": "string"},
+                                                     "phrase": {"type": "string", "format": "password"}}}}}
+        return schema, {"auth_header": {"ui:widget": "password"}}
+
+
 class Plugins(Recording):
     PACKAGE = {"package_name": "demo-pkg", "version": "0.1.0"}
 
@@ -405,3 +420,34 @@ class Plugins(Recording):
         restored = (await events())[-1]
         self.assertEvent(restored, "engine.plugin.configured", "plugin", pid, {})
         self.assertEqual(restored["content"], {"config_id": config_id, "config": {"threshold": 0.5}, "settings": {}})
+
+    async def test_a_configuration_in_the_ledger_names_no_secret_value(self):
+        pid = (await self._install()).json()[0]["pid"]
+        config = {"threshold": 0.5, "passphrase": "pass-value-1", "sealed": "sealed-value-2",
+                  "auth_header": "header-value-3", "judge": {"model": "gpt-4o", "phrase": "phrase-value-4"},
+                  "judge_api_key": "sk-judge-0123456789abcdefghij", "access_token": ""}
+        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", return_value=_PluginWithSecrets()):
+            res = await self.plugins.post(f"/{pid}/config", json={"config": config})
+            self.assertEqual(res.status_code, 200, res.text)
+            config_id = res.json()["plugin_config_id"]
+            await self.plugins.post(f"/{pid}/config", json={"config": {"threshold": 0.9}})
+            await self.plugins.post(f"/{pid}/configs/{config_id}/restore")
+        masked = {"threshold": 0.5, "passphrase": "set", "sealed": "set", "auth_header": "set",
+                  "judge": {"model": "gpt-4o", "phrase": "set"}, "judge_api_key": "set", "access_token": None}
+        configured, restored = (await events())[1], (await events())[-1]
+        self.assertEqual(configured["content"]["config"], masked)
+        self.assertEqual(restored["content"]["config"], masked)
+        for value in ("pass-value-1", "sealed-value-2", "header-value-3", "phrase-value-4", "sk-judge"):
+            self.assertNotIn(value, json.dumps(await events()))
+
+    async def test_a_plugin_that_cannot_be_loaded_still_has_its_secret_named_keys_masked(self):
+        pid = (await self._install()).json()[0]["pid"]
+        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", return_value=_FakePlugin()):
+            res = await self.plugins.post(f"/{pid}/config", json={"config": {"judge_api_key": "kept-out", "n": 1}})
+        self.assertEqual(res.status_code, 200, res.text)
+        config_id = res.json()["plugin_config_id"]
+        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", side_effect=ImportError("gone")):
+            await self.plugins.post(f"/{pid}/configs/{config_id}/restore")
+        restored = (await events())[-1]
+        self.assertEqual(restored["content"]["config"], {"judge_api_key": "set", "n": 1})
+        self.assertNotIn("kept-out", json.dumps(await events()))

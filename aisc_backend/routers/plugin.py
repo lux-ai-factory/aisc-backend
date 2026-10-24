@@ -1,3 +1,5 @@
+import logging
+import re
 import uuid
 
 from asgiref.sync import sync_to_async
@@ -45,10 +47,78 @@ def _package_event(action: str, package_name: str, version: str, **details) -> N
                 details={"package": package_name, "version": version, **details})
 
 
-def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict) -> None:
-    """A plugin's configuration in the ledger: which settings it uses, by key, never their values."""
+logger = logging.getLogger(__name__)
+
+#: What a secret field's value is in the ledger: whether it is set, never what it is.
+SECRET_SET = "set"
+#: A key holding one of these is taken for a secret even when the plugin's form does not mark it
+#: (a plugin that cannot be loaded, or a field saved before the form marked it).
+_SECRET_NAME = re.compile(r"key|token|secret|password|credential", re.IGNORECASE)
+
+
+def _resolved(node, defs: dict) -> dict:
+    """A JSON schema node with its $ref followed and its anyOf/allOf/oneOf merged (an optional
+    field is anyOf [its type, null])."""
+    if not isinstance(node, dict):
+        return {}
+    if "$ref" in node:
+        node = {**defs.get(node["$ref"].rsplit("/", 1)[-1], {}), **{k: v for k, v in node.items() if k != "$ref"}}
+    merged = dict(node)
+    for branch in ("anyOf", "allOf", "oneOf"):
+        for part in node.get(branch) or []:
+            part = _resolved(part, defs)
+            merged.setdefault("properties", {}).update(part.get("properties") or {})
+            for key in ("format", "writeOnly", "items"):
+                if key in part and key not in merged:
+                    merged[key] = part[key]
+    return merged
+
+
+def _secret(name: str, field: dict, ui: dict) -> bool:
+    return (field.get("format") == "password" or field.get("writeOnly") is True
+            or (isinstance(ui, dict) and ui.get("ui:widget") == "password") or bool(_SECRET_NAME.search(name)))
+
+
+def _masked(value, schema: dict, ui, defs: dict):
+    """`value` with every secret field's value replaced by SECRET_SET, or None when it is empty."""
+    if isinstance(value, list):
+        items = _resolved(schema.get("items"), defs)
+        ui_items = ui.get("items") if isinstance(ui, dict) else None
+        return [_masked(item, items, ui_items, defs) for item in value]
+    if not isinstance(value, dict):
+        return value
+    properties = schema.get("properties") or {}
+    out = {}
+    for name, inner in value.items():
+        field = _resolved(properties.get(name), defs)
+        field_ui = ui.get(name) if isinstance(ui, dict) else None
+        if _secret(str(name), field, field_ui):
+            out[name] = SECRET_SET if inner not in (None, "", [], {}) else None
+        else:
+            out[name] = _masked(inner, field, field_ui, defs)
+    return out
+
+
+def _config_without_secrets(plugin: Plugin, config, plugin_obj=None):
+    """The configuration as the ledger may hold it. The secret fields are those the plugin's form marks
+    (format password, as SecretStr makes it, writeOnly, the password widget), and any whose name says so."""
+    schema, ui = {}, {}
+    try:
+        plugin_obj = plugin_obj or plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+        schema, ui = plugin_obj.get_full_schema()
+    except Exception:  # noqa: BLE001 - its secrets are then found by name alone
+        logger.warning("plugin %s could not be loaded to read its secret config fields", plugin.name)
+    schema = schema if isinstance(schema, dict) else {}
+    return _masked(config, schema, ui if isinstance(ui, dict) else {}, schema.get("$defs") or {})
+
+
+def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict, plugin: Plugin, plugin_obj=None) -> None:
+    """A plugin's configuration in the ledger: which settings it uses, by key, never their values, and
+    its secret fields only as set or not."""
     ledger.emit("engine.plugin.configured", item_type="plugin", item_id=plugin_pid,
-                content={"config_id": plugin_config.id, "config": plugin_config.config, "settings": settings})
+                content={"config_id": plugin_config.id,
+                         "config": _config_without_secrets(plugin, plugin_config.config, plugin_obj),
+                         "settings": settings})
 
 
 class PluginConfigStateResponse(Schema):
@@ -307,7 +377,7 @@ async def restore_plugin_config(
 
     async def restore():
         await plugin_repository.save(plugin)
-        await sync_to_async(_configured)(plugin_pid, config, settings)
+        await sync_to_async(_configured)(plugin_pid, config, settings, plugin)
 
     await ledger.atomically(restore)
 
@@ -344,7 +414,7 @@ async def update_plugin_config_state(
         settings = {selection.plugin_config_key: str(selection.project_config_pid)
                     for selection in data.project_config_selections
                     if selection.plugin_config_key and selection.project_config_pid}
-        await sync_to_async(_configured)(plugin_pid, saved, settings)
+        await sync_to_async(_configured)(plugin_pid, saved, settings, project_plugin, plugin_obj)
         return saved
 
     plugin_config = await ledger.atomically(configure)
