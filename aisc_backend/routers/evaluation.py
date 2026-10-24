@@ -163,6 +163,16 @@ async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> 
         raise HttpError(422, f"{plugin_row.display_name}: {reason}")
 
 
+def _refuse_a_sent_local_marker(plugin_row, inputs) -> None:
+    """Only the engine marks a run local (_local_marker here, then the worker): an input's value
+    sent with the run never carries the marker, whatever its shape, so a card run is never taken
+    for a local one and kept out of the AI card's results."""
+    for input_data in inputs or []:
+        if isinstance(input_data.value, dict) and "local_model" in input_data.value:
+            raise HttpError(422, f"{plugin_row.display_name}: an input's value cannot say it is a local"
+                                 " model file; the engine marks local runs")
+
+
 def _local_marker(plugin, input_name: str, component) -> dict | None:
     """A run on the plugin's local model file is local from its creation: its model input says so
     ({"local_model": {"file"}}) before the worker replaces it with the full marker, with the file's
@@ -189,6 +199,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
             plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+            _refuse_a_sent_local_marker(plugin, plugin_to_run.inputs)
             if _configurator():
                 await _refuse_what_was_not_declared(plugin, plugin_obj, plugin_to_run.inputs, project)
             selected_settings = [

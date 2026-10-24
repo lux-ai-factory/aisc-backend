@@ -135,7 +135,8 @@ class EvaluationKinds(TestCase):
             return await evaluations.post(
                 "/task", headers=SIGNED_IN,
                 json={"project_pid": str(self.f.project.pid), "plugins_to_run": [{"name": "Scorer", "inputs": [
-                    {"name": name, "pid": str(component.pid)} for name, component in inputs]}]})
+                    {"name": name, "pid": str(component.pid), **({"value": rest[0]} if rest else {})}
+                    for name, component, *rest in inputs]}]})
 
     async def assert_refused(self, response, reason):
         self.assertEqual(response.status_code, 422, response.content)
@@ -235,6 +236,26 @@ class EvaluationKinds(TestCase):
         await self.assert_accepted(await self.run_plugin(LocalOnly, [("model", self.f.prompts)]))
         stored = await EvaluationInput.objects.aget(name="model")
         self.assertEqual(stored.value, {})
+
+    # only the engine marks a run local: a client cannot send the marker
+
+    async def test_a_card_run_whose_input_says_it_is_a_local_model_is_refused(self):
+        response = await self.run_plugin(CallsTheTarget, [
+            ("target", self.f.system_target, {"local_model": {"file": "scorer.onnx", "sha256": "0" * 64}}),
+            ("prompts", self.f.prompts)], connected=True)
+        await self.assert_refused(response, "an input's value cannot say it is a local model file;"
+                                            " the engine marks local runs")
+
+    async def test_a_local_model_key_that_is_no_object_is_refused_too(self):
+        response = await self.run_plugin(CallsTheTarget, [("target", self.f.system_target, {"local_model": "x"}),
+                                                          ("prompts", self.f.prompts)], connected=True)
+        await self.assert_refused(response, "an input's value cannot say it is a local model file;"
+                                            " the engine marks local runs")
+
+    async def test_a_local_run_sent_with_a_value_is_still_marked_by_the_engine(self):
+        await self.assert_accepted(await self.run_plugin(LocalOnly, [("model", self.f.model_file, {"note": "x"})]))
+        stored = await EvaluationInput.objects.aget(name="model")
+        self.assertEqual(stored.value, {"local_model": {"file": "scorer.onnx"}})
 
     # unchanged
 
