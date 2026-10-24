@@ -87,6 +87,18 @@ class ChangesItsForm(BaseEvaluationPlugin[NarrowForm]):
         return form_data, schema, {**ui, "rounds": {"ui:widget": "hidden"}}
 
 
+class FallbackForm(BaseModel):
+    rounds: int = 3
+    target_model_id: str = "plugins-own-model"
+    target: Endpoint = Endpoint(model="plugins-own-nested-model")
+
+
+@assesses(card=inputs_access())
+class HidesAFallback(BaseEvaluationPlugin[FallbackForm]):
+    """Hidden fields with defaults of their own: a run with no card target would use them."""
+    form_ui_schema = {"target_model_id": {"ui:widget": "hidden"}, "target": {"ui:widget": "hidden"}}
+
+
 def instance_of(cls):
     """An instance of the plugin class (the fixtures leave evaluate abstract: a subclass gives it)."""
     return type(cls.__name__, (cls,), {"evaluate": lambda self, config_data: None})()
@@ -153,6 +165,14 @@ class TheDeclarations(SimpleTestCase):
         out, _ = self.declarations({"wider": OverridesItsForm, "changed": ChangesItsForm})
         self.assertEqual(out["wider"]["config_fields"], ["rounds", "threshold"])
         self.assertEqual(out["changed"]["config_fields"], ["added"])
+
+    def test_each_hidden_config_field_says_only_whether_its_default_is_empty(self):
+        out, _ = self.declarations({"form": WithAConfigForm, "fallback": HidesAFallback})
+        self.assertEqual(out["form"]["hidden_config_fields"], {"target.base_url": True, "target_api_key": True})
+        self.assertEqual(out["fallback"]["hidden_config_fields"],
+                         {"target.base_url": True, "target.model": False, "target_model_id": False})
+        self.assertEqual(out["fallback"]["config_fields"], ["rounds"])
+        self.assertNotIn("plugins-own", json.dumps(list(out.values())))
 
     def test_a_plugin_that_does_not_load_is_left_out_not_the_whole_list(self):
         rows = [row("chat"), row("broken")]

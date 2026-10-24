@@ -161,7 +161,8 @@ async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
 # each target, the tests that can assess it (an AI card target; one that calls it only if connected).
 # The plugin check (scripts/verify-plugins.sh) reads the same list: whether the test adopted @assesses
 # (an older declaration alone reads as card), its helper roles, and the names of the config fields its
-# form asks a person for, so a test still asking for its target there is caught. Names only, never values.
+# form asks a person for, so a test still asking for its target there is caught; for each hidden field
+# only whether its default is empty. Names and that flag only, never a value.
 
 @sync_to_async
 def _enabled_plugins() -> list:
@@ -196,45 +197,58 @@ def _properties(node: dict, defs: dict, seen: frozenset) -> tuple[dict, frozense
     return props, seen
 
 
-def _asked_fields(node: dict, ui: dict, defs: dict, prefix: str, seen: frozenset) -> list[str]:
-    names = []
+def _empty(value) -> bool:
+    return value is None or value == "" or (isinstance(value, (list, dict)) and all(
+        _empty(v) for v in (value.values() if isinstance(value, dict) else value)))
+
+
+def _walk_fields(node: dict, ui: dict, defs: dict, prefix: str, seen: frozenset, default, hidden: bool,
+                 asked: list, hidden_fields: dict) -> None:
+    """Every leaf field of the form: its dotted name into ``asked``, or, when the form hides it (it or a
+    parent with ui:widget hidden), into ``hidden_fields`` with whether its default is empty. A parent's
+    default (a nested model's instance) gives its fields' defaults, as Pydantic does."""
     props, seen = _properties(node, defs, seen)
     for name, sub in props.items():
         sub_ui = ui.get(name) if isinstance(ui.get(name), dict) else {}
-        if sub_ui.get("ui:widget") == "hidden":  # filled by the platform, not asked of a person
-            continue
-        nested = _asked_fields(sub, sub_ui, defs, f"{prefix}{name}.", seen)
-        names.extend(nested or [prefix + name])
-    return names
+        sub_hidden = hidden or sub_ui.get("ui:widget") == "hidden"  # filled by the platform, not asked
+        sub_default = default[name] if isinstance(default, dict) and name in default else sub.get("default")
+        if _properties(sub, defs, seen)[0]:
+            _walk_fields(sub, sub_ui, defs, f"{prefix}{name}.", seen, sub_default, sub_hidden, asked, hidden_fields)
+        elif sub_hidden:
+            hidden_fields[prefix + name] = _empty(sub_default)
+        else:
+            asked.append(prefix + name)
 
 
-def config_fields(plugin) -> list[str]:
-    """The names of the config fields the plugin's form asks a person for (dotted when nested), read from
-    the schema and ui schema the engine's form shows (on_config_change with no data, as the config
-    routes of routers/plugin.py): the hidden ones are left out, and no default or value is read."""
+def config_fields(plugin) -> tuple[list[str], dict[str, bool]]:
+    """The config fields of the form the engine shows (on_config_change with no data, as the config
+    routes of routers/plugin.py), dotted when nested: the names a person is asked for, and for each
+    hidden one only whether its default is empty (a hidden default of its own would be a fallback)."""
     _, schema, ui = plugin.on_config_change(None)
-    return sorted(_asked_fields(schema, ui or {}, schema.get("$defs") or {}, "", frozenset()))
+    asked, hidden = [], {}
+    _walk_fields(schema, ui or {}, schema.get("$defs") or {}, "", frozenset(), None, False, asked, hidden)
+    return sorted(asked), dict(sorted(hidden.items()))
 
 
-def _readable_config_fields(plugin) -> tuple[list[str], bool]:
-    """(config_fields, unreadable): a form that cannot be built leaves the test listed, flagged."""
+def _readable_config_fields(plugin) -> tuple[list[str], dict[str, bool], bool]:
+    """(asked, hidden, unreadable): a form that cannot be built leaves the test listed, flagged."""
     try:
-        return config_fields(plugin), False
+        return (*config_fields(plugin), False)
     except Exception:
         logger.exception("the config form of %s could not be built for its declarations", type(plugin).__name__)
-        return [], True
+        return [], {}, True
 
 
 def declaration(row, plugin) -> dict:
     kinds = target_kinds_of(plugin)
-    fields, unreadable = _readable_config_fields(plugin)
+    fields, hidden, unreadable = _readable_config_fields(plugin)
     return {"pid": str(row.pid), "name": row.name, "display_name": row.display_name,
             "package_name": row.package_name, "version": row.version,
             "target_kinds": list(kinds), "card_protocols": list(card_protocols_of(plugin)),
             "card_needs_connection": CARD in kinds and card_needs_connection(plugin),
             "adopted": getattr(plugin, "target_kinds", None) is not None,
             "helper_roles": _helper_roles(plugin), "config_fields": fields,
-            "config_fields_unreadable": unreadable}
+            "hidden_config_fields": hidden, "config_fields_unreadable": unreadable}
 
 
 @router.get("/declarations", response=list[dict])
