@@ -34,6 +34,7 @@ from aisc_backend.repositories.system_version_repository import latest_system_pi
 from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.plugin import get_plugin_input_definitions as upstream_input_definitions
 from aisc_plugin_interface import InputDefinition, InputType, helper_roles_of, target_kinds_of
+from aisc_plugin_interface.assesses import card_needs_connection, card_protocols_of
 from aisc_plugin_interface.helpers import helper_input_name
 
 logger = logging.getLogger(__name__)
@@ -154,3 +155,33 @@ async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
     await _ensure_system_target_quietly()
     return [*definitions,
             InputDefinition(name=TARGET, label=TARGET_LABEL, input_type=InputType.RESOURCE, required=True)]
+
+
+# What each installed test declares about what it assesses: the platform's target page lists, under
+# each target, the tests that can assess it (an AI card target; one that calls it only if connected).
+
+@sync_to_async
+def _enabled_plugins() -> list:
+    from aisc_backend.models import Plugin
+
+    return list(Plugin.objects.filter(enabled=True).order_by("package_name", "name"))
+
+
+def declaration(row, plugin) -> dict:
+    return {"pid": str(row.pid), "name": row.name, "display_name": row.display_name,
+            "package_name": row.package_name, "version": row.version,
+            "target_kinds": list(target_kinds_of(plugin)), "card_protocols": list(card_protocols_of(plugin)),
+            "card_needs_connection": CARD in target_kinds_of(plugin) and card_needs_connection(plugin)}
+
+
+@router.get("/declarations", response=list[dict])
+async def plugin_declarations(request):
+    out = []
+    for row in await _enabled_plugins():
+        try:
+            plugin = plugin_routes.plugin_loader.load_plugin(row.package_name, row.name, row.version)
+        except Exception:  # one test that does not load must not hide the others
+            logger.exception("plugin %s %s could not be loaded for its declarations", row.package_name, row.name)
+            continue
+        out.append(declaration(row, plugin))
+    return out
