@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from ninja import Schema
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from aisc_backend.models.project_config import ProjectConfigCategory
 
@@ -28,12 +28,21 @@ class ProjectConfigValueSchema(Schema):
     value: Any = None
 
 
+def _json_value_is_an_object(value: Any) -> Any:
+    """Refuse a json_value that is not absent, null or an object, instead of storing it as an empty value."""
+    if value is None or isinstance(value, (dict, ProjectConfigValueSchema)):
+        return value
+    raise ValueError("json_value must be an object")
+
+
 class ProjectConfigInSchema(Schema):
     category: ProjectConfigCategory = ProjectConfigCategory.VARIABLES
     key: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
     name: str = Field(min_length=1, max_length=255)
     value: str = ""
     json_value: ProjectConfigValueSchema | None = None
+
+    _json_value_must_be_an_object = field_validator("json_value", mode="before")(_json_value_is_an_object)
 
     @model_validator(mode="after")
     def _secret_requires_value(self) -> "ProjectConfigInSchema":
@@ -46,6 +55,8 @@ class ProjectConfigUpdateSchema(Schema):
     name: str | None = None
     value: str | None = None
     json_value: ProjectConfigValueSchema | None = None
+
+    _json_value_must_be_an_object = field_validator("json_value", mode="before")(_json_value_is_an_object)
 
 
 class ProjectConfigOutSchema(Schema):
