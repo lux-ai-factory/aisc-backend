@@ -15,7 +15,7 @@ applied, and the engine's deployed environment pointed at it:
 Without ENGINE_TEST_SUPERUSER_URL
 every test here skips, so the sqlite unit run is unaffected; without
 AISC_DEPLOYMENT=configurator they skip too (they are configurator-only), and the
-run still says OK, so check that it ran 30 tests, not 30 skipped.
+run still says OK, so check that it ran 36 tests, not 36 skipped.
 
 These are plain unittest cases, not Django's TestCase: Django's runner then
 creates no test database, and the tests use the real project databases the
@@ -44,7 +44,8 @@ from django.conf import settings
 
 from aisc_backend.tests.isolation_support import (
     configurator_only,
-    BACKEND, LIVE_SHAPE, SUPERUSER_URL_VAR, ApiCaller, Cluster, catalog, database_name, superuser_url,
+    BACKEND, INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
+    Cluster, catalog, database_name, newer_than_live_shape, superuser_url,
 )
 
 SKIP_REASON = (f"needs a throwaway Postgres: set {SUPERUSER_URL_VAR} and the engine's DB_* to it "
@@ -347,10 +348,10 @@ class TheShapeIsTheLiveShape(PostgresCase):
         live = self._live()
         with self.cluster.connect(self.w["A"]["database"]) as conn:
             mine = catalog(conn, "engine")
-        # What the live shape predates: the mode marker (0021_engine_deployment_marker) and the one-system-target
-        # index (0022_one_system_target_per_system).
-        mine = {kind: {r for r in rows if r[0] != "engine_deployment" and r[1:2] != ("aisc_one_system_target_per_system",)}
-                for kind, rows in mine.items()}
+        # What the live shape predates: the tables in TABLES_NEWER_THAN_LIVE_SHAPE (the mode marker of
+        # 0021_engine_deployment_marker, the ledger outbox of 0023_ledger_outbox) and the index in
+        # INDEXES_NEWER_THAN_LIVE_SHAPE (0022_one_system_target_per_system).
+        mine = {kind: {r for r in rows if not newer_than_live_shape(kind, r)} for kind, rows in mine.items()}
         live["constraints"] = {
             (t, self.RENAMED.get(name, name), kind,
              d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
@@ -359,6 +360,92 @@ class TheShapeIsTheLiveShape(PostgresCase):
             with self.subTest(kind=kind):
                 self.assertEqual(sorted(mine[kind] - live[kind]), [], f"{kind} only in the project database")
                 self.assertEqual(sorted(live[kind] - mine[kind]), [], f"{kind} only in the live shape")
+
+    def test_every_exemption_is_in_the_project_database_and_not_in_the_live_shape(self):
+        live = self._live()
+        with self.cluster.connect(self.w["A"]["database"]) as conn:
+            mine = catalog(conn, "engine")
+        for table in TABLES_NEWER_THAN_LIVE_SHAPE:
+            with self.subTest(table=table):
+                self.assertIn((table,), mine["tables"], "an exempt table the migrations no longer make")
+                self.assertNotIn((table,), live["tables"], "an exempt table the live shape has")
+        for index in INDEXES_NEWER_THAN_LIVE_SHAPE:
+            with self.subTest(index=index):
+                self.assertIn(index, {r[1] for r in mine["indexes"]}, "an exempt index the migrations no longer make")
+                self.assertNotIn(index, {r[1] for r in live["indexes"]}, "an exempt index the live shape has")
+
+    def test_the_ledger_outbox_is_as_its_migration_makes_it(self):
+        table = "aisc_backend_ledgeroutbox"
+        with self.cluster.connect(self.w["A"]["database"]) as conn:
+            mine = catalog(conn, "engine")
+        expected = {
+            "tables": {(table,)},
+            "columns": {
+                (table, "id", "bigint", True, ""),
+                (table, "project_pid", "uuid", True, ""),
+                (table, "event", "jsonb", True, ""),
+                (table, "queued_at", "timestamp with time zone", True, ""),
+                (table, "delivered_at", "timestamp with time zone", False, ""),
+                (table, "refused", "integer", False, ""),
+            },
+            "constraints": {(table, f"{table}_pkey", "p", "PRIMARY KEY (id)")},
+            "indexes": {(table, f"{table}_pkey",
+                         f"CREATE UNIQUE INDEX {table}_pkey ON engine.{table} USING btree (id)")},
+            "sequences": {(f"{table}_id_seq", "bigint")},
+        }
+        for kind, rows in expected.items():
+            with self.subTest(kind=kind):
+                owner = f"{table}_id_seq" if kind == "sequences" else table
+                self.assertEqual({r for r in mine[kind] if r[0] == owner}, rows)
+
+
+class WhatTheLiveShapePredates(unittest.TestCase):
+    """No database needed: which catalog rows come from a migration the live shape predates."""
+
+    def test_the_ledger_outbox_and_its_rows_are_newer(self):
+        rows = [
+            ("tables", ("aisc_backend_ledgeroutbox",)),
+            ("columns", ("aisc_backend_ledgeroutbox", "refused", "integer", False, "")),
+            ("constraints", ("aisc_backend_ledgeroutbox", "aisc_backend_ledgeroutbox_pkey", "p", "PRIMARY KEY (id)")),
+            ("indexes", ("aisc_backend_ledgeroutbox", "aisc_backend_ledgeroutbox_pkey",
+                         "CREATE UNIQUE INDEX aisc_backend_ledgeroutbox_pkey ON engine.aisc_backend_ledgeroutbox "
+                         "USING btree (id)")),
+            ("sequences", ("aisc_backend_ledgeroutbox_id_seq", "bigint")),
+        ]
+        for kind, row in rows:
+            with self.subTest(kind=kind, row=row):
+                self.assertIs(newer_than_live_shape(kind, row), True)
+
+    def test_the_earlier_exemptions_stay(self):
+        rows = [
+            ("tables", ("engine_deployment",)),
+            ("columns", ("engine_deployment", "mode", "character varying(16)", True, "")),
+            ("indexes", ("aisc_backend_aicomponent", "aisc_one_system_target_per_system", "CREATE UNIQUE INDEX ...")),
+            ("indexes", ("aisc_backend_aicomponent", "aisc_one_system_target_per_system", "any definition")),
+        ]
+        for kind, row in rows:
+            with self.subTest(kind=kind, row=row):
+                self.assertIs(newer_than_live_shape(kind, row), True)
+
+    def test_live_tables_and_their_sequences_are_not_exempt(self):
+        rows = [
+            ("tables", ("aisc_backend_project",)),
+            ("sequences", ("aisc_backend_project_id_seq", "bigint")),
+            ("tables", ("aisc_backend_ledgeroutbox_old",)),
+            ("sequences", ("aisc_backend_ledgeroutbox_other_seq", "bigint")),
+            ("constraints", ("aisc_backend_aicomponent", "aisc_one_system_target_per_system", "u", "UNIQUE (x)")),
+            ("views", ("aisc_backend_ledgeroutbox",)),
+        ]
+        for kind, row in rows:
+            with self.subTest(kind=kind, row=row):
+                self.assertIs(newer_than_live_shape(kind, row), False)
+
+    def test_every_exemption_names_a_migration(self):
+        migrations = [*TABLES_NEWER_THAN_LIVE_SHAPE.values(), *INDEXES_NEWER_THAN_LIVE_SHAPE.values()]
+        self.assertEqual(len(migrations), 3)
+        for migration in migrations:
+            with self.subTest(migration=migration):
+                self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())
 
 
 # ── the ORM goes to the admitted database ──
