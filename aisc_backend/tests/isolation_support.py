@@ -35,6 +35,26 @@ REPO = Path(os.environ.get("AISC_ISOLATION_REPO") or BACKEND.parents[1])
 PLATFORM = REPO / "platform"
 LIVE_SHAPE = REPO / "scripts" / "tests" / "fixtures" / "isolation" / "live_shape.sql"
 
+#: Tables the engine's migrations make that the live shape predates, with the migration that made each.
+TABLES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
+    "engine_deployment": "0021_engine_deployment_marker",
+    "aisc_backend_ledgeroutbox": "0023_ledger_outbox",
+}
+#: Indexes on tables the live shape has, made by a later migration.
+INDEXES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
+    "aisc_one_system_target_per_system": "0022_one_system_target_per_system",
+}
+
+
+def newer_than_live_shape(kind: str, row: tuple) -> bool:
+    """True when this catalog row (a row of `catalog()`'s `kind`) comes from a migration the live shape predates."""
+    if kind in ("tables", "columns", "constraints", "indexes") and row[0] in TABLES_NEWER_THAN_LIVE_SHAPE:
+        return True
+    # a sequence row starts with the sequence's name: Django names a table's id sequence <table>_id_seq
+    if kind == "sequences" and any(row[0] == f"{table}_id_seq" for table in TABLES_NEWER_THAN_LIVE_SHAPE):
+        return True
+    return kind == "indexes" and row[1] in INDEXES_NEWER_THAN_LIVE_SHAPE
+
 #: The example pid of every language's tests.
 EXAMPLE_PID = "3f2b8c1e-0d4a-4e7b-9a55-1c2d3e4f5a6b"
 EXAMPLE_DB = "project_3f2b8c1e0d4a4e7b9a551c2d3e4f5a6b"
