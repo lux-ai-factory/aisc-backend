@@ -34,7 +34,7 @@ from urllib import error, request as urlrequest
 from asgiref.sync import async_to_sync, markcoroutinefunction, sync_to_async
 from django.db import connections, router, transaction
 
-from aisc_backend import projectdb
+from aisc_backend import config_secrets, projectdb
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,8 @@ current_request: ContextVar[str | None] = ContextVar("aisc_ledger_request", defa
 
 #: The action that starts a run; the worker's events cite it.
 RUN_REQUESTED = "engine.evaluation.run_requested"
+#: A plugin's configuration; its secrets are masked before it is sent.
+CONFIGURED = "engine.plugin.configured"
 #: The platform's answers that refuse the event itself (no project, another event with this id, too
 #: big, malformed): it is kept with the status and never sent again. Any other answer is for the
 #: operator to fix, so the event waits for the next pass.
@@ -216,7 +218,7 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
     sent = failed = 0
     queued = LedgerOutbox.objects.using(using).filter(delivered_at__isnull=True, refused__isnull=True)
     for row in list(queued.order_by("id")[:limit]):
-        status = send(str(row.project_pid), row.event)
+        status = send(str(row.project_pid), _as_sent(row.event))
         if status is not None and 200 <= status < 300:
             LedgerOutbox.objects.using(using).filter(pk=row.pk).update(delivered_at=datetime.now(timezone.utc))
             sent += 1
@@ -231,6 +233,18 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
                        row.event.get("event_id"), "no answer" if status is None else f"status {status}")
         break
     return sent, failed
+
+
+def _as_sent(event: dict) -> dict:
+    """The event as the platform receives it. A configuration event queued before its secrets were masked at
+    save is masked here, so no plaintext secret leaves the engine; the stored row is left to the cleanup
+    (`manage.py clean_old_secrets`)."""
+    if not isinstance(event, dict):
+        return event
+    content = event.get("content")
+    if event.get("action") != CONFIGURED or not isinstance(content, dict) or "config" not in content:
+        return event
+    return {**event, "content": {**content, "config": config_secrets.masked_for_ledger(content["config"])}}
 
 
 def can_send() -> bool:
