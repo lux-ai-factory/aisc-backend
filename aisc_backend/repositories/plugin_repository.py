@@ -58,13 +58,26 @@ class EvaluationPluginRepository(BaseRepository[EvaluationPlugin]):
     def __init__(self):
         super().__init__(EvaluationPlugin)
 
-    async def get_with_related(self, pid: uuid.UUID) -> EvaluationPlugin:
-        return await (
+    @staticmethod
+    def _with_related():
+        return (
             EvaluationPlugin.objects
             .select_related("plugin_config")
             .select_related("plugin_config__plugin")
             .prefetch_related("plugin_config__setting_mappings__project_config")
             .prefetch_related("evaluation_inputs")
             .prefetch_related("artifacts")
-            .aget(pid=pid)
         )
+
+    async def get_with_related(self, pid: uuid.UUID) -> EvaluationPlugin:
+        return await self._with_related().aget(pid=pid)
+
+    async def get_of_evaluation(
+        self, evaluation_plugin_pid: uuid.UUID, evaluation_pid: uuid.UUID, with_related: bool = False
+    ) -> EvaluationPlugin:
+        """The plugin run with this pid, only if it belongs to the evaluation with that pid.
+
+        Raises EvaluationPlugin.DoesNotExist for an unknown pid and for a run of another evaluation alike.
+        """
+        queryset = self._with_related() if with_related else EvaluationPlugin.objects
+        return await queryset.aget(pid=evaluation_plugin_pid, evaluation__pid=evaluation_pid)

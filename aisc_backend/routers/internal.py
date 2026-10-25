@@ -14,7 +14,7 @@ from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_backend.models import (
-    Evaluation, EvaluationInput, EvaluationStatus, Observation, Metric, Measurement,
+    Evaluation, EvaluationInput, EvaluationPlugin, EvaluationStatus, Observation, Metric, Measurement,
 )
 from aisc_backend.models.artifact import Artifact
 from aisc_backend.models.common import StorageContainer
@@ -33,6 +33,26 @@ from aisc_plugin_interface import LLMConfig
 logger = logging.getLogger(__name__)
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
+
+NO_EVALUATION = "No evaluation found"
+NO_EVALUATION_PLUGIN = "No evaluation plugin of this evaluation found"
+
+
+async def _evaluation_or_404(evaluation_pid: uuid.UUID, with_related: bool = False) -> Evaluation:
+    try:
+        return await evaluation_repository.get(evaluation_pid, with_related)
+    except Evaluation.DoesNotExist:
+        raise HttpError(404, NO_EVALUATION)
+
+
+async def _run_of_evaluation_or_404(
+    evaluation_plugin_pid: uuid.UUID, evaluation_pid: uuid.UUID, with_related: bool = False
+) -> EvaluationPlugin:
+    try:
+        return await evaluation_plugin_repository.get_of_evaluation(
+            evaluation_plugin_pid, evaluation_pid, with_related=with_related)
+    except EvaluationPlugin.DoesNotExist:
+        raise HttpError(404, NO_EVALUATION_PLUGIN)
 
 
 class ProjectConfigsByPidRequest(Schema):
@@ -299,13 +319,8 @@ class PluginTimestampSchema(Schema):
 async def update_plugin_timestamp(
     request, evaluation_pid: uuid.UUID, evaluation_plugin_pid: uuid.UUID, data: PluginTimestampSchema
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid)
-    if evaluation is None:
-        raise HttpError(404, "No evaluation found")
-
-    eval_plugin = await evaluation_plugin_repository.get(evaluation_plugin_pid)
-    if eval_plugin is None:
-        raise HttpError(404, "No evaluation plugin found")
+    evaluation = await _evaluation_or_404(evaluation_pid)
+    eval_plugin = await _run_of_evaluation_or_404(evaluation_plugin_pid, evaluation_pid)
 
     if data.field not in ("started_at", "finished_at"):
         raise HttpError(
@@ -331,13 +346,8 @@ class PluginFailureSchema(Schema):
 async def mark_plugin_failed(
     request, evaluation_pid: uuid.UUID, evaluation_plugin_pid: uuid.UUID, data: PluginFailureSchema
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid)
-    if evaluation is None:
-        raise HttpError(404, "No evaluation found")
-
-    eval_plugin = await evaluation_plugin_repository.get(evaluation_plugin_pid)
-    if eval_plugin is None:
-        raise HttpError(404, "No evaluation plugin found")
+    evaluation = await _evaluation_or_404(evaluation_pid)
+    eval_plugin = await _run_of_evaluation_or_404(evaluation_plugin_pid, evaluation_pid)
 
     eval_plugin.status = "Failed"
     eval_plugin.error_message = data.error_message
@@ -359,7 +369,12 @@ async def create_evaluation_measures(
     evaluation_pid: uuid.UUID,
     data: dict[uuid.UUID, list[MeasureInSchema]] = Body(...),
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid, True)
+    evaluation = await _evaluation_or_404(evaluation_pid, True)
+    # every named run must be of this evaluation before anything is written: all or nothing
+    runs = {
+        evaluation_plugin_uuid: await _run_of_evaluation_or_404(evaluation_plugin_uuid, evaluation_pid, True)
+        for evaluation_plugin_uuid in data
+    }
 
     async def record():
         # the measures and their ledger event commit together
@@ -367,7 +382,7 @@ async def create_evaluation_measures(
         for evaluation_plugin_uuid, measures in data.items():
             # Create a new Observation for each plugin
 
-            evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
+            evaluation_plugin = runs[evaluation_plugin_uuid]
             plugin = evaluation_plugin.plugin_config.plugin
 
             observation = Observation(
@@ -425,13 +440,8 @@ async def upload_evaluation_artifact(
     evaluation_plugin_uuid: uuid.UUID = Form(...),
     file: UploadedFile = File(...),
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid)
-    if evaluation is None:
-        raise HttpError(404, "No evaluation found")
-
-    evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_uuid)
-    if evaluation_plugin is None:
-        raise HttpError(404, "No evaluation plugin found")
+    evaluation = await _evaluation_or_404(evaluation_pid)
+    evaluation_plugin = await _run_of_evaluation_or_404(evaluation_plugin_uuid, evaluation_pid, True)
 
     plugin = evaluation_plugin.plugin_config.plugin
 
