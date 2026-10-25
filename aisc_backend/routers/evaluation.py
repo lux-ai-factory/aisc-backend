@@ -266,7 +266,10 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
 @router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
-    return await evaluation_repository.get_including(evaluation_pid, include)
+    try:
+        return await evaluation_repository.get_including(evaluation_pid, include)
+    except Evaluation.DoesNotExist:
+        raise HttpError(404, "Evaluation not found")
 
 
 @router.get("", response=list[EvaluationByStatusResponseSchema])
