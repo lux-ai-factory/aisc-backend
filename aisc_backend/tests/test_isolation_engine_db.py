@@ -15,7 +15,7 @@ applied, and the engine's deployed environment pointed at it:
 Without ENGINE_TEST_SUPERUSER_URL
 every test here skips, so the sqlite unit run is unaffected; without
 AISC_DEPLOYMENT=configurator they skip too (they are configurator-only), and the
-run still says OK, so check that it ran 36 tests, not 36 skipped.
+run still says OK, so check that it ran 38 tests, not 38 skipped.
 
 These are plain unittest cases, not Django's TestCase: Django's runner then
 creates no test database, and the tests use the real project databases the
@@ -397,6 +397,33 @@ class TheShapeIsTheLiveShape(PostgresCase):
             with self.subTest(kind=kind):
                 owner = f"{table}_id_seq" if kind == "sequences" else table
                 self.assertEqual({r for r in mine[kind] if r[0] == owner}, rows)
+
+    def test_the_mode_marker_is_as_its_migration_makes_it(self):
+        table = "engine_deployment"
+        with self.cluster.connect(self.w["A"]["database"]) as conn:
+            mine = catalog(conn, "engine")
+        expected = {
+            "tables": {(table,)},
+            "columns": {(table, "mode", "character varying(16)", True, "")},
+            "constraints": set(),
+            "indexes": set(),
+        }
+        for kind, rows in expected.items():
+            with self.subTest(kind=kind):
+                self.assertEqual({r for r in mine[kind] if r[0] == table}, rows)
+        with self.subTest(kind="sequences"):
+            self.assertEqual({r for r in mine["sequences"] if r[0].startswith(table)}, set())
+
+    def test_the_one_system_target_index_is_as_its_migration_makes_it(self):
+        index = "aisc_one_system_target_per_system"
+        with self.cluster.connect(self.w["A"]["database"]) as conn:
+            mine = catalog(conn, "engine")
+        self.assertEqual({r for r in mine["indexes"] if r[1] == index}, {(
+            "aisc_backend_aicomponent", index,
+            f"CREATE UNIQUE INDEX {index} ON engine.aisc_backend_aicomponent USING btree "
+            "(system_id, ((json_value ->> 'value'::text))) "
+            "WHERE ((json_value ->> 'value'::text) ~~ 'target:%/system'::text)",
+        )})
 
 
 class WhatTheLiveShapePredates(unittest.TestCase):
