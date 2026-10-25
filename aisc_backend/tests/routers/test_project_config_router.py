@@ -1,6 +1,9 @@
+import uuid
+
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
+from aisc_backend.models import ProjectConfig
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers.project_config import router
 
@@ -99,3 +102,57 @@ class ProjectConfigRouterTestCase(TestCase):
         self.assertEqual(res.status_code, 204)
         listing = await client.get(f"/{self.project.pid}")
         self.assertEqual(len(listing.json()), 0)
+
+    async def _create_variable_k(self):
+        create = await client.post(
+            f"/{self.project.pid}",
+            json={"category": "variables", "key": "k", "name": "K", "json_value": {"type": "number", "value": 1}},
+        )
+        self.assertEqual(create.status_code, 200, create.text)
+        return create.json()["pid"]
+
+    async def test_update_through_another_project_is_refused(self):
+        other = await Project.objects.acreate(name="other", status=ProjectStatus.Ready)
+        pid = await self._create_variable_k()
+
+        res = await client.patch(f"/{other.pid}/{pid}", json={"name": "Renamed"})
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertEqual(res.json()["detail"], "Project config not associated with project id")
+
+        listing = await client.get(f"/{self.project.pid}")
+        self.assertEqual([item["name"] for item in listing.json()], ["K"])
+
+    async def test_update_name_only_keeps_value(self):
+        pid = await self._create_variable_k()
+
+        res = await client.patch(f"/{self.project.pid}/{pid}", json={"name": "Renamed"})
+        self.assertEqual(res.status_code, 200, res.text)
+        body = res.json()
+        self.assertEqual(body["name"], "Renamed")
+        self.assertEqual(body["json_value"], {"type": "number", "value": 1})
+        self.assertEqual(body["key"], "k")
+
+    async def test_update_unknown_setting_is_not_found(self):
+        with self.assertRaises(ProjectConfig.DoesNotExist):
+            await client.patch(f"/{self.project.pid}/{uuid.uuid4()}", json={"name": "x"})
+
+    async def test_delete_through_another_project_is_refused(self):
+        other = await Project.objects.acreate(name="other", status=ProjectStatus.Ready)
+        pid = await self._create_variable_k()
+
+        res = await client.delete(f"/{other.pid}/{pid}")
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertEqual(res.json()["detail"], "Project config not associated with project id")
+        self.assertTrue(await ProjectConfig.objects.filter(pid=pid).aexists())
+
+    async def test_delete_through_owning_project_removes_setting(self):
+        await Project.objects.acreate(name="other", status=ProjectStatus.Ready)
+        pid = await self._create_variable_k()
+
+        res = await client.delete(f"/{self.project.pid}/{pid}")
+        self.assertEqual(res.status_code, 204, res.text)
+        self.assertFalse(await ProjectConfig.objects.filter(pid=pid).aexists())
+
+    async def test_delete_unknown_setting_is_not_found(self):
+        with self.assertRaises(ProjectConfig.DoesNotExist):
+            await client.delete(f"/{self.project.pid}/{uuid.uuid4()}")
