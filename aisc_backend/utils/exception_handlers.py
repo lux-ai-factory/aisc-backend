@@ -8,12 +8,17 @@ from config.settings import APP_NAME, LOG_LEVEL
 
 logger = get_logger(APP_NAME, LOG_LEVEL)
 
+def _message_and_detail(text: str) -> dict[str, str]:
+    """One error text under both keys: "detail" as HttpError and validation errors answer, "message" as before."""
+    return {"message": text, "detail": text}
+
+
 def register_exception_handlers(api: NinjaAPI):
     @api.exception_handler(ObjectDoesNotExist)
     def not_found_handler(request, exc):
         return api.create_response(
             request,
-            {"message": f"{exc} — Endpoint: {request.method} {request.path}"},
+            _message_and_detail(f"{exc} — Endpoint: {request.method} {request.path}"),
             status=404,
         )
 
@@ -21,7 +26,7 @@ def register_exception_handlers(api: NinjaAPI):
     def conflict_handler(request, exc):
         return api.create_response(
             request,
-            {"message": f"{exc} — Endpoint: {request.method} {request.path}"},
+            _message_and_detail(f"{exc} — Endpoint: {request.method} {request.path}"),
             status=409,
         )
 
@@ -34,6 +39,6 @@ def register_exception_handlers(api: NinjaAPI):
         )
         return api.create_response(
             request,
-            {"message": f"{exc} — Endpoint: {request.method} {request.path}"},
+            _message_and_detail(f"{exc} — Endpoint: {request.method} {request.path}"),
             status=500,
         )
