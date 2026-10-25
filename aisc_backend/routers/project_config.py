@@ -78,6 +78,8 @@ async def update_project_config(request, project_pid: uuid.UUID, project_config_
 
 @router.delete("/{project_pid}/{project_config_pid}", response={204: None})
 async def delete_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID):
-    project_config = await project_config_repository.get(project_config_pid)
+    project_config = await project_config_repository.get(project_config_pid, get_related=True)
+    if project_config.project.pid != project_pid:
+        raise HttpError(400, "Project config not associated with project id")
     await project_config_repository.delete(project_config)
     return 204, None
