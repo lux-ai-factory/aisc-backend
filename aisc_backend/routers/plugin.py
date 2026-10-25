@@ -1,5 +1,4 @@
 import logging
-import re
 import uuid
 
 from asgiref.sync import sync_to_async
@@ -7,6 +6,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend import ledger
+from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
 from aisc_backend.models.common import StorageContainer
@@ -49,11 +49,9 @@ def _package_event(action: str, package_name: str, version: str, **details) -> N
 
 logger = logging.getLogger(__name__)
 
-#: What a secret field's value is in the ledger: whether it is set, never what it is.
-SECRET_SET = "set"
 #: A key holding one of these is taken for a secret even when the plugin's form does not mark it
 #: (a plugin that cannot be loaded, or a field saved before the form marked it).
-_SECRET_NAME = re.compile(r"key|token|secret|password|credential", re.IGNORECASE)
+_SECRET_NAME = LEDGER_SECRET_NAME
 
 
 def _resolved(node, defs: dict) -> dict:
