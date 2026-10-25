@@ -8,6 +8,8 @@ from config.settings import APP_NAME, LOG_LEVEL
 
 logger = get_logger(APP_NAME, LOG_LEVEL)
 
+INTERNAL_SERVER_ERROR = "Internal server error"
+
 def _message_and_detail(text: str) -> dict[str, str]:
     """One error text under both keys: "detail" as HttpError and validation errors answer, "message" as before."""
     return {"message": text, "detail": text}
@@ -37,8 +39,5 @@ def register_exception_handlers(api: NinjaAPI):
             f"Unhandled exception while processing request "
             f"{request.method} {request.path}\n{tb}"
         )
-        return api.create_response(
-            request,
-            _message_and_detail(f"{exc} — Endpoint: {request.method} {request.path}"),
-            status=500,
-        )
+        # the exception's text and traceback go to the log only, never to the caller
+        return api.create_response(request, _message_and_detail(INTERNAL_SERVER_ERROR), status=500)
