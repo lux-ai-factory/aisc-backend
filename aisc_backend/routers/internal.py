@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
+from aisc_backend.config_secrets import scrub_text
 from aisc_backend.models import (
     Evaluation, EvaluationInput, EvaluationPlugin, EvaluationStatus, Observation, Metric, Measurement,
 )
@@ -350,7 +351,7 @@ async def mark_plugin_failed(
     eval_plugin = await _run_of_evaluation_or_404(evaluation_plugin_pid, evaluation_pid)
 
     eval_plugin.status = "Failed"
-    eval_plugin.error_message = data.error_message
+    eval_plugin.error_message = scrub_text(data.error_message)
     eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
     await evaluation_plugin_repository.save(eval_plugin)
 
