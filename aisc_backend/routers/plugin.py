@@ -520,6 +520,16 @@ async def update_plugin_config_state(
         for path, secret in previous.items():
             if path not in kept and value_at(split.kept, path, "") == "":
                 kept[path] = secret
+        # A row saved before keys were kept as project secrets holds its key in clear; the form withholds it,
+        # so the save leaves the field empty or absent. The key is carried into a project secret rather than
+        # lost (a plugin that adopted @assesses takes no key field). The old row is left to the cleanup.
+        current = project_plugin.current_config
+        if (current is not None and isinstance(current.config, dict)
+                and getattr(plugin_obj, "target_kinds", None) is None):
+            old = split_secret_fields(current.config, form_schema, form_ui).moved
+            for path, value in sorted(old.items()):
+                if path not in kept and value_at(split.kept, path, "") == "":
+                    kept[path] = await _keep_secret(project_plugin, path, value, None)
         saved = await plugin_config_repository.save(plugin_config)
         try:
             await project_config_repository.save_plugin_config_mappings(
