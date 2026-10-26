@@ -112,6 +112,26 @@ def _shown_config(config, schema: dict, ui: dict, kept_paths=()):
     return masked_for_ledger(_ledger_config(config, schema, ui, kept_paths))
 
 
+def _form_config(config, shown):
+    """`config` without every value its shown copy (`_shown_config`) masks: a field is left out, as a kept field
+    is, and a list item is emptied. The form posts it back on save, so it holds no key and no placeholder."""
+    if isinstance(config, dict) and isinstance(shown, dict):
+        return {name: _form_config(value, shown.get(name)) for name, value in config.items()
+                if _unmasked(value, shown.get(name))}
+    if isinstance(config, list) and isinstance(shown, list) and len(config) == len(shown):
+        return [_form_config(item, masked) if _unmasked(item, masked) else "" for item, masked in zip(config, shown)]
+    return config
+
+
+def _unmasked(value, shown) -> bool:
+    """`value` is answered as it is stored, or is a container its shown copy masks only inside."""
+    if isinstance(value, dict) and isinstance(shown, dict):
+        return True
+    if isinstance(value, list) and isinstance(shown, list) and len(value) == len(shown):
+        return True
+    return value == shown
+
+
 def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict, ledger_config) -> None:
     """A plugin's configuration in the ledger: which settings it uses, by key, never their values, and
     its secret fields only as set or not."""
@@ -605,6 +625,9 @@ async def get_project_plugin_config_state(
         plugin_config_id = project_plugin.current_config.id
 
     config, schema, ui_schema = plugin_obj.on_config_change(plugin_config)
+    # a row saved before keys were kept as project secrets may still hold one: the form gets the field empty
+    form_schema, form_ui = _plugin_form(project_plugin, plugin_obj)
+    config = _form_config(config, _shown_config(config, form_schema, form_ui))
 
     current_setting_selections = []
     if project_plugin.current_config:
