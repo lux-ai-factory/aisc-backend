@@ -6,7 +6,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend import ledger
-from aisc_backend.config_secret_fields import (CONFIG_SECRET_PREFIX, SECRET_DESCRIPTION,
+from aisc_backend.config_secret_fields import (CONFIG_SECRET_PREFIX, RESTORE_REFUSED, SECRET_DESCRIPTION,
                                                SecretFieldRefused, check_split, resolved, secret_hints,
                                                split_secret_fields, value_at, with_set_at)
 from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET
@@ -409,7 +409,14 @@ async def restore_plugin_config(
     except PluginConfig.DoesNotExist:
         raise HttpError(404, f"Plugin config {config_id} not found")
 
+    # a row saved before keys were kept as project secrets still holds its key: it is not made current again
     schema, ui = _plugin_form(plugin)
+    stored = config.config if isinstance(config.config, dict) else {}
+    split = split_secret_fields(stored, schema, ui)
+    if split.moved or split.not_text:
+        raise HttpError(409, RESTORE_REFUSED.format(config_id=config_id,
+                                                    fields=", ".join(list(split.moved) + split.not_text)))
+
     plugin.current_config = config
     mappings = await plugin_repository.get_setting_mappings(config)
     settings = {mapping.plugin_config_key: str(mapping.project_config.pid) for mapping in mappings}
