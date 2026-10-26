@@ -404,7 +404,8 @@ class UpdatePluginEnabledRequest(Schema):
 async def update_plugin_enabled(
         request, plugin_pid: uuid.UUID, data: UpdatePluginEnabledRequest
 ):
-    plugin = await plugin_repository.get(plugin_pid)
+    # with its current configuration, which the answer carries (a lazy load cannot run here)
+    plugin = await plugin_repository.get_with_related(plugin_pid)
     plugin.enabled = data.enabled
 
     async def toggle():
