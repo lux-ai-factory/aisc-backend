@@ -87,12 +87,14 @@ class CleanOldSecrets(TestCase):
             self.assertNotIn(value, "\n".join(lines) + err)
 
     def test_a_count_after_apply_finds_nothing(self):
+        """Nothing left to change; free text is never rewritten by default, so it is still named for review."""
         self.run_command("apply")
         lines, _ = self.run_command("count")
         self.assertEqual(lines, ["default: aisc_backend_ledgeroutbox rows_to_mask=0",
                                  "default: aisc_backend_pluginconfig rows_to_change=0 fields_to_drop=0",
-                                 "default: aisc_backend_evaluationplugin rows_to_scrub=0",
-                                 "total: rows_to_mask=0 rows_to_change=0 fields_to_drop=0 rows_to_scrub=0"])
+                                 "default: aisc_backend_evaluationplugin rows_to_scrub=0"]
+                         + REVIEW_LINES
+                         + ["total: rows_to_mask=0 rows_to_change=0 fields_to_drop=0 rows_to_scrub=0"])
 
 
     def test_on_request_the_text_fields_are_scrubbed_and_named_to_rotate(self):
