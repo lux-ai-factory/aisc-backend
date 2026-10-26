@@ -29,11 +29,11 @@ STORE_LINES = {
 ROTATE_LINES = ["default: rotate plugin=aisc-plugin-a field=api_key configs=1",
                 "default: rotate plugin=aisc-plugin-a field=hf_token configs=1",
                 "default: rotate plugin=aisc-plugin-a field=judge.openai_api_key configs=1",
-                # kept (its name is not secret) but a key was scrubbed out of it: listed by name all the same
-                "default: rotate plugin=aisc-plugin-a field=prompt configs=1",
                 "default: rotate plugin=aisc-plugin-a field=targets[0].auth_token configs=1",
                 "default: rotate plugin=aisc-plugin-langbite failures=1",
                 "default: rotate plugin=aisc-plugin-langbite field=judge_api_key events=1"]
+#: Free text that may hold a key is not changed by default: it is named for review, apart from the keys to rotate.
+REVIEW_LINES = ["default: review plugin=aisc-plugin-a field=prompt configs=1"]
 TOTAL = {"count": "total: rows_to_mask=1 rows_to_change=1 fields_to_drop=4 rows_to_scrub=1",
          "apply": "total: rows_masked=1 rows_changed=1 fields_dropped=4 rows_scrubbed=1"}
 
@@ -69,14 +69,14 @@ class CleanOldSecrets(TestCase):
     def test_count_prints_the_counts_and_the_fields_to_rotate_and_changes_nothing(self):
         before = self.stored()
         lines, err = self.run_command("count")
-        self.assertEqual(lines, STORE_LINES["count"] + ROTATE_LINES + [TOTAL["count"]])
+        self.assertEqual(lines, STORE_LINES["count"] + ROTATE_LINES + REVIEW_LINES + [TOTAL["count"]])
         self.assertEqual(self.stored(), before)
         for value in (KEY, SK, "abc123"):
             self.assertNotIn(value, "\n".join(lines) + err)
 
     def test_apply_cleans_the_three_stores(self):
         lines, err = self.run_command("apply")
-        self.assertEqual(lines, STORE_LINES["apply"] + ROTATE_LINES + [TOTAL["apply"]])
+        self.assertEqual(lines, STORE_LINES["apply"] + ROTATE_LINES + REVIEW_LINES + [TOTAL["apply"]])
         event, config, failure = self.stored()
         self.assertEqual(event["content"]["config"], {"judge_api_key": "set", "languages": ["en"]})
         self.assertEqual(event["content"]["settings"], SETTINGS)
@@ -93,6 +93,75 @@ class CleanOldSecrets(TestCase):
                                  "default: aisc_backend_pluginconfig rows_to_change=0 fields_to_drop=0",
                                  "default: aisc_backend_evaluationplugin rows_to_scrub=0",
                                  "total: rows_to_mask=0 rows_to_change=0 fields_to_drop=0 rows_to_scrub=0"])
+
+
+    def test_on_request_the_text_fields_are_scrubbed_and_named_to_rotate(self):
+        rotate = ROTATE_LINES[:3] + ["default: rotate plugin=aisc-plugin-a field=prompt configs=1"] + ROTATE_LINES[3:]
+        lines, _ = self.run_command("count", "--scrub-config-text")
+        self.assertEqual(lines, STORE_LINES["count"] + rotate + [TOTAL["count"]])
+        lines, err = self.run_command("apply", "--scrub-config-text")
+        self.assertEqual(lines, STORE_LINES["apply"] + rotate + [TOTAL["apply"]])
+        _, config, _ = self.stored()
+        self.assertEqual(config, {**STORED_AFTER, "prompt": "use [redacted] now"})
+        for value in (KEY, SK, "abc123", "abcDEF0123456789xyz"):
+            self.assertNotIn(value, "\n".join(lines) + err)
+
+
+class FreeTextAndUrlsInStoredConfigs(TestCase):
+    """A configuration whose only secret-looking value is inside free text, and one holding a URL with
+    credentials."""
+
+    TEXT = {"prompt": "call the judge with api_key=lb-judge-0123456789abcdef please", "model": "m"}
+    URL = {"base_url": "https://user:pw-0123456789@llm.example/v1", "model": "m"}
+
+    def setUp(self):
+        project = Project.objects.create(name="p", description="")
+        b = Plugin.objects.create(project=project, name="B", display_name="B", package_name="aisc-plugin-b",
+                                  version="0.1.0")
+        c = Plugin.objects.create(project=project, name="C", display_name="C", package_name="aisc-plugin-c",
+                                  version="0.1.0")
+        self.text = PluginConfig.objects.create(plugin=b, config=copy.deepcopy(self.TEXT))
+        self.url = PluginConfig.objects.create(plugin=c, config=copy.deepcopy(self.URL))
+
+    def run_command(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        call_command("clean_old_secrets", *args, stdout=out, stderr=err)
+        text = out.getvalue() + err.getvalue()
+        for value in ("lb-judge-0123456789abcdef", "pw-0123456789"):
+            self.assertNotIn(value, text)
+        return out.getvalue().splitlines()
+
+    def config(self, row):
+        return PluginConfig.objects.get(pk=row.pk).config
+
+    def test_count_drops_the_url_and_names_the_text_for_review(self):
+        self.assertEqual(self.run_command("count"), [
+            "default: aisc_backend_ledgeroutbox rows_to_mask=0",
+            "default: aisc_backend_pluginconfig rows_to_change=1 fields_to_drop=1",
+            "default: aisc_backend_evaluationplugin rows_to_scrub=0",
+            "default: rotate plugin=aisc-plugin-c field=base_url configs=1",
+            "default: review plugin=aisc-plugin-b field=prompt configs=1",
+            "total: rows_to_mask=0 rows_to_change=1 fields_to_drop=1 rows_to_scrub=0"])
+
+    def test_apply_drops_the_url_and_leaves_the_text(self):
+        self.run_command("apply")
+        self.assertEqual(self.config(self.url), {"model": "m"})
+        self.assertEqual(self.config(self.text), self.TEXT)
+        self.assertEqual(self.run_command("count")[1],
+                         "default: aisc_backend_pluginconfig rows_to_change=0 fields_to_drop=0")
+
+    def test_on_request_the_text_is_scrubbed_counted_and_named_to_rotate(self):
+        self.assertEqual(self.run_command("count", "--scrub-config-text"), [
+            "default: aisc_backend_ledgeroutbox rows_to_mask=0",
+            "default: aisc_backend_pluginconfig rows_to_change=2 fields_to_drop=1",
+            "default: aisc_backend_evaluationplugin rows_to_scrub=0",
+            "default: rotate plugin=aisc-plugin-b field=prompt configs=1",
+            "default: rotate plugin=aisc-plugin-c field=base_url configs=1",
+            "total: rows_to_mask=0 rows_to_change=2 fields_to_drop=1 rows_to_scrub=0"])
+        self.run_command("apply", "--scrub-config-text")
+        self.assertEqual(self.config(self.text),
+                         {"prompt": "call the judge with api_key=[redacted] please", "model": "m"})
+        self.assertEqual(self.config(self.url), {"model": "m"})
 
 
 class NoMigrationRewritesSecrets(TestCase):

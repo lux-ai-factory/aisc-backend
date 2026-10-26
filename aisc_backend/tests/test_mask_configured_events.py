@@ -162,3 +162,49 @@ class NestedSecretsInTheOutbox(TestCase):
         self.assertIn("default: rotate plugin=aisc-plugin-langbite field=api_keys events=1", lines)
         self.assertIn("default: rotate plugin=aisc-plugin-langbite field=credentials events=1", lines)
         self.assertNotIn(KEY, out.getvalue())
+
+
+class HeadersAndTextInTheOutbox(TestCase):
+    """An Authorization header stored as a field, and a key assigned inside a prompt: masked in the outbox copy and
+    named to rotate; delivery sends neither."""
+
+    HEADERS = {"headers": {"Authorization": "Token abcdef0123456789", "Accept": "application/json"}}
+    TEXT = {"prompt": "call the judge with api_key=lb-judge-0123456789abcdef please", "temperature": 0.2}
+
+    def setUp(self):
+        project = Project.objects.create(name="p", description="")
+        Plugin.objects.create(project=project, name="LangBiTe", display_name="LangBiTe",
+                              package_name="aisc-plugin-langbite", version="0.2.8", pid=PL)
+        now = datetime.now(timezone.utc)
+        self.headers = LedgerOutbox.objects.create(project_pid=PID, delivered_at=now, event=configured(
+            copy.deepcopy(self.HEADERS)))
+        self.text = LedgerOutbox.objects.create(project_pid=PID, event=configured(copy.deepcopy(self.TEXT)))
+
+    def config(self, row):
+        return LedgerOutbox.objects.get(pk=row.pk).event["content"]["config"]
+
+    def test_count_names_the_header_and_the_text_field(self):
+        found = cleanup().mask_outbox(LedgerOutbox, "default", apply=False)
+        self.assertEqual(found, (2, [(PL, "headers.Authorization"), (PL, "prompt")]))
+
+    def test_apply_masks_both(self):
+        cleanup().mask_outbox(LedgerOutbox, "default", apply=True)
+        self.assertEqual(self.config(self.headers),
+                         {"headers": {"Authorization": "set", "Accept": "application/json"}})
+        text = self.config(self.text)
+        self.assertNotIn(KEY, json.dumps(text))
+        self.assertEqual(text["temperature"], 0.2)
+        self.assertEqual(cleanup().mask_outbox(LedgerOutbox, "default", apply=True), (0, []))
+
+    def test_delivery_sends_neither(self):
+        sent = []
+
+        def send(pid, event):
+            sent.append(json.dumps(event))
+            return 202
+
+        ledger.deliver("default", send)
+        self.assertTrue(sent)
+        for body in sent:
+            self.assertNotIn(KEY, body)
+            self.assertNotIn("abcdef0123456789", body)
