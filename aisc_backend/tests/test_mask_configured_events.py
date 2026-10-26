@@ -127,3 +127,38 @@ class OutboxRows(TestCase):
         self.assertNotIn(R2_SECRET, stream.getvalue())
         warnings = [record.getMessage() for record in records if record.levelno == logging.WARNING]
         self.assertIn("rotate plugin=aisc-plugin-langbite field=judge_api_key", warnings)
+
+
+class NestedSecretsInTheOutbox(TestCase):
+    """A dict or a list under a secret name is one secret: masked, and named in the rotate list."""
+
+    def setUp(self):
+        project = Project.objects.create(name="p", description="")
+        Plugin.objects.create(project=project, name="LangBiTe", display_name="LangBiTe",
+                              package_name="aisc-plugin-langbite", version="0.2.8", pid=PL)
+        now = datetime.now(timezone.utc)
+        self.dict_row = LedgerOutbox.objects.create(project_pid=PID, delivered_at=now, event=configured(
+            {"api_keys": {"openai": KEY}, "languages": ["en"]}))
+        self.list_row = LedgerOutbox.objects.create(project_pid=PID, delivered_at=now, event=configured(
+            {"credentials": [{"user": "u", "pass": R2_SECRET}]}))
+
+    def test_count_names_the_nested_secret_by_its_key(self):
+        found = cleanup().mask_outbox(LedgerOutbox, "default", apply=False)
+        self.assertEqual(found, (2, [(PL, "api_keys"), (PL, "credentials")]))
+
+    def test_apply_masks_the_nested_secret_whole(self):
+        cleanup().mask_outbox(LedgerOutbox, "default", apply=True)
+        self.assertEqual(LedgerOutbox.objects.get(pk=self.dict_row.pk).event["content"]["config"],
+                         {"api_keys": "set", "languages": ["en"]})
+        self.assertEqual(LedgerOutbox.objects.get(pk=self.list_row.pk).event["content"]["config"],
+                         {"credentials": "set"})
+
+    def test_the_command_lists_the_nested_secret_to_rotate(self):
+        out = io.StringIO()
+        from django.core.management import call_command
+
+        call_command("clean_old_secrets", "count", stdout=out, stderr=io.StringIO())
+        lines = out.getvalue().splitlines()
+        self.assertIn("default: rotate plugin=aisc-plugin-langbite field=api_keys events=1", lines)
+        self.assertIn("default: rotate plugin=aisc-plugin-langbite field=credentials events=1", lines)
+        self.assertNotIn(KEY, out.getvalue())

@@ -29,6 +29,8 @@ STORE_LINES = {
 ROTATE_LINES = ["default: rotate plugin=aisc-plugin-a field=api_key configs=1",
                 "default: rotate plugin=aisc-plugin-a field=hf_token configs=1",
                 "default: rotate plugin=aisc-plugin-a field=judge.openai_api_key configs=1",
+                # kept (its name is not secret) but a key was scrubbed out of it: listed by name all the same
+                "default: rotate plugin=aisc-plugin-a field=prompt configs=1",
                 "default: rotate plugin=aisc-plugin-a field=targets[0].auth_token configs=1",
                 "default: rotate plugin=aisc-plugin-langbite failures=1",
                 "default: rotate plugin=aisc-plugin-langbite field=judge_api_key events=1"]

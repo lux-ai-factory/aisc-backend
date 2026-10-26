@@ -102,3 +102,146 @@ class FailureText(SimpleTestCase):
         self.assertEqual(rules().scrub_text(SHAPES), "[redacted] [redacted] [redacted] [redacted] [redacted]")
         self.assertEqual(rules().scrub_text(""), "")
         self.assertEqual(rules().scrub_text("plain error: unexpected token: }"), "plain error: unexpected token: }")
+
+
+# Nested values under a secret name: the whole value is the secret
+
+
+class NestedSecretValues(SimpleTestCase):
+    VALUE = {"api_keys": {"openai": KEY}, "credentials": [{"user": "u", "pass": "pw-0123456789"}],
+             "languages": ["en"]}
+
+    def test_a_dict_or_list_under_a_secret_name_is_one_plaintext_secret(self):
+        self.assertEqual(rules().plaintext_secret_paths(self.VALUE), ["api_keys", "credentials"])
+        self.assertTrue(rules().holds_plaintext_secret({"api_keys": {"openai": KEY}}))
+        self.assertTrue(rules().holds_plaintext_secret({"credentials": [{"pass": "pw-0123456789"}]}))
+
+    def test_the_masked_copy_of_a_nested_secret_holds_none(self):
+        masked = rules().masked_for_ledger(self.VALUE)
+        self.assertEqual(masked, {"api_keys": "set", "credentials": "set", "languages": ["en"]})
+        self.assertEqual(rules().plaintext_secret_paths(masked), [])
+
+
+# Stored configurations: a secret field goes, it is never replaced by a placeholder
+
+PEM = ("-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx1abcDEF0123456789\nabcDEF0123456789+/ghiJKL\n"
+       "-----END RSA PRIVATE KEY-----")
+
+
+class StoredSecretsAreDropped(SimpleTestCase):
+    def test_a_key_shaped_value_under_a_name_that_is_not_secret_is_dropped(self):
+        self.assertEqual(rules().without_stored_secrets({"access_key_id": "AKIAABCDEFGHIJKLMNOP", "model": "m"}),
+                         ({"model": "m"}, ["access_key_id"]))
+
+    def test_a_field_that_is_wholly_one_secret_is_dropped_whatever_its_name(self):
+        for value in (SK, "Bearer abcdef123456", "hf_abcdefghijklmnopqrstu", PEM):
+            with self.subTest(value=value[:12]):
+                self.assertEqual(rules().without_stored_secrets({"x": value, "model": "m"}),
+                                 ({"model": "m"}, ["x"]))
+
+    def test_a_dict_under_a_strong_name_is_dropped_whole(self):
+        self.assertEqual(rules().without_stored_secrets({"llm": {"credentials": {"user": "u", "pass": "pw-123"}}}),
+                         ({"llm": {}}, ["llm.credentials"]))
+
+    def test_a_key_inside_a_dict_of_keys_is_dropped_not_replaced(self):
+        new, dropped = rules().without_stored_secrets({"api_keys": {"openai": SK}, "model": "m"})
+        text = repr(new)
+        self.assertNotIn(SK, text)
+        self.assertNotIn("[redacted]", text)
+        self.assertEqual(new.get("model"), "m")
+        self.assertTrue(dropped)
+        self.assertTrue(all(path.startswith("api_keys") for path in dropped), dropped)
+
+    def test_no_dropped_secret_leaves_a_placeholder_behind(self):
+        configs = [{"access_key_id": "AKIAABCDEFGHIJKLMNOP"}, {"token": SK}, {"x": {"y": "Bearer abcdef123456"}}]
+        for config in configs:
+            with self.subTest(config=list(config)):
+                new, dropped = rules().without_stored_secrets(config)
+                self.assertTrue(dropped)
+                self.assertNotIn("[redacted]", repr(new))
+                self.assertNotIn("set", repr(new))
+
+
+# Text rule additions
+
+URL_CREDENTIALS = "connect to postgresql://admin:s3cret-Pass_99@db.example:5432/app failed"
+
+
+class MoreTextShapes(SimpleTestCase):
+    def test_credentials_in_a_url_are_redacted_and_the_host_stays(self):
+        out = rules().scrub_text(URL_CREDENTIALS)
+        self.assertNotIn("s3cret-Pass_99", out)
+        self.assertIn("[redacted]", out)
+        self.assertIn("db.example:5432/app failed", out)
+        self.assertEqual(rules().scrub_text("see https://llm.example/v1/models"), "see https://llm.example/v1/models")
+
+    def test_every_authorization_scheme_is_redacted(self):
+        for text, secret in (("Authorization: Basic dXNlcjpwYXNzd29yZA==", "dXNlcjpwYXNzd29yZA=="),
+                             ("authorization: Token abcdef0123456789", "abcdef0123456789"),
+                             ("Authorization: Bearer abc.def.ghi", "abc.def.ghi")):
+            with self.subTest(text=text[:22]):
+                out = rules().scrub_text(f"sent {text} to the judge")
+                self.assertNotIn(secret, out)
+                self.assertIn("[redacted]", out)
+                self.assertTrue(out.lower().startswith("sent authorization"), out)
+                self.assertTrue(out.endswith(" to the judge"), out)
+
+    def test_url_encoded_assignments_are_redacted(self):
+        for text, secret in (("GET /v1/models?api_key%3Dabcd1234efgh5678 HTTP/1.1", "abcd1234efgh5678"),
+                             ("body: password%3dhunter22xyz", "hunter22xyz")):
+            with self.subTest(text=text[:16]):
+                out = rules().scrub_text(text)
+                self.assertNotIn(secret, out)
+                self.assertIn("[redacted]", out)
+
+    def test_bare_secret_names_are_assignments_too(self):
+        cases = {"retry with token=abcd1234efgh now": "retry with token=[redacted] now",
+                 "pwd=hunter22x": "pwd=[redacted]",
+                 "passwd=hunter22x": "passwd=[redacted]",
+                 "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY":
+                     "aws_secret_access_key=[redacted]"}
+        for text, expected in cases.items():
+            with self.subTest(text=text[:12]):
+                self.assertEqual(rules().scrub_text(text), expected)
+
+    def test_a_quoted_value_after_a_secret_name_is_redacted_whole(self):
+        self.assertEqual(rules().scrub_text("password = 'correct horse battery' next"),
+                         "password = '[redacted]' next")
+        self.assertEqual(rules().scrub_text('{"secret_key": "two words here", "n": 1}'),
+                         '{"secret_key": "[redacted]", "n": 1}')
+
+    def test_a_private_key_block_is_redacted_whole(self):
+        for block in (PEM, "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0B\n-----END PRIVATE KEY-----",
+                      "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----"):
+            with self.subTest(block=block[:30]):
+                self.assertEqual(rules().scrub_text("key:\n" + block + "\ndone"), "key:\n[redacted]\ndone")
+        public = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYI\n-----END PUBLIC KEY-----"
+        self.assertEqual(rules().scrub_text(public), public)
+
+    def test_scrubbing_the_new_shapes_twice_changes_nothing(self):
+        for text in (URL_CREDENTIALS, "Authorization: Basic dXNlcjpwYXNzd29yZA==", "x?api_key%3Dabcd1234efgh5678",
+                     "token=abcd1234efgh", "password = 'correct horse battery'", "key:\n" + PEM):
+            with self.subTest(text=text[:16]):
+                once = rules().scrub_text(text)
+                self.assertEqual(rules().scrub_text(once), once)
+
+    def test_ordinary_text_with_secret_words_stays(self):
+        for text in ("plain error: unexpected token: }", "max_tokens=512 tokens: 30", "keyword=value",
+                     "the password field is empty"):
+            with self.subTest(text=text):
+                self.assertEqual(rules().scrub_text(text), text)
+
+    def test_the_ledger_copy_masks_the_new_shapes(self):
+        value = {"base_url": "https://user:pw-0123456789@llm.example/v1",
+                 "auth": {"header": "Authorization: Token abcdef0123456789"}, "cert": PEM,
+                 "endpoint": "https://llm.example/v1"}
+        self.assertEqual(rules().masked_for_ledger(value), {"base_url": "set", "auth": {"header": "set"},
+                                                            "cert": "set", "endpoint": "https://llm.example/v1"})
+        self.assertEqual(rules().plaintext_secret_paths(value), ["base_url", "auth.header", "cert"])
+
+    def test_the_rule_says_what_it_does_not_catch(self):
+        from pathlib import Path
+
+        source = Path(rules().__file__).read_text()
+        self.assertIn("base64", source)
+        self.assertRegex(source, r"(split|broken) across lines")
