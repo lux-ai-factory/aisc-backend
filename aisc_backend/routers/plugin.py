@@ -333,7 +333,8 @@ async def create_plugins(request, data: CreatePluginsRequest):
                   "catalogueSlug": data.catalogue_slug,
                   "plugins": [p.name for p in created_plugins]})
 
-    return created_plugins
+    # reloaded with their configuration, so a configured plugin answers its configuration masked
+    return await plugin_repository.list_with_related([p.pid for p in created_plugins])
 
 
 class RefreshPluginRequest(Schema):
@@ -375,7 +376,9 @@ async def refresh_plugins(request, data: RefreshPluginRequest):
         await sync_to_async(_package_event)("plugin.refreshed", data.package_name, data.version)
         return result
 
-    return await ledger.atomically(refresh)
+    refreshed = await ledger.atomically(refresh)
+    # reloaded with their configuration, so a configured plugin answers its configuration masked
+    return await plugin_repository.list_with_related([p.pid for p in refreshed])
 
 
 class DeletePluginsRequest(Schema):

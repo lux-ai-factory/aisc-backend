@@ -20,6 +20,19 @@ class PluginRepository(BaseRepository[Plugin]):
         )
         return plugin
 
+    async def list_with_related(self, pids: list[uuid.UUID]) -> list[Plugin]:
+        """The plugins with these pids, in the given order, each loaded as get_with_related loads one, in a
+        fixed number of queries."""
+        found = {
+            plugin.pid: plugin
+            async for plugin in Plugin.objects
+            .select_related("project")
+            .select_related("current_config")
+            .prefetch_related("current_config__setting_mappings__project_config")
+            .filter(pid__in=pids)
+        }
+        return [found[pid] for pid in pids if pid in found]
+
     async def find_by_identity(self, project, package_name: str, version: str, name: str) -> Plugin | None:
         return await Plugin.objects.filter(
             project=project,
