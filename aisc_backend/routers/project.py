@@ -23,6 +23,7 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
+from aisc_backend.routers.plugin import _kept_secrets, _plugin_form, _shown_config
 from aisc_backend.schemas.ai_system import (
     AISystemDetailOutSchema,
     AIComponentOutSchema,
@@ -215,15 +216,21 @@ async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
     return template
 
 
-@router.get("/{pid}/plugins/{plugin_name}/config", response=dict | None)
+@router.get("/{pid}/plugins/{plugin_name}/config", response=dict)
 async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
+    """The current configuration of the project's enabled plugin of that name, masked as the ledger copy is:
+    a key field is "set" (None when empty), never its value."""
     project = await project_repository.get(pid, True)
     plugin = next(
         (p for p in project.get_enabled_plugins() if p.name == plugin_name), None
     )
     if not plugin:
         raise HttpError(404, f"Project {pid} has no plugin {plugin_name}")
-    return plugin.config
+    if plugin.current_config is None:
+        raise HttpError(404, f"Plugin {plugin_name} of project {pid} has no configuration")
+    schema, ui = _plugin_form(plugin)
+    kept = await _kept_secrets(plugin.current_config_id)
+    return _shown_config(plugin.current_config.config, schema, ui, kept)
 
 
 @router.post("/{pid}/measurements/aggregate", response=MeasurementAggregationResponse)

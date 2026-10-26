@@ -9,7 +9,7 @@ from aisc_backend import ledger
 from aisc_backend.config_secret_fields import (CONFIG_SECRET_PREFIX, RESTORE_REFUSED, SECRET_DESCRIPTION,
                                                SecretFieldRefused, check_split, resolved, secret_hints,
                                                split_secret_fields, value_at, with_set_at)
-from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET
+from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET, masked_for_ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import (Plugin, PluginConfig, PluginConfigProjectConfig, ProjectConfig,
                                  ProjectConfigCategory)
@@ -104,6 +104,12 @@ def _ledger_config(config, schema: dict, ui: dict, kept_paths=()):
     a field kept as a project secret is set."""
     masked = _masked(config, schema, ui, schema.get("$defs") or {})
     return with_set_at(masked, kept_paths, SECRET_SET)
+
+
+def _shown_config(config, schema: dict, ui: dict, kept_paths=()):
+    """A stored configuration as the engine answers it: masked as the ledger copy is, and every string with a
+    key shape set, so a row saved before keys were kept as project secrets never answers its key in clear."""
+    return masked_for_ledger(_ledger_config(config, schema, ui, kept_paths))
 
 
 def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict, ledger_config) -> None:
