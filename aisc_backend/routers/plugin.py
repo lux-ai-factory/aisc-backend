@@ -129,6 +129,12 @@ async def _kept_secrets(plugin_config_id) -> dict[str, ProjectConfig]:
             .select_related("project_config").order_by("plugin_config_key")}
 
 
+def _kept_paths(mappings) -> list[str]:
+    """The paths of the fields a configuration keeps as project secrets, from its mappings."""
+    return [mapping.plugin_config_key[len(CONFIG_SECRET_PREFIX):] for mapping in mappings
+            if mapping.plugin_config_key.startswith(CONFIG_SECRET_PREFIX)]
+
+
 def _same_value(secret: ProjectConfig, value: str) -> bool:
     try:
         return decrypt_value(secret.encrypted_value) == value
@@ -398,8 +404,12 @@ async def update_plugin_enabled(
     response=list[PluginConfigOutSchema],
 )
 async def get_plugin_config_history(request, plugin_pid: uuid.UUID):
+    """Every stored configuration of the plugin, each with its keys set (an older row may still hold one)."""
     plugin = await plugin_repository.get(plugin_pid)
-    return await plugin_repository.configs_with_mappings(plugin)
+    schema, ui = _plugin_form(plugin)
+    return [PluginConfigOutSchema.from_orm(row).model_copy(update={"config": _shown_config(
+                row.config, schema, ui, _kept_paths(row.setting_mappings.all()))})
+            for row in await plugin_repository.configs_with_mappings(plugin)]
 
 
 @router.post(
@@ -426,8 +436,7 @@ async def restore_plugin_config(
     plugin.current_config = config
     mappings = await plugin_repository.get_setting_mappings(config)
     settings = {mapping.plugin_config_key: str(mapping.project_config.pid) for mapping in mappings}
-    kept_paths = [mapping.plugin_config_key[len(CONFIG_SECRET_PREFIX):] for mapping in mappings
-                  if mapping.plugin_config_key.startswith(CONFIG_SECRET_PREFIX)]
+    kept_paths = _kept_paths(mappings)
 
     async def restore():
         await plugin_repository.save(plugin)
