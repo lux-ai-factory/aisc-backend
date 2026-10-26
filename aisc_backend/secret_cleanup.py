@@ -4,8 +4,8 @@ Three stores held secrets before they were masked at save:
 
 - the outbox (`mask_outbox`): configuration events, delivered or not, get their config masked as a ledger copy;
 - the stored plugin configurations (`drop_config_secrets`): secret fields are dropped, so the plugin's default
-  applies or the run asks for the field again; a key inside longer text (a prompt) is scrubbed in place and its
-  field named to rotate;
+  applies or the run asks for the field again; free text that may hold a key (a prompt) is left as it is and its
+  field named for review, unless the operator asks for it to be scrubbed (`scrub_config_text`);
 - the failure text of plugin runs (`scrub_failures`): key shapes and assignments are redacted.
 
 Each takes the model, the database alias and whether to write, and returns what it found (or changed) by name:
@@ -65,27 +65,33 @@ def mask_outbox(outbox_model, using: str, apply: bool) -> tuple[int, list[tuple[
     return rows, rotate
 
 
-def drop_config_secrets(config_model, using: str, apply: bool,
-                        scrubbed: list | None = None) -> tuple[int, list[tuple[str, str]]]:
-    """(configurations to change or changed, (package, field) per dropped secret). When `scrubbed` is a list, it
-    gets (package, field) for each kept field a key was scrubbed out of: not dropped, but its key must be rotated."""
+def drop_config_secrets(config_model, using: str, apply: bool, review: list | None = None,
+                        scrub_config_text: bool = False) -> tuple[int, list[tuple[str, str]]]:
+    """(configurations to change or changed, (package, field) per dropped secret).
+
+    When `review` is a list, it gets (package, field) for each kept text field that may hold a key. Such a field is
+    left as it is and does not make its configuration count as changed, unless `scrub_config_text`: then it is
+    scrubbed in place and counted (its key, if it was one, must be rotated all the same)."""
     rows = 0
     rotate: list[tuple[str, str]] = []
-    cleared: list[tuple[str, str]] = []
+    flagged: list[tuple[str, str]] = []
     for row in config_model.objects.using(using).select_related("plugin").order_by("id").iterator():
-        new, dropped, scrubbed_paths = stored_secret_changes(row.config)
+        new, dropped, text_paths = stored_secret_changes(row.config, scrub_config_text=scrub_config_text)
+        package = row.plugin.package_name
+        flagged.extend((package, path) for path in text_paths)
         if new == row.config:
             continue
         rows += 1
-        rotate.extend((row.plugin.package_name, path) for path in dropped)
-        cleared.extend((row.plugin.package_name, path) for path in scrubbed_paths)
+        rotate.extend((package, path) for path in dropped)
         if apply:
             row.config = new
             row.save(update_fields=["config"])
-    for package, path in rotate + cleared:
+    for package, path in rotate:
         logger.warning("rotate plugin=%s field=%s", package, path)
-    if scrubbed is not None:
-        scrubbed.extend(cleared)
+    for package, path in flagged:
+        logger.warning("%s plugin=%s field=%s", "rotate" if scrub_config_text else "review", package, path)
+    if review is not None:
+        review.extend(flagged)
     logger.info("plugin configurations: %d %s, %d field(s) %s", rows, "changed" if apply else "to change",
                 len(rotate), "dropped" if apply else "to drop")
     return rows, rotate

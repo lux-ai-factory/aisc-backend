@@ -1,9 +1,14 @@
-"""`manage.py clean_old_secrets count|apply [--project PID ...]`: old plaintext plugin secrets in the engine's stores.
+"""`manage.py clean_old_secrets count|apply [--project PID ...] [--scrub-config-text]`: old plaintext plugin secrets
+in the engine's stores.
 
 `count` reports what `apply` would change and changes nothing; `apply` masks the configuration events of the
 outbox, drops the secret fields of the stored plugin configurations and scrubs the failure text of plugin runs
 (aisc_backend.secret_cleanup). Both list the fields whose keys were stored in clear and must be rotated, by
 plugin and name.
+
+Free text in a stored configuration (a prompt) that may hold a key is not changed: it is an input the plugin runs
+with, and the text rule can mistake prose for a key. Its field is printed as a `review` line, apart from the keys
+to rotate. `--scrub-config-text` scrubs those fields too, counts them as changed and prints them as `rotate` lines.
 
 The databases are those deliver_ledger_events serves (every project database, or `default` when project
 databases are off); `--project` narrows them. Output names databases, plugins, fields and counts only: never a
@@ -33,8 +38,11 @@ class Command(BaseCommand):
         parser.add_argument("action", choices=sorted(WORDS), help="count: report only; apply: clean")
         parser.add_argument("--project", action="append", default=[], metavar="PID",
                             help="only this project's database (repeatable)")
+        parser.add_argument("--scrub-config-text", action="store_true",
+                            help="also scrub free text in stored configurations that may hold a key (listed for "
+                                 "review otherwise, and left as it is)")
 
-    def handle(self, *args, action, project=(), **options):
+    def handle(self, *args, action, project=(), scrub_config_text=False, **options):
         apply = action == "apply"
         mask, change, drop, scrub = WORDS[action]
         totals = Counter()
@@ -46,7 +54,7 @@ class Command(BaseCommand):
                 # The project router sends every ORM query, the saves included, to the admitted alias.
                 token = projectdb.admitted.set(alias)
                 try:
-                    found = self._clean(alias, apply)
+                    found = self._clean(alias, apply, scrub_config_text)
                 finally:
                     projectdb.admitted.reset(token)
             except (projectdb.NoSuchProjectDatabase, projectdb.SchemaNotProvisioned):
@@ -76,14 +84,15 @@ class Command(BaseCommand):
         return DeliverCommand._databases()
 
     @staticmethod
-    def _clean(alias: str, apply: bool):
+    def _clean(alias: str, apply: bool, scrub_config_text: bool):
         masked, events = secret_cleanup.mask_outbox(LedgerOutbox, alias, apply)
-        scrubbed_fields: list[tuple[str, str]] = []
-        configs, dropped = secret_cleanup.drop_config_secrets(PluginConfig, alias, apply, scrubbed_fields)
+        text_fields: list[tuple[str, str]] = []
+        configs, dropped = secret_cleanup.drop_config_secrets(PluginConfig, alias, apply, text_fields,
+                                                              scrub_config_text=scrub_config_text)
         scrubbed, failures = secret_cleanup.scrub_failures(EvaluationPlugin, alias, apply)
         packages = secret_cleanup.packages_by_pid(LedgerOutbox, alias, {item_id for item_id, _ in events})
         rotate = Counter()
-        for package, path in dropped + scrubbed_fields:
+        for package, path in dropped + (text_fields if scrub_config_text else []):
             rotate[(package, path, "configs")] += 1
         for item_id, path in events:
             rotate[(packages.get(item_id, f"unknown:{item_id}"), path, "events")] += 1
@@ -91,4 +100,7 @@ class Command(BaseCommand):
             rotate[(package, "", "failures")] += 1
         lines = [f"rotate plugin={package} field={path} {kind}={n}" if path else f"rotate plugin={package} {kind}={n}"
                  for (package, path, kind), n in sorted(rotate.items())]
+        if not scrub_config_text:
+            review = Counter(text_fields)
+            lines += [f"review plugin={package} field={path} configs={n}" for (package, path), n in sorted(review.items())]
         return masked, configs, len(dropped), scrubbed, lines

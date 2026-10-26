@@ -2,15 +2,18 @@
 
 Two rules, because the cost of a wrong guess differs:
 
-- Ledger copies (`masked_for_ledger`): broad. Any key whose name says key, token, secret, password or credential
-  holds only whether it is set, and any string shaped like a known key is replaced too. A copy that loses a
-  harmless detail costs nothing.
-- Stored configurations (`without_stored_secrets`): narrow. Only the last word or two of a name count, and a
-  `key` or `token` value must look like one; a value that is wholly one key shape goes whatever its name. A
-  secret field is dropped, never replaced by a placeholder the plugin would run with.
+- Ledger copies (`masked_for_ledger`): broad. Any key whose name says key, token, secret, password, credential,
+  authorization or cookie holds only whether it is set, a string shaped like a known key is replaced too, and a
+  key assigned inside text (`api_key=...` in a prompt) is redacted there. A copy that loses a harmless detail
+  costs nothing.
+- Stored configurations (`stored_secret_changes`, `without_stored_secrets`): narrow. Only the last word or two of
+  a name count, and a `key` or `token` value must look like one; a value that is wholly one key shape or a URL
+  with credentials goes whatever its name. A secret field is dropped, never replaced by a placeholder the plugin
+  would run with. Free text is never rewritten unless asked: a text field that may hold a key is listed for
+  review.
 
-`scrub_text` clears failure text: the values a caller knows it handed out, then the key shapes, then the value of
-a `password=...` style assignment.
+`scrub_text` clears failure text: the values a caller knows it handed out, then the key shapes, then the key-like
+value of a `password=...` style assignment.
 
 Stdlib only. The platform (platform_service/ledger/config_secrets.py) and the worker (aisc_eval/scrub.py) carry
 copies of these rules, and a root test keeps the three equal.
@@ -199,41 +202,48 @@ def _stored_secret(kind: str | None, value) -> bool:
     return kind == "weak" and len(value) >= WEAK_MIN_LENGTH and not any(char.isspace() for char in value)
 
 
-def stored_secret_changes(config, _prefix: str = ""):
-    """(the configuration without its stored secrets, the dropped paths, the scrubbed paths).
+def stored_secret_changes(config, scrub_config_text: bool = False):
+    """(the configuration without its stored secrets, the dropped paths, the text fields to review).
 
     A field is dropped, never replaced, when its value is a non-empty string (or a dict or list holding one) under
-    a strong name, a key-like string under a weak one, or a string that is wholly one key shape whatever its name.
-    Any other string is scrubbed of key shapes and assignments, so a key pasted into a prompt goes and the prompt
-    stays; its path is listed as scrubbed, since the key in it was stored all the same."""
+    a strong name, a key-like string under a weak one, or a string that is wholly one key shape or a URL with
+    credentials whatever its name. Free text is an input the plugin runs with, so it is never rewritten by default:
+    a kept text field in which the text rule finds something (a key pasted into a prompt, or prose that only looks
+    like one) is listed for review and left as it is. With `scrub_config_text` those fields are scrubbed in place
+    (and still listed)."""
+    return _stored_changes(config, "", scrub_config_text)
+
+
+def _stored_changes(config, prefix: str, scrub: bool):
     if isinstance(config, dict):
-        out, dropped, scrubbed = {}, [], []
+        out, dropped, review = {}, [], []
         for name, inner in config.items():
-            path = _path(_prefix, name)
+            path = _path(prefix, name)
             if _stored_secret(stored_secret_name(str(name)), inner):
                 dropped.append(path)
                 continue
-            out[name], below, cleared = stored_secret_changes(inner, path)
+            out[name], below, flagged = _stored_changes(inner, path, scrub)
             dropped.extend(below)
-            scrubbed.extend(cleared)
-        return out, dropped, scrubbed
+            review.extend(flagged)
+        return out, dropped, review
     if isinstance(config, list):
-        out, dropped, scrubbed = [], [], []
+        out, dropped, review = [], [], []
         for index, item in enumerate(config):
-            new, below, cleared = stored_secret_changes(item, f"{_prefix}[{index}]")
+            new, below, flagged = _stored_changes(item, f"{prefix}[{index}]", scrub)
             out.append(new)
             dropped.extend(below)
-            scrubbed.extend(cleared)
-        return out, dropped, scrubbed
-    if isinstance(config, str) and _prefix:
+            review.extend(flagged)
+        return out, dropped, review
+    if isinstance(config, str) and prefix:
         text = scrub_text(config)
-        return text, [], ([_prefix] if text != config else [])
+        if text == config:
+            return config, [], []
+        return (text if scrub else config), [], [prefix]
     return config, [], []
 
 
 def without_stored_secrets(config):
-    """(the configuration without its stored secrets, the dropped paths): stored_secret_changes without the
-    scrubbed paths."""
+    """(the configuration without its stored secrets, the dropped paths). Text fields are left as they are."""
     new, dropped, _ = stored_secret_changes(config)
     return new, dropped
 
