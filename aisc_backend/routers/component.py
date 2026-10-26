@@ -24,6 +24,34 @@ ai_component_repository = AIComponentRepository()
 project_config_repository = ProjectConfigRepository()
 
 
+REFERENCE_PREFIXES = ("target:", "connection:")
+
+
+def check_reference_of_project(json_value, project) -> None:
+    """Refuse (400) a component value naming a target or connection that is not of `project`.
+
+    Only a `json_value["value"]` string starting with `target:` or `connection:` is checked: it must be
+    well formed and name the platform pid `project` is linked to. Any other value passes.
+    """
+    from aisc_plugin_interface.connections import BadReference, parse_reference
+    from aisc_plugin_interface.targets import parse_target
+
+    value = json_value.get("value") if isinstance(json_value, dict) else None
+    if not isinstance(value, str) or not value.startswith(REFERENCE_PREFIXES):
+        return
+    try:
+        pid, _ = parse_target(value) if value.startswith("target:") else parse_reference(value)
+        named = uuid.UUID(pid)
+    except (BadReference, ValueError, TypeError, AttributeError):
+        raise HttpError(400, f"{value} is not a well-formed target or connection reference") from None
+    if project.platform_project_id is None:
+        raise HttpError(400, "this project is linked to no platform project, so a component cannot name a "
+                             "target or connection")
+    if named != uuid.UUID(str(project.platform_project_id)):
+        raise HttpError(400, f"{value} names another project's target or connection: a component may name "
+                             "only its own project's")
+
+
 class UploadComponentFileResponse(Schema):
     file_name: str
     file_size: int
@@ -45,9 +73,11 @@ async def get_component(request, component_pid: uuid.UUID):
 
 @router.patch("/{component_pid}", response=AIComponentOutSchema)
 async def update_component(request, component_pid: uuid.UUID, data: AIComponentInSchema):
-    component = await ai_component_repository.get(component_pid)
+    component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
+    if data.json_value is not None:
+        check_reference_of_project(data.json_value, component.system.project)
 
     if data.name is not None:
         component.name = data.name

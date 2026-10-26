@@ -23,6 +23,7 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
+from aisc_backend.routers.component import check_reference_of_project
 from aisc_backend.routers.plugin import _kept_secrets, _plugin_form, _shown_config
 from aisc_backend.schemas.ai_system import (
     AISystemDetailOutSchema,
@@ -124,10 +125,11 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
     if not data.name or not data.name.strip():
         raise HttpError(400, "Component name is required")
     project = await project_repository.get(pid)
+    json_value = data.json_value or {}
+    check_reference_of_project(json_value, project)
     system = await ai_system_repository.get_or_create_for_project(project)
 
     source_dataset = None
-    json_value = data.json_value or {}
     if data.source_dataset_pid:
         source_dataset = await ai_component_repository.get(data.source_dataset_pid)
         if source_dataset is None or source_dataset.component_type != AIComponentType.DATASET:
