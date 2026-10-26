@@ -85,8 +85,9 @@ def _path(prefix: str, name) -> str:
 
 
 def masked_for_ledger(value):
-    """`value` as a ledger copy may hold it: a secret-named key's value is SECRET_SET (None when empty), and any
-    string with a key shape is SECRET_SET. Recursive over dicts and lists; anything else is kept."""
+    """`value` as a ledger copy may hold it: a secret-named key's value is SECRET_SET (None when empty), a string
+    with a key shape is SECRET_SET, and a string with a secret assignment in it (`api_key=...` in a prompt) keeps
+    its text with the assigned value redacted. Recursive over dicts and lists; anything else is kept."""
     if isinstance(value, dict):
         out = {}
         for name, inner in value.items():
@@ -97,8 +98,10 @@ def masked_for_ledger(value):
         return out
     if isinstance(value, list):
         return [masked_for_ledger(item) for item in value]
-    if isinstance(value, str) and SECRET_SHAPE.search(value):
-        return SECRET_SET
+    if isinstance(value, str):
+        if SECRET_SHAPE.search(value):
+            return SECRET_SET
+        return _scrub_assignments(value)
     return value
 
 
@@ -116,8 +119,8 @@ def _plaintext(value) -> bool:
 
 def plaintext_secret_paths(value, _prefix: str = "") -> list[str]:
     """The paths (`a.b`, `items[0].token`) of the values a ledger copy must not hold: a secret-named key with a
-    plain string, or with a dict or list holding one, and any string with a key shape. A listed key is not
-    descended into."""
+    plain string, or with a dict or list holding one, and any string with a key shape or a secret assignment. A
+    listed key is not descended into."""
     found: list[str] = []
     if isinstance(value, dict):
         for name, inner in value.items():
@@ -129,7 +132,7 @@ def plaintext_secret_paths(value, _prefix: str = "") -> list[str]:
     elif isinstance(value, list):
         for index, item in enumerate(value):
             found.extend(plaintext_secret_paths(item, f"{_prefix}[{index}]"))
-    elif isinstance(value, str) and SECRET_SHAPE.search(value):
+    elif isinstance(value, str) and (SECRET_SHAPE.search(value) or _scrub_assignments(value) != value):
         found.append(_prefix)
     return found
 
