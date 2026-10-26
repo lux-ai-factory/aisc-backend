@@ -5,8 +5,9 @@ Two rules, because the cost of a wrong guess differs:
 - Ledger copies (`masked_for_ledger`): broad. Any key whose name says key, token, secret, password or credential
   holds only whether it is set, and any string shaped like a known key is replaced too. A copy that loses a
   harmless detail costs nothing.
-- Stored configurations (`without_stored_secrets`): narrow. Only the last word or two of a name count, strings
-  only, and a `key` or `token` value must look like one. A dropped field changes what the plugin runs with.
+- Stored configurations (`without_stored_secrets`): narrow. Only the last word or two of a name count, and a
+  `key` or `token` value must look like one; a value that is wholly one key shape goes whatever its name. A
+  secret field is dropped, never replaced by a placeholder the plugin would run with.
 
 `scrub_text` clears failure text: the values a caller knows it handed out, then the key shapes, then the value of
 a `password=...` style assignment.
@@ -150,40 +151,72 @@ def stored_secret_name(name: str) -> str | None:
     return None
 
 
+def _holds_string(value) -> bool:
+    if isinstance(value, str):
+        return value != ""
+    if isinstance(value, dict):
+        return any(_holds_string(inner) for inner in value.values())
+    if isinstance(value, list):
+        return any(_holds_string(item) for item in value)
+    return False
+
+
+def _wholly_one_secret(value: str) -> bool:
+    """The whole string is one key shape (`sk-...`, `Bearer ...`, a PEM private key): it is nothing but a secret."""
+    return SECRET_SHAPE.fullmatch(value.strip()) is not None
+
+
 def _stored_secret(kind: str | None, value) -> bool:
-    if not isinstance(value, str) or not value or kind is None:
+    if isinstance(value, dict):
+        return kind == "strong" and _holds_string(value)
+    if isinstance(value, list):
+        if kind == "strong":
+            return _holds_string(value)
+        return any(_stored_secret(kind, item) for item in value if isinstance(item, str))
+    if not isinstance(value, str) or not value:
         return False
-    if kind == "strong":
+    if _wholly_one_secret(value) or kind == "strong":
         return True
-    return len(value) >= WEAK_MIN_LENGTH and not any(char.isspace() for char in value)
+    return kind == "weak" and len(value) >= WEAK_MIN_LENGTH and not any(char.isspace() for char in value)
 
 
-def without_stored_secrets(config, _prefix: str = ""):
-    """(the configuration without its stored secrets, the dropped paths). A secret is a non-empty string (or a
-    list holding one) under a strong name, or under a weak one when it looks like a key. Any other string is
-    scrubbed of key shapes and assignments, so a key pasted into a prompt goes and the prompt stays."""
+def stored_secret_changes(config, _prefix: str = ""):
+    """(the configuration without its stored secrets, the dropped paths, the scrubbed paths).
+
+    A field is dropped, never replaced, when its value is a non-empty string (or a dict or list holding one) under
+    a strong name, a key-like string under a weak one, or a string that is wholly one key shape whatever its name.
+    Any other string is scrubbed of key shapes and assignments, so a key pasted into a prompt goes and the prompt
+    stays; its path is listed as scrubbed, since the key in it was stored all the same."""
     if isinstance(config, dict):
-        out, dropped = {}, []
+        out, dropped, scrubbed = {}, [], []
         for name, inner in config.items():
             path = _path(_prefix, name)
-            kind = stored_secret_name(str(name))
-            items = inner if isinstance(inner, list) else [inner]
-            if any(_stored_secret(kind, item) for item in items):
+            if _stored_secret(stored_secret_name(str(name)), inner):
                 dropped.append(path)
                 continue
-            out[name], below = without_stored_secrets(inner, path)
+            out[name], below, cleared = stored_secret_changes(inner, path)
             dropped.extend(below)
-        return out, dropped
+            scrubbed.extend(cleared)
+        return out, dropped, scrubbed
     if isinstance(config, list):
-        out, dropped = [], []
+        out, dropped, scrubbed = [], [], []
         for index, item in enumerate(config):
-            new, below = without_stored_secrets(item, f"{_prefix}[{index}]")
+            new, below, cleared = stored_secret_changes(item, f"{_prefix}[{index}]")
             out.append(new)
             dropped.extend(below)
-        return out, dropped
+            scrubbed.extend(cleared)
+        return out, dropped, scrubbed
     if isinstance(config, str) and _prefix:
-        return scrub_text(config), []
-    return config, []
+        text = scrub_text(config)
+        return text, [], ([_prefix] if text != config else [])
+    return config, [], []
+
+
+def without_stored_secrets(config):
+    """(the configuration without its stored secrets, the dropped paths): stored_secret_changes without the
+    scrubbed paths."""
+    new, dropped, _ = stored_secret_changes(config)
+    return new, dropped
 
 
 # Text

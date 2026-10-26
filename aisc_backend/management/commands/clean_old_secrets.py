@@ -78,11 +78,12 @@ class Command(BaseCommand):
     @staticmethod
     def _clean(alias: str, apply: bool):
         masked, events = secret_cleanup.mask_outbox(LedgerOutbox, alias, apply)
-        configs, dropped = secret_cleanup.drop_config_secrets(PluginConfig, alias, apply)
+        scrubbed_fields: list[tuple[str, str]] = []
+        configs, dropped = secret_cleanup.drop_config_secrets(PluginConfig, alias, apply, scrubbed_fields)
         scrubbed, failures = secret_cleanup.scrub_failures(EvaluationPlugin, alias, apply)
         packages = secret_cleanup.packages_by_pid(LedgerOutbox, alias, {item_id for item_id, _ in events})
         rotate = Counter()
-        for package, path in dropped:
+        for package, path in dropped + scrubbed_fields:
             rotate[(package, path, "configs")] += 1
         for item_id, path in events:
             rotate[(packages.get(item_id, f"unknown:{item_id}"), path, "events")] += 1
