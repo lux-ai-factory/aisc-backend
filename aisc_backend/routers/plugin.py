@@ -6,10 +6,13 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend import ledger
-from aisc_backend.config_secret_fields import resolved
+from aisc_backend.config_secret_fields import (CONFIG_SECRET_PREFIX, SECRET_DESCRIPTION,
+                                               SecretFieldRefused, check_split, resolved, secret_hints,
+                                               split_secret_fields, value_at, with_set_at)
 from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET
 from aisc_backend.audit.log import log_action
-from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
+from aisc_backend.models import (Plugin, PluginConfig, PluginConfigProjectConfig, ProjectConfig,
+                                 ProjectConfigCategory)
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
@@ -19,9 +22,12 @@ from aisc_backend.repositories.measurement_repository import MeasurementReposito
 from aisc_backend.repositories.plugin_repository import PluginRepository, EvaluationPluginRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
+from aisc_backend.routers.project_config import _masked as masked_secret_value
 from aisc_backend.schemas.measure import MeasureOutSchema
 from aisc_backend.schemas.plugin import PluginOutSchema, PluginConfigOutSchema
 from aisc_backend.schemas.project_config import ProjectConfigOptionSchema, ProjectConfigSelectionSchema
+from aisc_backend.services.project_config_keys import normalize_project_config_key
+from aisc_backend.utils.encryption import decrypt_value, encrypt_value
 from aisc_plugin_manager import Loader
 from aisc_plugin_interface import MetricVisualization
 from aisc_plugin_interface.models.evaluation_input import InputDefinition
@@ -80,26 +86,76 @@ def _masked(value, schema: dict, ui, defs: dict):
     return out
 
 
-def _config_without_secrets(plugin: Plugin, config, plugin_obj=None):
-    """The configuration as the ledger may hold it. The secret fields are those the plugin's form marks
-    (format password, as SecretStr makes it, writeOnly, the password widget), and any whose name says so."""
-    schema, ui = {}, {}
+def _plugin_form(plugin: Plugin, plugin_obj=None) -> tuple[dict, dict]:
+    """(schema, ui schema) of the plugin's configuration form, ({}, {}) when it cannot be read: its secret
+    fields are then found by name and value alone."""
     try:
         plugin_obj = plugin_obj or plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
         schema, ui = plugin_obj.get_full_schema()
     except Exception:  # noqa: BLE001 - its secrets are then found by name alone
         logger.warning("plugin %s could not be loaded to read its secret config fields", plugin.name)
-    schema = schema if isinstance(schema, dict) else {}
-    return _masked(config, schema, ui if isinstance(ui, dict) else {}, schema.get("$defs") or {})
+        return {}, {}
+    return (schema if isinstance(schema, dict) else {}), (ui if isinstance(ui, dict) else {})
 
 
-def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict, plugin: Plugin, plugin_obj=None) -> None:
+def _ledger_config(config, schema: dict, ui: dict, kept_paths=()):
+    """The configuration as the ledger may hold it. The secret fields are those the plugin's form marks
+    (format password, as SecretStr makes it, writeOnly, the password widget), and any whose name says so;
+    a field kept as a project secret is set."""
+    masked = _masked(config, schema, ui, schema.get("$defs") or {})
+    return with_set_at(masked, kept_paths, SECRET_SET)
+
+
+def _configured(plugin_pid, plugin_config: PluginConfig, settings: dict, ledger_config) -> None:
     """A plugin's configuration in the ledger: which settings it uses, by key, never their values, and
     its secret fields only as set or not."""
     ledger.emit("engine.plugin.configured", item_type="plugin", item_id=plugin_pid,
-                content={"config_id": plugin_config.id,
-                         "config": _config_without_secrets(plugin, plugin_config.config, plugin_obj),
-                         "settings": settings})
+                content={"config_id": plugin_config.id, "config": ledger_config, "settings": settings})
+
+
+async def _kept_secrets(plugin_config_id) -> dict[str, ProjectConfig]:
+    """path -> the project secret a configuration's field is kept as (its `config.<path>` mappings)."""
+    if plugin_config_id is None:
+        return {}
+    return {mapping.plugin_config_key[len(CONFIG_SECRET_PREFIX):]: mapping.project_config
+            async for mapping in PluginConfigProjectConfig.objects
+            .filter(plugin_config_id=plugin_config_id, plugin_config_key__startswith=CONFIG_SECRET_PREFIX)
+            .select_related("project_config").order_by("plugin_config_key")}
+
+
+def _same_value(secret: ProjectConfig, value: str) -> bool:
+    try:
+        return decrypt_value(secret.encrypted_value) == value
+    except Exception:  # noqa: BLE001 - a value that no longer decrypts is replaced
+        return False
+
+
+async def _keep_secret(plugin: Plugin, path: str, value: str, secret: ProjectConfig | None) -> ProjectConfig:
+    """The project secret that holds the key of field `path`: the one the configuration already kept it in,
+    its value replaced when it changed, or a new one under the first free key `<plugin>_<path>`, `_2`, `_3`, ...
+    A secret the person made under that key is never touched."""
+    if secret is not None:
+        if not _same_value(secret, value):
+            secret.encrypted_value = encrypt_value(value)
+            secret.masked_value = masked_secret_value(value)
+            await project_config_repository.save(secret)
+        return secret
+    base = normalize_project_config_key(f"{plugin.name}_{path}")[:240]
+    taken = {key async for key in ProjectConfig.objects.filter(
+        project=plugin.project, category=ProjectConfigCategory.SECRETS, key__startswith=base).values_list("key", flat=True)}
+    key, number = base, 1
+    while key in taken:
+        number += 1
+        key = f"{base}_{number}"
+    return await project_config_repository.create(ProjectConfig(
+        project=plugin.project, category=ProjectConfigCategory.SECRETS, key=key,
+        name=f"{plugin.display_name}: {path}"[:255], description=SECRET_DESCRIPTION,
+        encrypted_value=encrypt_value(value), masked_value=masked_secret_value(value)))
+
+
+def _hinted(ui_schema, kept: dict[str, ProjectConfig]) -> dict:
+    return secret_hints(ui_schema if isinstance(ui_schema, dict) else {},
+                        {path: secret.key for path, secret in kept.items()})
 
 
 class PluginConfigStateResponse(Schema):
@@ -111,6 +167,7 @@ class PluginConfigStateResponse(Schema):
     project_config_selections: list[ProjectConfigSelectionSchema] = []
     project_configs: list[ProjectConfigOptionSchema] = []
     description: str = ""
+    secret_fields: list[str] = []
 
 
 class PackageAvailableSchema(Schema):
@@ -352,13 +409,17 @@ async def restore_plugin_config(
     except PluginConfig.DoesNotExist:
         raise HttpError(404, f"Plugin config {config_id} not found")
 
+    schema, ui = _plugin_form(plugin)
     plugin.current_config = config
-    settings = {mapping.plugin_config_key: str(mapping.project_config.pid)
-                for mapping in await plugin_repository.get_setting_mappings(config)}
+    mappings = await plugin_repository.get_setting_mappings(config)
+    settings = {mapping.plugin_config_key: str(mapping.project_config.pid) for mapping in mappings}
+    kept_paths = [mapping.plugin_config_key[len(CONFIG_SECRET_PREFIX):] for mapping in mappings
+                  if mapping.plugin_config_key.startswith(CONFIG_SECRET_PREFIX)]
 
     async def restore():
         await plugin_repository.save(plugin)
-        await sync_to_async(_configured)(plugin_pid, config, settings, plugin)
+        await sync_to_async(_configured)(plugin_pid, config, settings,
+                                         _ledger_config(config.config, schema, ui, kept_paths))
 
     await ledger.atomically(restore)
 
@@ -380,25 +441,46 @@ async def update_plugin_config_state(
     if not data.config:
         raise HttpError(400, "Config is required")
 
-    plugin_config = PluginConfig(plugin=project_plugin, config=data.config)
+    # A key field is not stored in the configuration: it is kept as a project secret the configuration
+    # points to through a `config.<path>` mapping, and handed back to the plugin at run time.
+    form_schema, form_ui = _plugin_form(project_plugin, plugin_obj)
+    split = split_secret_fields(data.config, form_schema, form_ui)
+    try:
+        check_split(split, adopted=getattr(plugin_obj, "target_kinds", None) is not None)
+    except SecretFieldRefused as refused:
+        raise HttpError(422, str(refused))
+    # the backend alone writes the `config.*` mappings
+    selections = [selection for selection in data.project_config_selections
+                  if not (selection.plugin_config_key or "").startswith(CONFIG_SECRET_PREFIX)]
+
+    plugin_config = PluginConfig(plugin=project_plugin, config=split.kept)
 
     async def configure():
+        previous = await _kept_secrets(project_plugin.current_config_id)
+        kept = {path: await _keep_secret(project_plugin, path, value, previous.get(path))
+                for path, value in split.moved.items()}
+        for path, secret in previous.items():
+            if path not in kept and value_at(split.kept, path, "") == "":
+                kept[path] = secret
         saved = await plugin_config_repository.save(plugin_config)
         try:
             await project_config_repository.save_plugin_config_mappings(
-                saved, project_plugin.project.pid, data.project_config_selections
+                saved, project_plugin.project.pid, selections
             )
         except ProjectConfig.DoesNotExist:
             raise HttpError(400, "Selected project config does not belong to this project")
+        for path, secret in kept.items():
+            await PluginConfigProjectConfig.objects.acreate(
+                plugin_config=saved, project_config=secret, plugin_config_key=CONFIG_SECRET_PREFIX + path)
         project_plugin.current_config = saved
         await plugin_repository.save(project_plugin)
-        settings = {selection.plugin_config_key: str(selection.project_config_pid)
-                    for selection in data.project_config_selections
-                    if selection.plugin_config_key and selection.project_config_pid}
-        await sync_to_async(_configured)(plugin_pid, saved, settings, project_plugin, plugin_obj)
-        return saved
+        settings = {mapping.plugin_config_key: str(mapping.project_config.pid)
+                    for mapping in await plugin_repository.get_setting_mappings(saved)}
+        await sync_to_async(_configured)(plugin_pid, saved, settings,
+                                         _ledger_config(split.kept, form_schema, form_ui, kept))
+        return saved, kept
 
-    plugin_config = await ledger.atomically(configure)
+    plugin_config, kept = await ledger.atomically(configure)
 
     config, schema, ui_schema = plugin_obj.on_config_change(plugin_config.config)
 
@@ -406,9 +488,10 @@ async def update_plugin_config_state(
         plugin_config_id=plugin_config.id,
         config=config,
         formSchema=schema,
-        uiSchema=ui_schema,
+        uiSchema=_hinted(ui_schema, kept),
+        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
-        project_config_selections=data.project_config_selections,
+        project_config_selections=selections,
         project_configs=[
             ProjectConfigOptionSchema.from_row(project_config)
             for project_config in await project_config_repository.get_by_project(project_plugin.project.pid)
