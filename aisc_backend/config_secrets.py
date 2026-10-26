@@ -143,6 +143,9 @@ def holds_plaintext_secret(value) -> bool:
 
 # Stored configurations
 
+#: A whole value that is a URL with a user and password in it (`https://user:pass@host/...`).
+_URL_WITH_CREDENTIALS = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@\S*")
+
 
 def name_words(name: str) -> list[str]:
     """`judgeApiKey` -> judge, api, key; `hf_token` -> hf, token."""
@@ -176,8 +179,10 @@ def _holds_string(value) -> bool:
 
 
 def _wholly_one_secret(value: str) -> bool:
-    """The whole string is one key shape (`sk-...`, `Bearer ...`, a PEM private key): it is nothing but a secret."""
-    return SECRET_SHAPE.fullmatch(value.strip()) is not None
+    """The whole string is one key shape (`sk-...`, `Bearer ...`, a PEM private key) or a URL with credentials: it
+    is nothing but a secret, or holds one that no placeholder could stand in for."""
+    value = value.strip()
+    return SECRET_SHAPE.fullmatch(value) is not None or _URL_WITH_CREDENTIALS.fullmatch(value) is not None
 
 
 def _stored_secret(kind: str | None, value) -> bool:
