@@ -6,6 +6,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend import ledger
+from aisc_backend.config_secret_fields import resolved
 from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
@@ -54,24 +55,6 @@ logger = logging.getLogger(__name__)
 _SECRET_NAME = LEDGER_SECRET_NAME
 
 
-def _resolved(node, defs: dict) -> dict:
-    """A JSON schema node with its $ref followed and its anyOf/allOf/oneOf merged (an optional
-    field is anyOf [its type, null])."""
-    if not isinstance(node, dict):
-        return {}
-    if "$ref" in node:
-        node = {**defs.get(node["$ref"].rsplit("/", 1)[-1], {}), **{k: v for k, v in node.items() if k != "$ref"}}
-    merged = dict(node)
-    for branch in ("anyOf", "allOf", "oneOf"):
-        for part in node.get(branch) or []:
-            part = _resolved(part, defs)
-            merged.setdefault("properties", {}).update(part.get("properties") or {})
-            for key in ("format", "writeOnly", "items"):
-                if key in part and key not in merged:
-                    merged[key] = part[key]
-    return merged
-
-
 def _secret(name: str, field: dict, ui: dict) -> bool:
     return (field.get("format") == "password" or field.get("writeOnly") is True
             or (isinstance(ui, dict) and ui.get("ui:widget") == "password") or bool(_SECRET_NAME.search(name)))
@@ -80,7 +63,7 @@ def _secret(name: str, field: dict, ui: dict) -> bool:
 def _masked(value, schema: dict, ui, defs: dict):
     """`value` with every secret field's value replaced by SECRET_SET, or None when it is empty."""
     if isinstance(value, list):
-        items = _resolved(schema.get("items"), defs)
+        items = resolved(schema.get("items"), defs)
         ui_items = ui.get("items") if isinstance(ui, dict) else None
         return [_masked(item, items, ui_items, defs) for item in value]
     if not isinstance(value, dict):
@@ -88,7 +71,7 @@ def _masked(value, schema: dict, ui, defs: dict):
     properties = schema.get("properties") or {}
     out = {}
     for name, inner in value.items():
-        field = _resolved(properties.get(name), defs)
+        field = resolved(properties.get(name), defs)
         field_ui = ui.get(name) if isinstance(ui, dict) else None
         if _secret(str(name), field, field_ui):
             out[name] = SECRET_SET if inner not in (None, "", [], {}) else None
