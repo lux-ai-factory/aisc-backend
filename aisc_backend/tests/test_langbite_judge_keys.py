@@ -99,7 +99,9 @@ class LangbiteJudgeFields(TransactionTestCase):
 
         again = cleanup("count")
         self.assertEqual(langbite_lines(again), [])
-        self.assertEqual(config_counts(again)[0], before[0] - 1)
+        # apply cleaned every row it counted (the other plugin's stored key too, by the general rule),
+        # so nothing is left to change: the LangBiTe row adds 0
+        self.assertEqual(config_counts(again), (0, 0))
 
     def test_another_plugins_judge_model_stays(self):
         cleanup("apply")
