@@ -50,16 +50,19 @@ SECRET_SHAPE = re.compile(
     r"|(\bauthorization\s*:\s*)(?:basic|token)\s+" + CREDENTIAL +
     r"|(?<=://)[^/\s:@]+:[^/\s@]+(?=@)"
     r"|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----")
-#: `password=...`, `api_key: "..."`, `api_key%3D...` and the like in text. Group 1 is the name; group 3 is the
-#: value, up to the next whitespace or the closing quote. A bare `token` or `pwd` counts only before `=`
-#: (`unexpected token: }` and `pwd: /home` are not secrets). The value is redacted only when it looks like a key
-#: (see `_key_like`), so `password: it must contain a digit` stays. Not caught: a value that reads like a word (no
-#: digit, and under 16 characters or all in one case, such as `password=letmein`), and a quoted value of several
-#: words (a multi-word passphrase such as `password = 'correct horse battery staple'`), which reads like prose.
+#: `password=...`, `api_key: "..."`, `api_key%3D...` and the like in text. Group 1 is the name, which may carry
+#: any prefix ending in `_` or at a lower-to-upper case step (`judge_api_key`, `DB_PASSWORD`, `judgeApiKey`), but
+#: nothing after it (`api_key_env=`, `password_min_length=` are not secrets); group 3 is the value, up to the next
+#: whitespace or the closing quote. A bare `token` or `pwd` counts only before `=` (`unexpected token: }` and
+#: `pwd: /home` are not secrets). The value is redacted only when it looks like a key (see `_key_like`), so
+#: `password: it must contain a digit` stays. Not caught: a value that reads like a word (no digit, and under 16
+#: characters or all in one case, such as `password=letmein`), and a quoted value of several words (a multi-word
+#: passphrase such as `password = 'correct horse battery staple'`), which reads like prose.
 SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|refresh[_-]?token|secret[_-]?key"
+    r"(?i)\b((?:[a-z0-9-]*_|[a-z0-9]*(?-i:[a-z0-9])(?=(?-i:[A-Z])))?"
+    r"(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|refresh[_-]?token|secret[_-]?key"
     r"|(?:aws[_-]?)?secret[_-]?access[_-]?key|client[_-]?secret|password|passwd"
-    r"|(?:token|pwd)(?=[\"']?\s*(?:=|%3d)))"
+    r"|(?:token|pwd)(?=[\"']?\s*(?:=|%3d))))"
     r"([\"']?\s*(?:[=:]|%3d)\s*[\"']?)"
     r"((?!\[redacted\])(?:(?<=\")[^\"\s]+(?=\")|(?<=')[^'\s]+(?=')|[^\s\"',;]+))")
 
