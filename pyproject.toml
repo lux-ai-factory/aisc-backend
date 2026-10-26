@@ -41,5 +41,5 @@ dependencies = [
 aisc-plugin-interface = { path = "vendor/aisc_plugin_interface-0.4.0-py3-none-any.whl" }
 # this checkout's plugin-manager and aisc_identity, built by the same script, so an image built from the
 # Dockerfile alone holds them (upstream's tag v0.3.0 lacks the local plugin-manager commits)
-aisc-plugin-manager = { path = "vendor/aisc_plugin_manager-0.3.0-py3-none-any.whl" }
+aisc-plugin-manager = { path = "vendor/aisc_plugin_manager-0.3.0+aisc.1-py3-none-any.whl" }
 aisc-identity = { path = "vendor/aisc_identity-0.1.0-py3-none-any.whl" }

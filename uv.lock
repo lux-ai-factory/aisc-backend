@@ -41,7 +41,7 @@ dependencies = [
 requires-dist = [
     { name = "aisc-identity", path = "vendor/aisc_identity-0.1.0-py3-none-any.whl" },
     { name = "aisc-plugin-interface", path = "vendor/aisc_plugin_interface-0.4.0-py3-none-any.whl" },
-    { name = "aisc-plugin-manager", path = "vendor/aisc_plugin_manager-0.3.0-py3-none-any.whl" },
+    { name = "aisc-plugin-manager", path = "vendor/aisc_plugin_manager-0.3.0+aisc.1-py3-none-any.whl" },
     { name = "boto3", specifier = "==1.42.7" },
     { name = "celery", extras = ["redis"], specifier = ">=5.6.3" },
     { name = "cryptography", specifier = ">=50.0.1" },
@@ -102,15 +102,15 @@ requires-dist = [
 
 [[package]]
 name = "aisc-plugin-manager"
-version = "0.3.0"
-source = { path = "vendor/aisc_plugin_manager-0.3.0-py3-none-any.whl" }
+version = "0.3.0+aisc.1"
+source = { path = "vendor/aisc_plugin_manager-0.3.0+aisc.1-py3-none-any.whl" }
 dependencies = [
     { name = "aisc-plugin-interface" },
     { name = "httpx" },
     { name = "packaging" },
 ]
 wheels = [
-    { filename = "aisc_plugin_manager-0.3.0-py3-none-any.whl", hash = "sha256:b0e2dce5334c4c69779a16bdd3a6f9883481c886cdef2e0ee5871c8e24674a33" },
+    { filename = "aisc_plugin_manager-0.3.0+aisc.1-py3-none-any.whl", hash = "sha256:84ba0957f47c536d22d3bde279de743d83577f63076b4362e20458a0eab17e52" },
 ]
 
 [package.metadata]
