@@ -6,6 +6,10 @@ outbox, drops the secret fields of the stored plugin configurations and scrubs t
 (aisc_backend.secret_cleanup). Both list the fields whose keys were stored in clear and must be rotated, by
 plugin and name.
 
+Fields a plugin's form no longer has (secret_cleanup.RETIRED_FIELDS: LangBiTe's judge_model and judge_api_key) are
+removed too and printed as `retired` lines, after the `rotate` lines; a judge key still held in clear is a `rotate`
+line as every stored key is.
+
 Free text in a stored configuration (a prompt) that may hold a key is not changed: it is an input the plugin runs
 with, and the text rule can mistake prose for a key. Its field is printed as a `review` line, apart from the keys
 to rotate. `--scrub-config-text` scrubs those fields too, counts them as changed and prints them as `rotate` lines.
@@ -87,8 +91,8 @@ class Command(BaseCommand):
     def _clean(alias: str, apply: bool, scrub_config_text: bool):
         masked, events = secret_cleanup.mask_outbox(LedgerOutbox, alias, apply)
         text_fields: list[tuple[str, str]] = []
-        configs, dropped = secret_cleanup.drop_config_secrets(PluginConfig, alias, apply, text_fields,
-                                                              scrub_config_text=scrub_config_text)
+        configs, dropped, retired = secret_cleanup.drop_config_secrets(PluginConfig, alias, apply, text_fields,
+                                                                       scrub_config_text=scrub_config_text)
         scrubbed, failures = secret_cleanup.scrub_failures(EvaluationPlugin, alias, apply)
         packages = secret_cleanup.packages_by_pid(LedgerOutbox, alias, {item_id for item_id, _ in events})
         rotate = Counter()
@@ -100,7 +104,9 @@ class Command(BaseCommand):
             rotate[(package, "", "failures")] += 1
         lines = [f"rotate plugin={package} field={path} {kind}={n}" if path else f"rotate plugin={package} {kind}={n}"
                  for (package, path, kind), n in sorted(rotate.items())]
+        lines += [f"retired plugin={package} field={field} configs={n}"
+                  for (package, field), n in sorted(Counter(retired).items())]
         if not scrub_config_text:
             review = Counter(text_fields)
             lines += [f"review plugin={package} field={path} configs={n}" for (package, path), n in sorted(review.items())]
-        return masked, configs, len(dropped), scrubbed, lines
+        return masked, configs, len(dropped) + len(retired), scrubbed, lines
