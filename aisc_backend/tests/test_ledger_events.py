@@ -434,7 +434,8 @@ class Plugins(Recording):
             await self.plugins.post(f"/{pid}/configs/{config_id}/restore")
         masked = {"threshold": 0.5, "passphrase": "set", "sealed": "set", "auth_header": "set",
                   "judge": {"model": "gpt-4o", "phrase": "set"}, "judge_api_key": "set", "access_token": None}
-        configured, restored = (await events())[1], (await events())[-1]
+        # the keys the save kept as project secrets are recorded first, each as its own secret event
+        configured, *_, restored = [e for e in await events() if e["action"] == "engine.plugin.configured"]
         self.assertEqual(configured["content"]["config"], masked)
         self.assertEqual(restored["content"]["config"], masked)
         for value in ("pass-value-1", "sealed-value-2", "header-value-3", "phrase-value-4", "sk-judge"):
