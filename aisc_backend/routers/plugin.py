@@ -513,9 +513,11 @@ async def preview_plugin_config_state(
     plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
 
     config, schema, ui_schema = plugin_obj.on_config_change(data.config)
+    kept = await _kept_secrets(project_plugin.current_config_id)
 
     response = PluginConfigStateResponse(
-        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
+        plugin_config_id=None, config=config, formSchema=schema, uiSchema=_hinted(ui_schema, kept),
+        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         project_config_selections=data.project_config_selections,
         project_configs=[
@@ -593,11 +595,14 @@ async def get_project_plugin_config_state(
             for mapping in mappings
         ]
 
+    kept = await _kept_secrets(project_plugin.current_config_id)
+
     response = PluginConfigStateResponse(
         plugin_config_id=plugin_config_id,
         config=config,
         formSchema=schema,
-        uiSchema=ui_schema,
+        uiSchema=_hinted(ui_schema, kept),
+        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         project_config_selections=current_setting_selections,
         project_configs=[
@@ -632,9 +637,11 @@ async def parse_plugin_config_state_from_dataset(
     config = plugin_obj.parse_config_from_dataset(file_content)
 
     config, schema, ui_schema = plugin_obj.on_config_change(config)
+    kept = await _kept_secrets(plugin.current_config_id)
 
     response = PluginConfigStateResponse(
-        plugin_config_id=None, config=config, formSchema=schema, uiSchema=ui_schema,
+        plugin_config_id=None, config=config, formSchema=schema, uiSchema=_hinted(ui_schema, kept),
+        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         description=plugin_obj.help_text,
     )
