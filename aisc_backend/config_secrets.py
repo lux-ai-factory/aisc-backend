@@ -29,8 +29,8 @@ MIN_KNOWN_LENGTH = 8
 #: A value under a name ending in key or token is a secret only if it is at least this long, with no whitespace.
 WEAK_MIN_LENGTH = 16
 
-#: A key holding one of these words is a secret in a ledger copy.
-LEDGER_SECRET_NAME = re.compile(r"key|token|secret|password|credential", re.IGNORECASE)
+#: A key holding one of these words is a secret in a ledger copy (`Authorization` and `Cookie` as header fields).
+LEDGER_SECRET_NAME = re.compile(r"key|token|secret|password|credential|authorization|cookie", re.IGNORECASE)
 #: A value that looks like a credential after `Bearer`, `Basic`, `Token` or a bare `token=`: 16 characters or more
 #: of the base64, hex and URL-safe alphabets, no space (`the bearer of bad news`, `token=EOF` are not secrets).
 CREDENTIAL = r"[A-Za-z0-9+/=_.~-]{16,}"
@@ -66,7 +66,8 @@ SECRET_ASSIGNMENT = re.compile(
     r"([\"']?\s*(?:[=:]|%3d)\s*[\"']?)"
     r"((?!\[redacted\])(?:(?<=\")[^\"\s]+(?=\")|(?<=')[^'\s]+(?=')|[^\s\"',;]+))")
 
-STRONG_LAST = {"password", "passwd", "passphrase", "secret", "credential", "credentials", "apikey"}
+STRONG_LAST = {"password", "passwd", "passphrase", "secret", "credential", "credentials", "apikey", "authorization",
+               "cookie"}
 STRONG_PAIRS = {("api", "key"), ("access", "key"), ("private", "key"), ("secret", "key"), ("access", "token"),
                 ("auth", "token"), ("api", "token"), ("bearer", "token"), ("refresh", "token"), ("session", "token")}
 WEAK_LAST = {"key", "token"}
@@ -149,7 +150,8 @@ def name_words(name: str) -> list[str]:
 
 
 def stored_secret_name(name: str) -> str | None:
-    """"strong" when the name ends in a secret word or pair, "weak" when it ends in key or token, else None."""
+    """"strong" when the name ends in a secret word or pair (header fields such as Authorization and Cookie
+    included), "weak" when it ends in key or token, else None."""
     words = name_words(name)
     if not words:
         return None
