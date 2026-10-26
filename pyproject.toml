@@ -30,10 +30,16 @@ dependencies = [
     "jsonschema>=4.26.0",
     "cryptography>=50.0.1",
     "aisc-plugin-manager>=0.3.0",
-    "aisc-plugin-interface>=0.3.0",
+    "aisc-plugin-interface>=0.4.0",
+    "aisc-identity>=0.1.0",
     "httpx>=0.28.1",
     "immudb-py>=1.5.0",
 ]
 
 [tool.uv.sources]
-aisc-plugin-manager = { git = "https://github.com/lux-ai-factory/aisc-plugin-manager", tag = "v0.3.0" }
+# our 0.4.0, built from shared/plugin-interface by the root's scripts/vendor-plugin-interface.sh: PyPI's latest, 0.3.0, has no assesses, helpers or connections
+aisc-plugin-interface = { path = "vendor/aisc_plugin_interface-0.4.0-py3-none-any.whl" }
+# this checkout's plugin-manager and aisc_identity, built by the same script, so an image built from the
+# Dockerfile alone holds them (upstream's tag v0.3.0 lacks the local plugin-manager commits)
+aisc-plugin-manager = { path = "vendor/aisc_plugin_manager-0.3.0-py3-none-any.whl" }
+aisc-identity = { path = "vendor/aisc_identity-0.1.0-py3-none-any.whl" }

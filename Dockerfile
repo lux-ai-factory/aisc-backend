@@ -16,6 +16,8 @@ RUN apk add --no-cache git github-cli
 
 # Install dependencies first (caching layer)
 COPY pyproject.toml uv.lock ./
+# the plugin interface, plugin-manager and aisc_identity wheels the lock names (vendor/, not PyPI or GitHub)
+COPY vendor/ ./vendor/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
