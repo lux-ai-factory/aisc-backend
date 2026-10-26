@@ -2,7 +2,9 @@
 Reading one evaluation through the public and the internal route.
 
 The detail body always lists the evaluation's plugins, whatever `include` asks for, and the body is the
-same on both routes. An unknown evaluation answers 404 from the route itself. The number of SQL queries
+same on both routes except `evaluation_plugins[].plugin_config.config`: masked on the public route (a key is
+"set"), stored as is on the internal one, which the worker reads. An unknown evaluation answers 404 from the
+route itself. The number of SQL queries
 for one read does not grow with the number of plugins, and reading without `include` costs the same as
 reading with `include=plugin`.
 """
@@ -49,6 +51,17 @@ EVALUATION_INPUT_KEYS = {"name", "input_type", "input_file", "value"}
 
 INCLUDE_QUERIES = ["", "?include=plugin", "?include=project,plugin", "?include=project,dataset,model,datashape,plugin"]
 NOT_FOUND_BODY = {"detail": "Evaluation not found"}
+
+
+CRED = "cred-0123456789abcdef"
+
+
+def _without_configs(body):
+    """`body` without each plugin entry's `plugin_config.config` (removed in place); the removed configs."""
+    removed = []
+    for entry in body["evaluation_plugins"]:
+        removed.append(entry["plugin_config"].pop("config"))
+    return removed
 
 
 def internal_env():
@@ -192,7 +205,7 @@ class EvaluationDetailsTestCase(TestCase):
         for query, body in bodies.items():
             self.assertEqual(reference, body, query)
 
-    async def test_internal_body_is_the_same_for_every_include_and_equals_the_public_one(self):
+    async def test_internal_body_is_the_same_for_every_include_and_equals_the_public_one_but_for_the_config(self):
         bodies = {}
         for query in INCLUDE_QUERIES:
             response = await self._internal(f"/evaluations/{self.e2.pid}{query}")
@@ -207,7 +220,29 @@ class EvaluationDetailsTestCase(TestCase):
         reference = bodies["?include=project,plugin"]
         for query, body in bodies.items():
             self.assertEqual(reference, body, query)
+        public_configs = _without_configs(public_reference)
+        _without_configs(reference)
         self.assertEqual(public_reference, reference)
+        # the module's rows hold config={}: masked, that is {}
+        self.assertEqual([{}, {}], public_configs)
+
+    async def test_a_key_in_a_plugins_config_is_set_on_the_public_route_and_stored_on_the_internal_one(self):
+        entry = await EvaluationPlugin.objects.select_related("plugin_config__plugin").aget(
+            evaluation=self.e2, plugin_config__plugin=self.plugin_b)
+        config = entry.plugin_config
+        config.config = {"api_key": CRED}
+        await config.asave()
+
+        public = (await self._public(f"/{self.e2.pid}")).json()
+        internal = (await self._internal(f"/evaluations/{self.e2.pid}")).json()
+        self.assertNotIn(CRED, str(public))
+        public_b = next(e for e in public["evaluation_plugins"] if e["name"] == "PluginB")
+        internal_b = next(e for e in internal["evaluation_plugins"] if e["name"] == "PluginB")
+        self.assertEqual({"api_key": "set"}, public_b["plugin_config"]["config"])
+        self.assertEqual({"api_key": CRED}, internal_b["plugin_config"]["config"])
+        _without_configs(public)
+        _without_configs(internal)
+        self.assertEqual(public, internal)
 
     # Unknown, malformed, unauthenticated
 

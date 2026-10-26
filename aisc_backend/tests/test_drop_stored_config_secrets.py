@@ -39,7 +39,8 @@ class StoredConfigs(TestCase):
     def test_count_lists_the_fields_it_would_drop_and_changes_nothing(self):
         found = cleanup().drop_config_secrets(PluginConfig, "default", apply=False)
         self.assertEqual(found, (1, [("aisc-plugin-a", "api_key"), ("aisc-plugin-a", "judge.openai_api_key"),
-                                     ("aisc-plugin-a", "hf_token"), ("aisc-plugin-a", "targets[0].auth_token")]))
+                                     ("aisc-plugin-a", "hf_token"), ("aisc-plugin-a", "targets[0].auth_token")],
+                                 []))
         self.assertEqual(self.config(self.a), STORED)
 
     def test_apply_drops_the_secrets_and_leaves_other_configurations(self):
@@ -62,6 +63,6 @@ class StoredConfigs(TestCase):
             root.setLevel(previous)
         for value in DROPPED_VALUES:
             self.assertNotIn(value, stream.getvalue())
-        self.assertEqual(cleanup().drop_config_secrets(PluginConfig, "default", apply=True), (0, []))
+        self.assertEqual(cleanup().drop_config_secrets(PluginConfig, "default", apply=True), (0, [], []))
         self.assertEqual(self.config(self.a), STORED_AFTER)
         self.assertNotIn("abc123", json.dumps(self.config(self.a)))
