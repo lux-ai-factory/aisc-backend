@@ -29,7 +29,7 @@ class ProjectRepository(BaseRepository[Project]):
                 "enabled_plugins",
                 "configs",
 
-                "enabled_plugins__current_config"
+                "enabled_plugins__current_config__setting_mappings",
             )
             .aget(pid=pid)
         )

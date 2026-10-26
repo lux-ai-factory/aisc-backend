@@ -41,8 +41,14 @@ class PluginConfigOutSchema(ModelSchema):
 
 
 class PluginOutSchema(ModelSchema):
-    config: dict | None = Field(None, alias="current_config.config")
+    config: dict | None = None
     pid: uuid.UUID
+
+    @staticmethod
+    def resolve_config(obj):
+        """The current configuration with every key set, None when the plugin has none."""
+        from aisc_backend.routers.plugin import shown_current_config  # the plugin router imports this module
+        return shown_current_config(obj)
 
     class Meta:
         model = Plugin

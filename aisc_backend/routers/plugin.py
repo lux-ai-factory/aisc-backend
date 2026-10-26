@@ -112,6 +112,18 @@ def _shown_config(config, schema: dict, ui: dict, kept_paths=()):
     return masked_for_ledger(_ledger_config(config, schema, ui, kept_paths))
 
 
+def shown_current_config(plugin: Plugin) -> dict | None:
+    """A plugin's current configuration as a serialised plugin carries it (`_shown_config`), None when it has
+    none. Its kept paths come from the configuration's prefetched mappings: without them a kept field is only
+    absent, as it is stored. The current configuration must be loaded already (async code cannot load it)."""
+    current = plugin.current_config
+    if current is None:
+        return None
+    schema, ui = _plugin_form(plugin)
+    mappings = getattr(current, "_prefetched_objects_cache", {}).get("setting_mappings", [])
+    return _shown_config(current.config, schema, ui, _kept_paths(mappings))
+
+
 def _form_config(config, shown):
     """`config` without every value its shown copy (`_shown_config`) masks: a field is left out, as a kept field
     is, and a list item is emptied. The form posts it back on save, so it holds no key and no placeholder."""
