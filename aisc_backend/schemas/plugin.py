@@ -40,6 +40,18 @@ class PluginConfigOutSchema(ModelSchema):
         fields = ["id", "config", "created_at"]
 
 
+class ShownPluginConfigOutSchema(PluginConfigOutSchema):
+    """A stored plugin configuration as a public route answers it: masked as every other read route masks
+    it (secret fields and kept paths set, key-shaped strings set). The worker's route keeps the parent."""
+    config: dict | None = None
+
+    @staticmethod
+    def resolve_config(obj):
+        from aisc_backend.routers.plugin import _kept_paths, _plugin_form, _shown_config  # imports this module
+        mappings = getattr(obj, "_prefetched_objects_cache", {}).get("setting_mappings", [])
+        return _shown_config(obj.config, *_plugin_form(obj.plugin), _kept_paths(mappings))
+
+
 class PluginOutSchema(ModelSchema):
     config: dict | None = None
     pid: uuid.UUID
@@ -69,3 +81,8 @@ class EvaluationPluginOutSchema(ModelSchema):
         model = EvaluationPlugin
         fields = "__all__"
         fields_optional = "__all__"
+
+
+class ShownEvaluationPluginOutSchema(EvaluationPluginOutSchema):
+    """An evaluation plugin as a public route answers it: its configuration masked."""
+    plugin_config: ShownPluginConfigOutSchema | None = Field(default=None, alias="plugin_config")

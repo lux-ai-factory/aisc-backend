@@ -25,9 +25,9 @@ from aisc_backend.repositories.plugin_repository import EvaluationPluginReposito
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.artifact import ArtifactOutSchema, ArtifactPreviewSchema
 from aisc_backend.schemas.evaluation import (
-    EvaluationDetailOutSchema,
     EvaluationByStatusResponseSchema,
     EvaluationOutSchema,
+    ShownEvaluationDetailOutSchema,
 )
 from aisc_backend.schemas.measure import MeasurementAggregationResponse, \
     MeasurementAggregationRequest, DimensionKeysResponse, DimensionValuesResponse, \
@@ -264,7 +264,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     return evaluation
 
 
-@router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)
+@router.get("/{evaluation_pid}", response=ShownEvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
     try:
         return await evaluation_repository.get_including(evaluation_pid, include)

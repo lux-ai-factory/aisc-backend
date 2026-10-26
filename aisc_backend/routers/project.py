@@ -30,7 +30,7 @@ from aisc_backend.schemas.ai_system import (
     AIComponentOutSchema,
     AIComponentInSchema,
 )
-from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
+from aisc_backend.schemas.evaluation import ShownEvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasurementAggregationResponse, MeasurementAggregationRequest, \
     DimensionKeysResponse, DimensionValuesResponse
 from aisc_backend.schemas.project import (
@@ -176,7 +176,7 @@ async def create_project_model(request, pid: uuid.UUID, data: AIComponentInSchem
     return await create_project_component(request, pid, data)
 
 
-@router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
+@router.get("/{pid}/evaluations", response=list[ShownEvaluationDetailOutSchema])
 async def get_project_evaluations(
     request,
     pid: uuid.UUID,
