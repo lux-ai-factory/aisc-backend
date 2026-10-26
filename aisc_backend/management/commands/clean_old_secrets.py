@@ -43,7 +43,12 @@ class Command(BaseCommand):
             try:
                 if alias != DEFAULT_DB_ALIAS:
                     projectdb.open_alias(alias)
-                found = self._clean(alias, apply)
+                # The project router sends every ORM query, the saves included, to the admitted alias.
+                token = projectdb.admitted.set(alias)
+                try:
+                    found = self._clean(alias, apply)
+                finally:
+                    projectdb.admitted.reset(token)
             except (projectdb.NoSuchProjectDatabase, projectdb.SchemaNotProvisioned):
                 continue
             except Exception as exc:  # noqa: BLE001 - reported by type only, then the next one
