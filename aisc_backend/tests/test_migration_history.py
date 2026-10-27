@@ -8,7 +8,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
 
 UPSTREAM_LAST = ("aisc_backend", "0014_ai_system_and_project_config_squashed")
-OUR_LAST = ("aisc_backend", "0026_component_hidden_as_helper")
+OUR_LAST = ("aisc_backend", "0025_evaluation_input_helper_ref")
 
 
 class OneHistory(TransactionTestCase):

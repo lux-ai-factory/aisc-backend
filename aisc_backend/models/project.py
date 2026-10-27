@@ -44,7 +44,7 @@ class Project(Base):
         ]
 
     def get_components(self) -> list[AIComponent]:
-        return self.aisystem.get_components()
+        return list(self.aisystem.components.all())
 
     def get_evaluations(self) -> list[Evaluation]:
         return list(self.evaluations.all())
