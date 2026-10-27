@@ -23,9 +23,10 @@ class AISystem(Base):
     )
 
     def get_components(self) -> list["AIComponent"]:
-        # Use the prefetched cache when available (async-safe); otherwise this
-        # must be called outside an async context or after prefetching.
-        return list(self.components.all())
+        """The components shown and offered as targets: not those moved to the platform as helper
+        models. Uses the prefetched cache when available (async-safe); otherwise this must be called
+        outside an async context or after prefetching."""
+        return [c for c in self.components.all() if c.hidden_as_helper is None]
 
     def __str__(self):
         return f"{self.name}"
@@ -56,6 +57,10 @@ class AIComponent(HasData):
     # DataShape for datashape, an LLMConfig for llm, a ResourceConfig for
     # resource).
     json_value = models.JSONField(blank=True, default=dict)
+    # An `llm` component older runs used as a helper, moved to the platform's helper models
+    # (manage.py move_helper_models): the reference it moved to. The row stays for those runs,
+    # never listed with the system's components nor offered as a target.
+    hidden_as_helper = models.CharField(max_length=200, null=True, blank=True)
 
     @property
     def is_file_backed(self) -> bool:
