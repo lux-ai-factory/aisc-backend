@@ -5,7 +5,8 @@ Before helper models lived on the platform, a judge (an attacker, a grader...) w
 of the engine's AI system, its key an engine project secret. For each project, every `llm` component
 an evaluation input named `helper:<role>` points at is handed to the platform's create route with its
 decrypted key and the roles it was used for, named after the component (`-2`, `-3`... when the name is
-taken), then marked `hidden_as_helper` with the reference it moved to. The row is never deleted: the
+taken, at most NAMES_TRIED names), then marked `hidden_as_helper` with the reference it moved to. A
+live helper with the component's name as label and its endpoint counts as that component moved already. The row is never deleted: the
 runs that used it keep pointing at it and read as before. Every other `llm` component is left as it is
 and named in the output, for the user to decide. A component already moved is skipped, so a second run
 moves nothing.
@@ -32,6 +33,12 @@ HELPER_PREFIX = "helper:"
 #: The platform's helper names: lowercase letters, digits and dashes, up to 63.
 NAME_LENGTH = 63
 NOT_IN_A_NAME = re.compile(r"[^a-z0-9]+")
+#: How many names (the component's, then `-2`, `-3`...) are tried before the component is left unmoved.
+NAMES_TRIED = 50
+
+
+class NoFreeName(Exception):
+    """Every name tried is taken by a live helper of the platform project."""
 
 
 def helper_name(component_name: str, attempt: int) -> str:
@@ -111,6 +118,9 @@ class Command(BaseCommand):
             except platform_helpers.HelperRefused as exc:
                 refused.append(f"not moved {where}: {exc}")
                 continue
+            except NoFreeName:
+                refused.append(f"not moved {where}: no free helper name after {NAMES_TRIED} tries")
+                continue
             AIComponent.objects.filter(pk=component.pk).update(hidden_as_helper=ref)
             moved += 1
         return moved, left, refused
@@ -128,9 +138,10 @@ class Command(BaseCommand):
 
     @staticmethod
     def _create(platform_pid: str, component, roles: list[str], api_key: str | None) -> str:
-        """The reference of the helper made from `component`, under the first free name."""
-        attempt = 1
-        while True:
+        """The reference of the helper made from `component`, under the first free name. A live helper with
+        the component's name as label and its endpoint is answered as already made (a move whose answer
+        was lost), so a second run hides the row instead of making a `-2`."""
+        for attempt in range(1, NAMES_TRIED + 1):
             name = helper_name(component.name, attempt)
             made = platform_helpers.create_helper(
                 platform_pid, name=name, label=component.name,
@@ -138,4 +149,4 @@ class Command(BaseCommand):
                 roles=roles, api_key=api_key)
             if made is not None:
                 return made.get("ref") or f"helper:{platform_pid}/{name}"
-            attempt += 1
+        raise NoFreeName()
