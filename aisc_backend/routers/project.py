@@ -10,6 +10,7 @@ from ninja import Router, Schema, Query
 from ninja.errors import HttpError
 from pydantic import Field
 
+from aisc_backend import deployment
 from aisc_backend.audit.log import log_action
 
 from aisc_backend.models import (
@@ -126,6 +127,8 @@ async def get_project_aisystem(request, pid: uuid.UUID):
 async def create_project_component(request, pid: uuid.UUID, data: AIComponentInSchema):
     if not data.name or not data.name.strip():
         raise HttpError(400, "Component name is required")
+    if deployment.is_configurator() and data.component_type == AIComponentType.LLM:
+        raise HttpError(400, "a model a test uses as a tool is added under Manage > Helper models")
     project = await project_repository.get(pid)
     json_value = data.json_value or {}
     check_reference_of_project(json_value, project)

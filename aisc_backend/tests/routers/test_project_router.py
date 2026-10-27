@@ -1,3 +1,4 @@
+from django.test import override_settings
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
@@ -97,3 +98,31 @@ class ProjectComponentRouterTestCase(TestCase):
         self.assertEqual(200, response.status_code, response.text)
         entries = response.data["DemoPlugin"]["ds"]
         self.assertEqual(entries["component_pid"], str(dataset.pid))
+
+
+class LlmComponentByModeTestCase(TestCase):
+    """A model a test uses as a tool is a helper model of the platform when the engine runs inside the
+    configurator; standalone it is still an `llm` component."""
+    PAYLOAD = {"name": "judge", "component_type": "llm", "json_value": {"model": "gpt-x"}}
+
+    async def create(self):
+        project = await project_repository.create("p")
+        return await client.post(f"/{project.pid}/components", json=self.PAYLOAD)
+
+    @override_settings(AISC_DEPLOYMENT="configurator")
+    async def test_configurator_refuses_an_llm_component(self):
+        response = await self.create()
+        self.assertEqual(400, response.status_code)
+        self.assertIn("added under Manage > Helper models", response.json()["detail"])
+        self.assertEqual(0, await AIComponent.objects.acount())
+
+    @override_settings(AISC_DEPLOYMENT="configurator")
+    async def test_configurator_still_creates_other_components(self):
+        project = await project_repository.create("p")
+        response = await client.post(f"/{project.pid}/components", json={"name": "m", "component_type": "model"})
+        self.assertEqual(200, response.status_code)
+
+    @override_settings(AISC_DEPLOYMENT="standalone")
+    async def test_standalone_creates_an_llm_component(self):
+        response = await self.create()
+        self.assertEqual(200, response.status_code)
