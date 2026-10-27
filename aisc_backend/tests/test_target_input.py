@@ -199,8 +199,8 @@ class WhatIsAssessedComesFirst(SimpleTestCase):
         self.assertEqual(self.shown(out), [
             ("target", "What is assessed (AI card)", InputType.RESOURCE, True),
             ("prompts", "Prompts", InputType.DATASET, True),
-            ("helper:judge", "Helper model · Judge (not assessed)", InputType.LLM, True),
-            ("helper:attacker", "Helper model · Attacker (not assessed)", InputType.LLM, False)])
+            ("helper:judge", "Helper model · Judge (not assessed)", "helper", True),
+            ("helper:attacker", "Helper model · Attacker (not assessed)", "helper", False)])
 
     def test_a_card_only_plugins_helper_follows_its_other_inputs(self):
         out, _ = self.form(CardOnly)
@@ -214,10 +214,11 @@ class WhatIsAssessedComesFirst(SimpleTestCase):
             ("target", target_input.TARGET_LABEL, InputType.RESOURCE, True)])
         ensured.assert_awaited_once()
 
-    def test_a_plugin_with_a_helper_but_nothing_assessed_keeps_todays_form(self):
+    def test_a_plugin_with_a_helper_but_nothing_assessed_keeps_its_order_and_labels(self):
+        # its helper is still a helper model of the platform, never a component of the AI system
         out, _ = self.form(HelperButNothingAssessed)
         self.assertEqual(self.shown(out), [
-            ("helper:judge", "Judge model", InputType.LLM, True),
+            ("helper:judge", "Judge model", "helper", True),
             ("prompts", "Prompts", InputType.DATASET, True),
             ("target", target_input.TARGET_LABEL, InputType.RESOURCE, True)])
 

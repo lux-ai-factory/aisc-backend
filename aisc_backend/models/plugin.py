@@ -89,18 +89,32 @@ class EvaluationInput(Base):
     Points at an AIComponent that supplies the data. Only dataset/model/file
     components carry a stored artifact; other component types expose their
     input data through this same link.
+
+    In the Configurator a helper model (a judge, an attacker...) is not a
+    component of the assessed system: its input names the platform's helper
+    model instead (`helper_ref`, `helper:<platform pid>/<name>`), with the model
+    picked for the run in `value`. An input has one or the other, never both.
     """
 
     evaluation_plugin = models.ForeignKey(
         "EvaluationPlugin", related_name="evaluation_inputs", on_delete=models.CASCADE
     )
     component = models.ForeignKey(
-        "AIComponent", related_name="evaluation_inputs", on_delete=models.PROTECT
+        "AIComponent", related_name="evaluation_inputs", on_delete=models.PROTECT,
+        null=True, blank=True,
     )
+    helper_ref = models.CharField(max_length=200, null=True, blank=True)
     value = models.JSONField(blank=True, default=dict)
 
     class Meta:
         unique_together = ("evaluation_plugin", "name")
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(component__isnull=False, helper_ref__isnull=True)
+                           | models.Q(component__isnull=True, helper_ref__isnull=False)),
+                name="evaluation_input_component_or_helper_ref",
+            )
+        ]
 
 
 class EvaluationPluginStatus(models.TextChoices):

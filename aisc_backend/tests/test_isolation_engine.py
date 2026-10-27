@@ -55,8 +55,10 @@ NEW_LEAF = ("aisc_backend", "0021_engine_deployment_marker")
 #: One system target per system, on top of 0021.
 LEAF = ("aisc_backend", "0022_one_system_target_per_system")
 OUTBOX = ("aisc_backend", "0023_ledger_outbox")
-#: No stored LangBiTe configuration keeps the judge's key: the leaf, on top of the outbox.
+#: No stored LangBiTe configuration keeps the judge's key, on top of the outbox.
 JUDGE_KEYS = ("aisc_backend", "0024_drop_stored_langbite_judge_keys")
+#: A run's input names a component or a helper model of the platform: the leaf.
+HELPER_REF = ("aisc_backend", "0025_evaluation_input_helper_ref")
 
 #: These stay byte for byte as they are (their core blocks are already
 #: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (an
@@ -113,10 +115,11 @@ class TheNewMigration(SimpleTestCase):
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_the_leaf_is_0024_on_0023_on_0022_on_0021(self):
-        """The same leaf as test_one_system_per_project.py (test_0024_is_the_leaf)."""
+    def test_the_leaf_is_0025_on_0024_on_0023_on_0022_on_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_0025_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
-        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [JUDGE_KEYS])
+        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [HELPER_REF])
+        self.assertEqual({p.key for p in loader.graph.node_map[HELPER_REF].parents}, {JUDGE_KEYS})
         self.assertEqual({p.key for p in loader.graph.node_map[JUDGE_KEYS].parents}, {OUTBOX})
         self.assertEqual({p.key for p in loader.graph.node_map[OUTBOX].parents}, {LEAF})
         self.assertEqual({p.key for p in loader.graph.node_map[LEAF].parents}, {NEW_LEAF})

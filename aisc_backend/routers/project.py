@@ -52,7 +52,9 @@ measurement_repository = MeasurementRepository()
 
 
 class EvaluationInputTemplateEntrySchema(Schema):
-    component_pid: uuid.UUID
+    """A component picked for an input, or a helper model of the platform (`helper_ref`)."""
+    component_pid: uuid.UUID | None = None
+    helper_ref: str | None = None
     value: dict = Field(default_factory=dict)
 
 
@@ -194,10 +196,12 @@ async def get_project_evaluations(
     return evaluations
 
 
-@router.get("/{pid}/evaluation-inputs-template", response=dict[str, dict[str, EvaluationInputTemplateEntrySchema]])
+@router.get("/{pid}/evaluation-inputs-template", response=dict[str, dict[str, EvaluationInputTemplateEntrySchema]],
+            exclude_none=True)
 async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
     """Return the most recent evaluation's input selections per plugin, so the
-    evaluation form can prefill inputs from a previous run."""
+    evaluation form can prefill inputs from a previous run. An entry names the
+    component picked, or the helper model of the platform (`helper_ref`)."""
     project = await project_repository.get(pid)
     latest = await evaluation_repository.latest_for_project(project)
     if latest is None:
@@ -212,7 +216,8 @@ async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
         entries = template.setdefault(plugin_name, {})
         for inp in list(evaluation_plugin.evaluation_inputs.all()):
             entries[inp.name] = EvaluationInputTemplateEntrySchema(
-                component_pid=inp.component.pid,
+                component_pid=inp.component.pid if inp.component is not None else None,
+                helper_ref=inp.helper_ref,
                 value=inp.value,
             )
     return template

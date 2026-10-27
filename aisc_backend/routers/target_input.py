@@ -16,7 +16,9 @@ declares: the form lists, for each input, the project's components of that input
 target is a `resource` input (the platform's mirrors) and a local model file is the plugin's own
 `model` input (files uploaded in Settings); the other kind cannot be picked. Then come the plugin's
 other inputs, then its helper models (`helper:<role>`), labelled apart: they are never what is
-assessed. A plugin that declares nothing keeps the form as it was.
+assessed. A plugin that declares nothing keeps the form as it was. Whatever the plugin declares, a
+helper model's input has the type `helper`, so no AI System component is ever listed for it: it is
+picked among the project's helper models, which the platform keeps (routers/helper_models.py).
 
 The system target is made sure of here, so there is one to pick even before anybody has opened the
 platform's targets page: the platform finds it again by its value and renames it. Not before the
@@ -24,6 +26,7 @@ project has an AI card version, though: a project used only for the engine has n
 """
 import logging
 import uuid
+from typing import Literal
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -50,6 +53,15 @@ ASSESSED_LABELS = {
     (LOCAL_MODEL,): (None, "What is assessed (local model file)"),
     (CARD, LOCAL_MODEL): ("What is assessed: from the AI card", "What is assessed: or a local model file"),
 }
+
+
+#: the type of a helper model's input on the form: picked among the platform's helper models
+HELPER = "helper"
+
+
+class FormInputDefinition(InputDefinition):
+    """An input definition as the evaluation form reads it: a plugin's own types, or `helper`."""
+    input_type: InputType | Literal["helper"]
 
 
 def system_reference(platform_pid) -> str:
@@ -138,11 +150,23 @@ async def _ensure_system_target_quietly() -> None:
         logger.exception("the system target of this project could not be made sure of")
 
 
-@router.get("/{plugin_pid}/input_definitions", response=list[InputDefinition])
+def _for_the_form(definitions: list[InputDefinition]) -> list[FormInputDefinition]:
+    """The definitions with every helper model's input typed `helper`, whatever type the plugin gave it."""
+    return [FormInputDefinition(**{**d.model_dump(),
+                                   **({"input_type": HELPER} if d.name.startswith(HELPER_INPUT_PREFIX) else {})})
+            for d in definitions]
+
+
+@router.get("/{plugin_pid}/input_definitions", response=list[FormInputDefinition])
 async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
     definitions = list(await upstream_input_definitions(request, plugin_pid))
     if not _configurator():
         return definitions
+    return _for_the_form(await _arranged(definitions, plugin_pid))
+
+
+async def _arranged(definitions: list[InputDefinition], plugin_pid: uuid.UUID) -> list[InputDefinition]:
+    """The plugin's inputs in the configurator's order: what is assessed first, its helper models last."""
     plugin = await loaded_plugin(plugin_pid)
     kinds = target_kinds_of(plugin)
     if kinds:

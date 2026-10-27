@@ -11,6 +11,7 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from aisc_backend import platform_helpers
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -39,6 +40,7 @@ from aisc_backend.routers.plugin import plugin_loader
 from aisc_backend.routers.target_input import CARD, LOCAL_MODEL, TARGET, _configurator
 from aisc_backend.services.project_config_matching import validate_plugin_settings
 from aisc_plugin_interface import card_needs_connection, target_kinds_of
+from aisc_plugin_interface.helpers import HELPER_INPUT_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +56,12 @@ evaluation_plugin_repository = EvaluationPluginRepository()
 
 
 class EvaluationPluginInputInSchema(Schema):
-    pid: uuid.UUID
+    """One input of a run: a component of the AI system (`pid`), or, in the Configurator, for a
+    helper model's input (`helper:<role>`), one of the platform's helper models (`helper_ref`)."""
+    pid: uuid.UUID | None = None
     name: str
     value: dict | None = None
+    helper_ref: str | None = None
 
 
 class EvaluationPluginInSchema(Schema):
@@ -156,6 +161,50 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
     return None
 
 
+FROM_MANAGE = "a helper model is picked from Manage > Helper models, not from the AI system's components"
+
+
+async def _bound_helpers(plugin_row, inputs, project) -> dict[str, tuple[str, dict]]:
+    """The run's helper models, by input name: (reference, value to store), checked before anything is
+    stored. In the Configurator a helper model's input (`helper:<role>`) names one of the project's
+    helper models on the platform, allowed for that role, and the model picked for the run; it never
+    names a component, and no other input names a helper model. Standalone has no platform helper
+    models: every input names a component, as before."""
+    configurator = _configurator()
+    bound = {}
+    for input_data in inputs or []:
+        name = input_data.name
+        if not (configurator and name.startswith(HELPER_INPUT_PREFIX)):
+            if input_data.helper_ref is not None:
+                reason = ("only a helper model's input names a helper model" if configurator
+                          else "this engine has no helper models of the platform: pick a component")
+                raise HttpError(400, f"{plugin_row.display_name}: {name}: {reason}")
+            if input_data.pid is None:
+                raise HttpError(400, f"{plugin_row.display_name}: {name}: pick a component")
+            continue
+        if input_data.pid is not None:
+            raise HttpError(400, f"{plugin_row.display_name}: {name}: {FROM_MANAGE}")
+        role, ref = name[len(HELPER_INPUT_PREFIX):], input_data.helper_ref
+        if not ref:
+            raise HttpError(400, f"{plugin_row.display_name}: {name}: pick one of the project's helper models")
+        if project.platform_project_id is None or not ref.startswith(f"helper:{project.platform_project_id}/"):
+            raise HttpError(400, f"{plugin_row.display_name}: {ref} is not a helper model of this project")
+        model = (input_data.value or {}).get("model")
+        if not isinstance(model, str) or not model.strip():
+            raise HttpError(400, f"{plugin_row.display_name}: {name}: name the model the helper model runs")
+        try:
+            helpers = await sync_to_async(platform_helpers.list_helpers, thread_sensitive=False)(
+                str(project.platform_project_id), role)
+        except platform_helpers.HelpersUnavailable as exc:
+            raise HttpError(503, f"{plugin_row.display_name}: {exc.message}")
+        helper = next((h for h in helpers if h.get("ref") == ref and role in (h.get("roles") or ())), None)
+        if helper is None:
+            raise HttpError(400, f"{plugin_row.display_name}: {ref} is not one of this project's helper models"
+                                 f" for the role {role}")
+        bound[name] = (ref, {"model": model.strip(), "label": helper.get("label") or ""})
+    return bound
+
+
 async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> None:
     pairs = []
     for input_data in inputs or []:
@@ -193,7 +242,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
     # Resolve and validate plugins before writing anything to DB
-    resolved: list[tuple[EvaluationPluginInSchema, object, object]] = []
+    resolved: list[tuple[EvaluationPluginInSchema, object, object, dict]] = []
     validation_errors = {"missing": [], "invalid": [], "ambiguous": []}
     for plugin_to_run in data.plugins_to_run:
         plugin = next(
@@ -205,6 +254,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
             plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
             _refuse_a_sent_local_marker(plugin, plugin_to_run.inputs)
+            helpers = await _bound_helpers(plugin, plugin_to_run.inputs, project)
             if _configurator():
                 await _refuse_what_was_not_declared(plugin, plugin_obj, plugin_to_run.inputs, project)
             selected_settings = [
@@ -217,7 +267,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             )
             for key in validation_errors:
                 validation_errors[key].extend(setting_errors[key])
-            resolved.append((plugin_to_run, plugin.current_config, plugin_obj))
+            resolved.append((plugin_to_run, plugin.current_config, plugin_obj, helpers))
         else:
             raise HttpError(400, f"Plugin {plugin_to_run.name} is not enabled for this project")
 
@@ -228,7 +278,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
-    for plugin_to_run, plugin_config, plugin_obj in resolved:
+    for plugin_to_run, plugin_config, plugin_obj, helpers in resolved:
         run_plugin = EvaluationPlugin(
             plugin_config=plugin_config, evaluation=evaluation
         )
@@ -237,6 +287,11 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
         # Link the input components
         if plugin_to_run.inputs:
             for input_data in plugin_to_run.inputs:
+                if input_data.name in helpers:
+                    helper_ref, value = helpers[input_data.name]
+                    await EvaluationInput(evaluation_plugin=run_plugin, name=input_data.name, component=None,
+                                          helper_ref=helper_ref, value=value).asave()
+                    continue
                 component = await ai_component_repository.get(input_data.pid)
                 if not component:
                     raise HttpError(400, f"Component {input_data.pid} not found")

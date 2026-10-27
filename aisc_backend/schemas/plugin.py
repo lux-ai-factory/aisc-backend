@@ -9,14 +9,17 @@ from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 
 
 class EvaluationInputOutSchema(Schema):
+    """A run's input: a component of the AI system, or a helper model of the platform (input_type
+    "helper", `helper_ref`, no component)."""
     name: str
     input_type: str
-    input_file: AIComponentOutSchema
+    input_file: AIComponentOutSchema | None = None
+    helper_ref: str | None = None
     value: dict = Field(default={})
 
     @staticmethod
     def resolve_input_type(obj):
-        return obj.component.component_type
+        return "helper" if obj.component is None else obj.component.component_type
 
     @staticmethod
     def resolve_input_file(obj):

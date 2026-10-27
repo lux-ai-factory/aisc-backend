@@ -82,7 +82,7 @@ class EvaluationPluginInputSchema(Schema):
     name: str
     component_type: str
     component_name: str = ""
-    data: str
+    data: str | None = None
     json_value: dict[str, Any] = Field(default_factory=dict)
     value: dict[str, Any] = Field(default_factory=dict)
     endpoint_url: str | None = None
@@ -92,6 +92,9 @@ class EvaluationPluginInputSchema(Schema):
     #: None, with local_model_unknown, for a model file of a plugin the backend could not load
     local_model: bool | None = False
     local_model_unknown: bool = False
+    #: a helper model of the platform (`helper:<platform pid>/<name>`), with component_type "helper"
+    #: and no component: the worker resolves its endpoint and key with the platform
+    helper_ref: str | None = None
 
 
 class PluginsStatusResponse(Schema):
@@ -157,7 +160,8 @@ async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: st
 @router.get("/evaluations/{evaluation_pid}/inputs", response=dict[str, list[EvaluationPluginInputSchema]])
 async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
     """Fetch the component input data (including decrypted secrets) for a
-    worker to bind each evaluation plugin's inputs to the derived components."""
+    worker to bind each evaluation plugin's inputs to the derived components.
+    A helper model of the platform is handed by reference, with no component."""
     try:
         evaluation = await evaluation_repository.get_with_plugin_inputs(evaluation_pid)
     except Evaluation.DoesNotExist:
@@ -168,6 +172,11 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
         local_model_input = await _local_model_input(evaluation_plugin.pid)
         entries = []
         for inp in list(evaluation_plugin.evaluation_inputs.all()):
+            if inp.helper_ref is not None:
+                entries.append(EvaluationPluginInputSchema(
+                    pid=inp.pid, name=inp.name, component_type="helper", helper_ref=inp.helper_ref,
+                    value=inp.value))
+                continue
             component = inp.component
             config = (
                 LLMConfig.model_validate(component.json_value or {})

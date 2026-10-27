@@ -583,6 +583,7 @@ ROUTES = [
     ("POST", "/api/v1/projects/{pid}/models", {"name": "x"}, "user"),
     ("GET", "/api/v1/projects/{pid}/evaluations", None, "user"),
     ("GET", "/api/v1/projects/{pid}/evaluation-inputs-template", None, "user"),
+    ("GET", "/api/v1/projects/{pid}/helpers", None, "user"),
     ("GET", "/api/v1/projects/{pid}/plugins/{plugin_name}/config", None, "user"),
     ("POST", "/api/v1/projects/{pid}/measurements/aggregate", {}, "user"),
     ("GET", "/api/v1/projects/{pid}/measurements/dimension-keys", None, "user"),

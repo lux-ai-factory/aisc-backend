@@ -47,7 +47,7 @@ EVALUATION_PLUGIN_KEYS = {
     "evaluation_inputs", "finished_at", "name", "package_name", "plugin_config", "plugin_pid",
     "started_at", "status", "version",
 }
-EVALUATION_INPUT_KEYS = {"name", "input_type", "input_file", "value"}
+EVALUATION_INPUT_KEYS = {"name", "input_type", "input_file", "helper_ref", "value"}
 
 INCLUDE_QUERIES = ["", "?include=plugin", "?include=project,plugin", "?include=project,dataset,model,datashape,plugin"]
 NOT_FOUND_BODY = {"detail": "Evaluation not found"}
