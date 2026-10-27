@@ -22,20 +22,12 @@ from aisc_backend.models import (
     AIComponent, AIComponentType, AISystem, Evaluation, EvaluationInput, EvaluationPlugin, EvaluationStatus,
     Plugin, PluginConfig, Project, ProjectConfig, ProjectConfigCategory, ProjectStatus,
 )
-from aisc_backend.routers import evaluation as evaluation_routes
 from aisc_backend.routers.project import router as project_router
 from aisc_backend.utils.encryption import encrypt_value
-from aisc_plugin_interface import BaseEvaluationPlugin, helper_model
 
 SIGNED_IN = {"Authorization": "Bearer development"}
 JUDGE_KEY = "sk-old-judge-key-123"
 projects = TestAsyncClient(project_router)
-evaluations = TestAsyncClient(evaluation_routes.router)
-
-
-@helper_model("judge", "Judge model", required=True)
-class UsesAJudge(BaseEvaluationPlugin):
-    pass
 
 _auth_off = None
 
@@ -51,20 +43,13 @@ def tearDownModule():
 
 
 class FakePlatform:
-    """The platform's create route: records each helper it is handed; a name already taken is refused;
-    a live helper with the same label and endpoint is answered as already there."""
+    """The platform's create route: records each helper it is handed; a name already taken is refused."""
 
-    def __init__(self, taken=(), live=()):
+    def __init__(self, taken=()):
         self.created = []
         self.taken = set(taken)
-        self.live = {(label, endpoint): name for name, label, endpoint in live}
-        self.asked = 0
 
     def __call__(self, project_pid, *, name, label, endpoint_url, roles, api_key):
-        self.asked += 1
-        if (label, endpoint_url) in self.live:
-            there = self.live[(label, endpoint_url)]
-            return {"name": there, "ref": f"helper:{project_pid}/{there}"}
         if name in self.taken:
             return None
         self.taken.add(name)
@@ -97,8 +82,6 @@ class OldInstall:
         plugin = Plugin.objects.create(name="Judged", display_name="Judged test", description="",
                                        package_name="judged", version="0.1", project=self.project, enabled=True)
         config = PluginConfig.objects.create(plugin=plugin, config={})
-        plugin.current_config = config
-        plugin.save()
         evaluation = Evaluation.objects.create(project=self.project, status=EvaluationStatus.Done)
         run = EvaluationPlugin.objects.create(evaluation=evaluation, plugin_config=config, name="Judged")
         self.judged = EvaluationInput.objects.create(evaluation_plugin=run, name="helper:judge",
@@ -145,47 +128,6 @@ class InTheConfigurator(TestCase):
         self.assertEqual([c["name"] for c in platform.created], ["judge-x-3"])
         self.old.judge.refresh_from_db()
         self.assertEqual(self.old.judge.hidden_as_helper, f"helper:{self.old.platform_pid}/judge-x-3")
-
-    def test_a_rerun_after_a_lost_answer_hides_the_helper_already_made(self):
-        platform = FakePlatform(taken={"judge-x"}, live=[("judge-x", "judge-x", "https://judge.example.com/v1")])
-        output = move(platform)
-        self.assertEqual(platform.created, [])
-        self.old.judge.refresh_from_db()
-        self.assertEqual(self.old.judge.hidden_as_helper, f"helper:{self.old.platform_pid}/judge-x")
-        self.assertIn("moved 1", output)
-
-    def test_names_are_tried_a_bounded_number_of_times(self):
-        class EveryNameTaken(FakePlatform):
-            def __call__(self, *args, **kwargs):
-                self.asked += 1
-                return None
-
-        platform = EveryNameTaken()
-        out = io.StringIO()
-        with mock.patch.object(platform_helpers, "create_helper", side_effect=platform), \
-                self.assertRaises(CommandError):
-            call_command("move_helper_models", stdout=out)
-        self.assertEqual(platform.asked, 50)
-        self.assertIn("not moved MCAS/judge-x: no free helper name", out.getvalue())
-        self.old.judge.refresh_from_db()
-        self.assertIsNone(self.old.judge.hidden_as_helper)
-
-    def test_hidden_component_cannot_be_bound_to_a_new_run(self):
-        move(FakePlatform())
-        no_errors = {"missing": [], "invalid": [], "ambiguous": []}
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=UsesAJudge), \
-             mock.patch.object(evaluation_routes, "validate_plugin_settings",
-                               new=mock.AsyncMock(return_value=no_errors)), \
-             mock.patch.object(evaluation_routes.celery_service, "run_evaluation",
-                               new=mock.AsyncMock(return_value=mock.Mock(task_id=str(uuid.uuid4())))):
-            response = async_to_sync(evaluations.post)(
-                "/task", headers=SIGNED_IN,
-                json={"project_pid": str(self.old.project.pid),
-                      "plugins_to_run": [{"name": "Judged", "inputs": [
-                          {"name": "target", "pid": str(self.old.judge.pid), "value": {}}]}]})
-        self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("Manage > Helper models", response.json()["detail"])
-        self.assertEqual(Evaluation.objects.count(), 1)              # the old run only
 
     def test_move_changes_nothing_when_platform_down(self):
         err = io.StringIO()

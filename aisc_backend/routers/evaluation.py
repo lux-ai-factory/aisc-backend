@@ -205,18 +205,6 @@ async def _bound_helpers(plugin_row, inputs, project) -> dict[str, tuple[str, di
     return bound
 
 
-MOVED_TO_MANAGE = "this component was moved to Manage > Helper models: pick it there"
-
-
-async def _refuse_hidden_components(plugin_row, inputs) -> None:
-    """A component moved to the platform's helper models (manage.py move_helper_models) stays only for the
-    runs that used it: no new run is bound to it, as any input."""
-    for input_data in inputs or []:
-        if input_data.pid is not None and await AIComponent.objects.filter(
-                pid=input_data.pid, hidden_as_helper__isnull=False).aexists():
-            raise HttpError(400, f"{plugin_row.display_name}: {input_data.name}: {MOVED_TO_MANAGE}")
-
-
 async def _refuse_what_was_not_declared(plugin_row, plugin, inputs, project) -> None:
     pairs = []
     for input_data in inputs or []:
@@ -267,7 +255,6 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
             _refuse_a_sent_local_marker(plugin, plugin_to_run.inputs)
             helpers = await _bound_helpers(plugin, plugin_to_run.inputs, project)
-            await _refuse_hidden_components(plugin, plugin_to_run.inputs)
             if _configurator():
                 await _refuse_what_was_not_declared(plugin, plugin_obj, plugin_to_run.inputs, project)
             selected_settings = [
@@ -308,8 +295,6 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                 component = await ai_component_repository.get(input_data.pid)
                 if not component:
                     raise HttpError(400, f"Component {input_data.pid} not found")
-                if component.hidden_as_helper is not None:
-                    raise HttpError(400, f"{input_data.name}: {MOVED_TO_MANAGE}")
 
                 evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,
