@@ -1,7 +1,7 @@
 """
 Keycloak token verification for the backend.
 
-THREE pieces (you write the bodies — reference: keycloak/verify_token.py, the proven spike):
+THREE pieces:
   1. verify_token(token) -> dict   : framework-agnostic core. The future "parent" — if eval (or
                                      any other Python service) ever needs this, lift THIS function
                                      into shared/ and the ninja class below keeps working unchanged.
