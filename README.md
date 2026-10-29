@@ -151,9 +151,9 @@ the database of a running stack (port 5432).
 
 ---
 
-## Changes on feat/unified-modules
+## Changes on pilot
 
-`feat/unified-modules` is the branch the Configurator uses. Compared with `origin/master`, it adds
+`pilot` is the branch the Configurator uses. Compared with `origin/master`, it adds
 what the configurator mode needs and leaves standalone behaviour as on master. The
 engine is not held to `origin/master`: the list below is what the branch changes.
 
