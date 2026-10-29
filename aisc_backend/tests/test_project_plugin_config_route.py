@@ -207,7 +207,8 @@ class FormState(_Base):
         res = await self._state(plugin)
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["config"], {"threshold": 0.5})
-        self.assertEqual(res.json()["secret_fields"], ["model_credential"])
+        self.assertEqual(res.json()["uiSchema"]["model_credential"]["ui:widget"], "password")
+        self.assertNotIn("secret_fields", res.json())
         self.assertNotIn(CRED, res.text)
 
     async def test_an_old_row_holding_the_key_in_clear_does_not_hand_it_to_the_form(self):

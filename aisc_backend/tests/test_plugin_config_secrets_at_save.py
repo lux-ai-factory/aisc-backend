@@ -133,7 +133,7 @@ class SecretsAtSave(Recording):
         self.assertEqual(await mappings(row.id), {"config.model_credential": secret.id})
 
         body = res.json()
-        self.assertEqual(body["secret_fields"], ["model_credential"])
+        self.assertNotIn("secret_fields", body)
         self.assertNotIn("model_credential", body["config"])
         self.assertEqual(body["uiSchema"]["model_credential"], {
             "ui:widget": "password",
@@ -169,13 +169,13 @@ class SecretsAtSave(Recording):
         row = await PluginConfig.objects.aget(pk=res.json()["plugin_config_id"])
         self.assertEqual(row.config, {"threshold": 0.7, "model_credential": ""})
         self.assertEqual(await mappings(row.id), {"config.model_credential": secret.id})
-        self.assertEqual(res.json()["secret_fields"], ["model_credential"])
+        self.assertEqual(res.json()["uiSchema"]["model_credential"], hint("demoa_model_credential"))
 
         res = await self._saved(self.pid, {"threshold": 0.8})
         row = await PluginConfig.objects.aget(pk=res.json()["plugin_config_id"])
         self.assertEqual(row.config, {"threshold": 0.8})
         self.assertEqual(await mappings(row.id), {"config.model_credential": secret.id})
-        self.assertEqual(res.json()["secret_fields"], ["model_credential"])
+        self.assertEqual(res.json()["uiSchema"]["model_credential"], hint("demoa_model_credential"))
 
     async def test_a_new_key_replaces_the_secrets_value(self):
         await self._first_save()
@@ -229,14 +229,12 @@ class SecretsAtSave(Recording):
             res = await self.plugins.get(f"/{self.pid}/config/state")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["config"], {"threshold": 0.5})
-        self.assertEqual(res.json()["secret_fields"], ["model_credential"])
         self.assertEqual(res.json()["uiSchema"]["model_credential"], hint("demoa_model_credential"))
 
         rows, before = await PluginConfig.objects.acount(), await events()
         with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
             res = await self.plugins.post(f"/{self.pid}/config/state", json={"config": {"threshold": 0.6}})
         self.assertEqual(res.status_code, 200, res.text)
-        self.assertEqual(res.json()["secret_fields"], ["model_credential"])
         self.assertEqual(res.json()["uiSchema"]["model_credential"], hint("demoa_model_credential"))
         self.assertEqual(await PluginConfig.objects.acount(), rows)
         self.assertEqual(await events(), before)
@@ -288,8 +286,8 @@ class SecretsAtSave(Recording):
                                 _UnreadableSchemaPlugin)
         row = await PluginConfig.objects.aget(pk=res.json()["plugin_config_id"])
         self.assertEqual(row.config, {"auth_header": "header-value-3"})
-        self.assertEqual(res.json()["secret_fields"], ["judge_api_key"])
         secret = await self._only_secret()
+        self.assertEqual(res.json()["uiSchema"]["judge_api_key"], hint(secret.key))
         self.assertEqual(decrypt_value(secret.encrypted_value), "sk-judge-0123456789abcdefgh")
 
     # Restoring and deleting
@@ -332,7 +330,6 @@ class SecretsAtSave(Recording):
         with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
             res = await self.plugins.get(f"/{self.pid}/config/state")
         self.assertEqual(res.status_code, 200, res.text)
-        self.assertEqual(res.json()["secret_fields"], [])
         self.assertNotIn("ui:help", res.json()["uiSchema"].get("model_credential", {}))
 
     # The worker

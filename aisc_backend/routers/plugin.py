@@ -211,7 +211,6 @@ class PluginConfigStateResponse(Schema):
     project_config_selections: list[ProjectConfigSelectionSchema] = []
     project_configs: list[ProjectConfigOptionSchema] = []
     description: str = ""
-    secret_fields: list[str] = []
 
 
 class PackageAvailableSchema(Schema):
@@ -557,7 +556,6 @@ async def update_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=_hinted(ui_schema, kept),
-        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         project_config_selections=selections,
         project_configs=[
@@ -585,7 +583,6 @@ async def preview_plugin_config_state(
 
     response = PluginConfigStateResponse(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=_hinted(ui_schema, kept),
-        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         project_config_selections=data.project_config_selections,
         project_configs=[
@@ -673,7 +670,6 @@ async def get_project_plugin_config_state(
         config=config,
         formSchema=schema,
         uiSchema=_hinted(ui_schema, kept),
-        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         project_config_selections=current_setting_selections,
         project_configs=[
@@ -712,7 +708,6 @@ async def parse_plugin_config_state_from_dataset(
 
     response = PluginConfigStateResponse(
         plugin_config_id=None, config=config, formSchema=schema, uiSchema=_hinted(ui_schema, kept),
-        secret_fields=sorted(kept),
         project_config_definitions=[definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions],
         description=plugin_obj.help_text,
     )

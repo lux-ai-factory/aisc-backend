@@ -53,7 +53,6 @@ class OldKeyKeptOnSave(Recording):
         self.assertEqual(decrypt_value(secret.encrypted_value), value)
         row = await self._new_row(res)
         self.assertEqual(await mappings(row.id), {f"config.{path}": secret.id})
-        self.assertEqual(res.json()["secret_fields"], [path])
         self.assertEqual(res.json()["uiSchema"][path], hint(key))
         self.assertNotIn(value, res.text)
         return secret, row
@@ -106,7 +105,7 @@ class OldKeyKeptOnSave(Recording):
         await self._old_row({"threshold": 0.5, "model_credential": CRED}, _AdoptedPlugin)
         res = await self._saved(self.pid, {"threshold": 0.7}, _AdoptedPlugin)
         self.assertEqual(await secrets(), [])
-        self.assertEqual(res.json()["secret_fields"], [])
+        self.assertNotIn("ui:help", res.json()["uiSchema"].get("model_credential", {}))
 
     async def test_an_object_under_a_key_name_is_not_carried(self):
         await self._old_row({"model_credential": {"k": CRED}})
