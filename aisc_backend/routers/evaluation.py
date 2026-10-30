@@ -66,6 +66,8 @@ class EvaluationPluginInputInSchema(Schema):
 
 class EvaluationPluginInSchema(Schema):
     name: str
+    #: the plugin's package: two packages may ship a plugin of the same name (a copy of a test)
+    package_name: str | None = None
     inputs: list[EvaluationPluginInputInSchema] | None = None
 
 
@@ -237,18 +239,41 @@ def _local_marker(plugin, input_name: str, component) -> dict | None:
     return {"local_model": {"file": component.name}}
 
 
+def _plugin_to_run(project, wanted: EvaluationPluginInSchema):
+    """The enabled plugin a run names: by package and name, or by name alone when only one plugin has it.
+    A name several packages ship, sent without its package, is refused rather than guessed."""
+    same_name = [p for p in project.get_enabled_plugins() if p.name == wanted.name]
+    if wanted.package_name is not None:
+        found = next((p for p in same_name if p.package_name == wanted.package_name), None)
+        if found is None:
+            raise HttpError(400, f"Plugin {wanted.name} of {wanted.package_name} is not enabled for this project")
+        return found
+    if len(same_name) > 1:
+        packages = ", ".join(sorted({p.package_name for p in same_name}))
+        raise HttpError(400, f"Several plugins are named {wanted.name} ({packages}): the run must name the package")
+    if not same_name:
+        raise HttpError(400, f"Plugin {wanted.name} is not enabled for this project")
+    return same_name[0]
+
+
 @router.post("/task", response=EvaluationOutSchema)
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
+    try:
+        return await _create_evaluation_task(request, data)
+    except HttpError as exc:
+        # the page shows the reason once; the log keeps it, so a refused launch can be explained afterwards
+        logger.warning("launch refused (%s): %s", exc.status_code, exc.message)
+        raise
+
+
+async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
     # Resolve and validate plugins before writing anything to DB
     resolved: list[tuple[EvaluationPluginInSchema, object, object, dict]] = []
     validation_errors = {"missing": [], "invalid": [], "ambiguous": []}
     for plugin_to_run in data.plugins_to_run:
-        plugin = next(
-            (p for p in project.get_enabled_plugins() if p.name == plugin_to_run.name),
-            None,
-        )
+        plugin = _plugin_to_run(project, plugin_to_run)
         if plugin:
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
@@ -268,8 +293,6 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             for key in validation_errors:
                 validation_errors[key].extend(setting_errors[key])
             resolved.append((plugin_to_run, plugin.current_config, plugin_obj, helpers))
-        else:
-            raise HttpError(400, f"Plugin {plugin_to_run.name} is not enabled for this project")
 
     if any(validation_errors.values()):
         raise HttpError(400, format_validation_error({"message": "Required project settings are missing or invalid", **validation_errors}))
