@@ -46,11 +46,13 @@ def _kind(config) -> str:
 
 
 @receiver(pre_save, dispatch_uid="aisc_ledger_before")
-def keep_what_the_row_was(sender, instance, raw=False, using=None, **kwargs):
+def keep_what_the_row_was(sender, instance, raw=False, using=None, update_fields=None, **kwargs):
     if sender not in _FIELDS or instance._state.adding or instance.pk is None or not _recording(raw):
         return
-    instance._ledger_before = (sender.objects.using(using).filter(pk=instance.pk)
-                               .values(*_FIELDS[sender]).first())
+    # a save of named fields changes only those: the others' stale values on the instance are not a change
+    fields = [field for field in _FIELDS[sender] if update_fields is None or field in update_fields]
+    instance._ledger_before = (sender.objects.using(using).filter(pk=instance.pk).values(*fields).first()
+                               if fields else None)
 
 
 @receiver(post_save, sender=Project, dispatch_uid="aisc_ledger_project")

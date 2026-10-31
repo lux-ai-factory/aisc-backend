@@ -274,6 +274,17 @@ class Runs(Recording):
         self.assertRunEvent(running, "engine.evaluation.status_changed", "evaluation", self.evaluation.pid,
                             {"status_before": "Pending", "status_after": "Processing"})
 
+    async def test_saving_only_the_task_id_records_no_status_change(self):
+        from aisc_backend.models import Evaluation, EvaluationStatus
+
+        await self._start()
+        # the worker moved the run on; the launch route's copy of the row still says Pending
+        with unrecorded():
+            await Evaluation.objects.filter(pk=self.evaluation.pk).aupdate(status=EvaluationStatus.Processing)
+        self.evaluation.task = "00000000-0000-4000-8000-000000000009"
+        await self.evaluation.asave(update_fields=["task"])
+        self.assertEqual([event["action"] for event in await events()], ["engine.evaluation.run_requested"])
+
     async def test_a_failed_plugin_fails_its_evaluation(self):
         await self._start()
         res = await self._as_the_worker("patch", f"/evaluations/{self.evaluation.pid}/plugins/"

@@ -19,6 +19,7 @@ from aisc_backend.models.metric import Metric
 
 from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
 from aisc_backend.repositories import file_repository
+from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
@@ -48,7 +49,7 @@ router = Router(tags=["evaluation"])
 
 evaluation_repository = EvaluationRepository()
 project_repository = ProjectRepository()
-ai_component_repository = BaseRepository(model=AIComponent)
+ai_component_repository = AIComponentRepository()
 observation_repository = BaseRepository(model=Observation)
 measurement_repository = MeasurementRepository()
 metric_repository = BaseRepository(model=Metric)
@@ -270,7 +271,7 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
 
     # Resolve and validate plugins before writing anything to DB
-    resolved: list[tuple[EvaluationPluginInSchema, object, object, dict]] = []
+    resolved: list[tuple[object, object, dict, list]] = []
     validation_errors = {"missing": [], "invalid": [], "ambiguous": []}
     for plugin_to_run in data.plugins_to_run:
         plugin = _plugin_to_run(project, plugin_to_run)
@@ -292,7 +293,16 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
             )
             for key in validation_errors:
                 validation_errors[key].extend(setting_errors[key])
-            resolved.append((plugin_to_run, plugin.current_config, plugin_obj, helpers))
+            # every input's component is found before anything is stored, so a refused launch leaves nothing
+            inputs = []
+            for input_data in plugin_to_run.inputs or []:
+                component = None
+                if input_data.name not in helpers:
+                    component = await ai_component_repository.get(input_data.pid)
+                    if not component:
+                        raise HttpError(400, f"Component {input_data.pid} not found")
+                inputs.append((input_data, component))
+            resolved.append((plugin.current_config, plugin_obj, helpers, inputs))
 
     if any(validation_errors.values()):
         raise HttpError(400, format_validation_error({"message": "Required project settings are missing or invalid", **validation_errors}))
@@ -301,38 +311,35 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
-    for plugin_to_run, plugin_config, plugin_obj, helpers in resolved:
+    for plugin_config, plugin_obj, helpers, inputs in resolved:
         run_plugin = EvaluationPlugin(
             plugin_config=plugin_config, evaluation=evaluation
         )
         run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
         # Link the input components
-        if plugin_to_run.inputs:
-            for input_data in plugin_to_run.inputs:
-                if input_data.name in helpers:
-                    helper_ref, value = helpers[input_data.name]
-                    await EvaluationInput(evaluation_plugin=run_plugin, name=input_data.name, component=None,
-                                          helper_ref=helper_ref, value=value).asave()
-                    continue
-                component = await ai_component_repository.get(input_data.pid)
-                if not component:
-                    raise HttpError(400, f"Component {input_data.pid} not found")
+        for input_data, component in inputs:
+            if input_data.name in helpers:
+                helper_ref, value = helpers[input_data.name]
+                await EvaluationInput(evaluation_plugin=run_plugin, name=input_data.name, component=None,
+                                      helper_ref=helper_ref, value=value).asave()
+                continue
 
-                evaluation_input = EvaluationInput(
-                    evaluation_plugin=run_plugin,
-                    name=input_data.name,
-                    component=component,
-                    value=_local_marker(plugin_obj, input_data.name, component) or input_data.value or {},
-                )
-                await evaluation_input.asave()
+            evaluation_input = EvaluationInput(
+                evaluation_plugin=run_plugin,
+                name=input_data.name,
+                component=component,
+                value=_local_marker(plugin_obj, input_data.name, component) or input_data.value or {},
+            )
+            await evaluation_input.asave()
 
         evaluation_plugins.append(run_plugin)
 
     evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
 
+    # only the task id: the worker may already have moved the evaluation on from the Pending this copy holds
     evaluation.task = evaluation_plugins_task.task_id
-    await evaluation_repository.save(evaluation)
+    await evaluation.asave(update_fields=["task"])
 
     # AUDIT: who ran which evaluation, on which project, with which plugins (the core webapp action)
     await sync_to_async(log_action)(
