@@ -224,8 +224,8 @@ below is what the branch changes.
   version an evaluation is stamped with, the latest when it is created, set by
   `aisc_backend/signals/system_stamp.py` and never changed); `project.platform_project_id` (one engine project per
   platform project); the removal of the login tables in configurator mode; the `engine_deployment` marker table
-  (0021); one system target per system (0022); the ledger outbox (0023); the removal of stored LangBiTe judge keys
-  (0024); and `evaluationinput.helper_ref` (0025), so that a run's input names either a component or a helper
+  (0021); one system target per system (0022); the ledger outbox (0023); 0024, which once removed stored LangBiTe
+  judge keys and now changes nothing (it stays for history); and `evaluationinput.helper_ref` (0025), so that a run's input names either a component or a helper
   model (`helper:<platform pid>/<name>`).
 - **Routes mounted in configurator mode only**:
   - `POST /api/v1/projects/for-platform/{id}`: the engine's project for a platform project, made on first visit;
@@ -251,11 +251,12 @@ below is what the branch changes.
   an outbox in the project's database (`aisc_backend/ledger.py`, `signals/ledger.py`) in the change's own
   transaction; `manage.py deliver_ledger_events` sends it to the platform (the `aisc-backend-ledger` service). A
   request id is kept only on a request the gateway sent.
-- **Stored LangBiTe judge keys**: migration 0024 removes `judge_api_key` and `judge_model` from
-  stored LangBiTe configurations. The form that saved them in plain text does not have them any more and could not
-  clear them: the judge is a helper model picked in the run form. `manage.py clean_old_secrets count|apply`
-  (run by the root's `scripts/clean-old-secrets.sh`) masks or drops plugin secrets stored in clear and lists the
-  keys to rotate.
+- **Stored LangBiTe judge keys**: `manage.py clean_old_secrets apply` (run by the root's
+  `scripts/clean-old-secrets.sh --apply`) removes `judge_api_key` and `judge_model` from stored LangBiTe
+  configurations, behind the cleanup's backup and dry run. Migration 0024 once did this on upgrade; it now changes
+  nothing and stays in the chain for history. The form that saved them in plain text does not have them any more
+  and could not clear them: the judge is a helper model picked in the run form. `manage.py clean_old_secrets
+  count|apply` also masks or drops other plugin secrets stored in clear and lists the keys to rotate.
 - **Audit log**: `audit/clerk.py` logs in to immudb again when immudb has ended its login.
 - **Tests** for all of the above under `aisc_backend/tests/`, including a check that the table
   names stay master's.
