@@ -189,9 +189,11 @@ class AuditClerk:
 
     def verify(self) -> bool:
         """
-        Tamper-check the ledger: verifiedSet a sentinel then verifiedGet it. The SDK validates the
-        server's cryptographic proof against the saved state — if the server tampered, this raises/fails.
-        Returns True iff the cryptographic verification passes.
+        Check a probe key against this process's last seen state: verifiedSet a sentinel, then verifiedGet it.
+        The SDK checks the server's proof against the state this client last saw, which it keeps in memory
+        only: it starts empty at each process start and each new login, when it takes the server's own state on
+        trust. So True means the server's answers agree with each other since then; it is not a proof that the
+        audit_log rows were never changed. Returns True iff the verification passes.
         """
         def probe(client):
             client.verifiedSet(b"audit:_integrity_probe", b"ok")

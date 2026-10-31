@@ -49,9 +49,10 @@ def post_audit(request, event: AuditEventIn):
 @router.get("", auth=require_role("admin"))
 def list_audit(request, limit: int = 100):
     """
-    ADMIN-ONLY: read + verify the tamper-proof audit log.
-    Returns the newest events plus `verified` — the cryptographic proof (VerifiedGet) that the ledger
-    was not tampered with. Gated by require_role("admin") (same as /me/admin) -> non-admins get 401/403.
+    ADMIN-ONLY: read the audit log.
+    Returns the newest events plus `verified`: whether a probe key verifies (VerifiedGet) against the state
+    this process last saw, kept in memory since its start or its last login. It is not a proof that the
+    log's rows were never changed. Gated by require_role("admin") (same as /me/admin) -> non-admins get 401/403.
     Reusing the Keycloak role gating: WRITING events is open to any authenticated caller; READING/VERIFYING
     the ledger is admin-only.
     """
