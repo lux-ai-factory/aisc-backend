@@ -25,10 +25,10 @@ class Evaluation(CreatedAtModel):
 
     task = models.UUIDField(default=None, null=True, blank=True)
 
-    # The system this evaluation ran against (core.system.pid). It belongs here
-    # rather than on the model, because a measurement never references a model:
-    # what is run, and what is reported on, is an evaluation. Null when the
-    # system was never named on the platform.
+    # The AI card version this evaluation ran under (project.system.pid in the
+    # project's database). It belongs here rather than on the model, because a
+    # measurement never references a model: what is run, and what is reported
+    # on, is an evaluation. Null when the system was never named on the platform.
     system_id = models.UUIDField(null=True, blank=True, db_index=True)
 
     def get_observations(self) -> list[Observation]:
