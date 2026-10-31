@@ -70,6 +70,7 @@ class UpstreamTableNames(TestCase):
             "0023_ledger_outbox",
             "0024_drop_stored_langbite_judge_keys",
             "0025_evaluation_input_helper_ref",
+            "0026_observation_evaluation_plugin",
         ])
 
 

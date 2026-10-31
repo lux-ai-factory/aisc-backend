@@ -40,6 +40,11 @@ TABLES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
     "engine_deployment": "0021_engine_deployment_marker",
     "aisc_backend_ledgeroutbox": "0023_ledger_outbox",
 }
+#: Columns on tables the live shape has, made by a later migration, as (table, column). Their foreign key and
+#: index, which name the column, are as new.
+COLUMNS_NEWER_THAN_LIVE_SHAPE: dict[tuple[str, str], str] = {
+    ("aisc_backend_observation", "evaluation_plugin_id"): "0026_observation_evaluation_plugin",
+}
 #: Indexes on tables the live shape has, made by a later migration.
 INDEXES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
     "aisc_one_system_target_per_system": "0022_one_system_target_per_system",
@@ -52,6 +57,12 @@ def newer_than_live_shape(kind: str, row: tuple) -> bool:
         return True
     # a sequence row starts with the sequence's name: Django names a table's id sequence <table>_id_seq
     if kind == "sequences" and any(row[0] == f"{table}_id_seq" for table in TABLES_NEWER_THAN_LIVE_SHAPE):
+        return True
+    if kind == "columns" and (row[0], row[1]) in COLUMNS_NEWER_THAN_LIVE_SHAPE:
+        return True
+    # a constraint or index row ends with its definition, which names its columns in parentheses
+    if kind in ("constraints", "indexes") and any(
+            row[0] == table and f"({column})" in row[-1] for table, column in COLUMNS_NEWER_THAN_LIVE_SHAPE):
         return True
     return kind == "indexes" and row[1] in INDEXES_NEWER_THAN_LIVE_SHAPE
 

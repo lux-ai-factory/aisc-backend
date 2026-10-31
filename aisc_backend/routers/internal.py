@@ -399,6 +399,7 @@ async def create_evaluation_measures(
                 observer="AISC System",
                 tool=str(plugin),
                 evaluation=evaluation,
+                evaluation_plugin=evaluation_plugin,
             )
             observation = await observation_repository.save(observation)
 

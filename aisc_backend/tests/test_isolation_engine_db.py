@@ -44,7 +44,7 @@ from django.conf import settings
 
 from aisc_backend.tests.isolation_support import (
     configurator_only,
-    BACKEND, INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
+    BACKEND, COLUMNS_NEWER_THAN_LIVE_SHAPE, INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
     Cluster, catalog, database_name, newer_than_live_shape, superuser_url,
 )
 
@@ -454,6 +454,35 @@ class WhatTheLiveShapePredates(unittest.TestCase):
             with self.subTest(kind=kind, row=row):
                 self.assertIs(newer_than_live_shape(kind, row), True)
 
+    def test_the_observations_run_column_its_key_and_its_index_are_newer(self):
+        table = "aisc_backend_observation"
+        rows = [
+            ("columns", (table, "evaluation_plugin_id", "bigint", False, "")),
+            ("constraints", (table, "aisc_backend_observ_evaluation_plugin__0a1b2c3d_fk_aisc_back", "f",
+                             ("FOREIGN KEY (evaluation_plugin_id) REFERENCES engine.aisc_backend_evaluationplugin(id)"
+                              " DEFERRABLE INITIALLY DEFERRED"))),
+            ("indexes", (table, "aisc_backend_observation_evaluation_plugin_id_0a1b2c3d",
+                         (f"CREATE INDEX aisc_backend_observation_evaluation_plugin_id_0a1b2c3d ON engine.{table} "
+                          "USING btree (evaluation_plugin_id)"))),
+        ]
+        for kind, row in rows:
+            with self.subTest(kind=kind, row=row):
+                self.assertIs(newer_than_live_shape(kind, row), True)
+
+    def test_the_observations_older_columns_and_keys_are_not_exempt(self):
+        table = "aisc_backend_observation"
+        rows = [
+            ("columns", (table, "evaluation_id", "bigint", True, "")),
+            ("constraints", (table, "aisc_backend_observ_evaluation_id_fk", "f",
+                             "FOREIGN KEY (evaluation_id) REFERENCES engine.aisc_backend_evaluation(id)")),
+            ("indexes", (table, "aisc_backend_observation_evaluation_id",
+                         f"CREATE INDEX x ON engine.{table} USING btree (evaluation_id)")),
+            ("columns", ("aisc_backend_measurement", "evaluation_plugin_id", "bigint", False, "")),
+        ]
+        for kind, row in rows:
+            with self.subTest(kind=kind, row=row):
+                self.assertIs(newer_than_live_shape(kind, row), False)
+
     def test_live_tables_and_their_sequences_are_not_exempt(self):
         rows = [
             ("tables", ("aisc_backend_project",)),
@@ -468,8 +497,9 @@ class WhatTheLiveShapePredates(unittest.TestCase):
                 self.assertIs(newer_than_live_shape(kind, row), False)
 
     def test_every_exemption_names_a_migration(self):
-        migrations = [*TABLES_NEWER_THAN_LIVE_SHAPE.values(), *INDEXES_NEWER_THAN_LIVE_SHAPE.values()]
-        self.assertEqual(len(migrations), 3)
+        migrations = [*TABLES_NEWER_THAN_LIVE_SHAPE.values(), *INDEXES_NEWER_THAN_LIVE_SHAPE.values(),
+                      *COLUMNS_NEWER_THAN_LIVE_SHAPE.values()]
+        self.assertEqual(len(migrations), 4)
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())
