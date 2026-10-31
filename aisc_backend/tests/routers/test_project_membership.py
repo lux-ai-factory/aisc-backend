@@ -123,8 +123,7 @@ class TheSharedRuleTestCase(DoorCase):
         for claims, needed, stub, expected in (
                 (admin, "viewer", self.as_role(None, exists=False), (404, "No such project.")),
                 (member, "viewer", self.as_role(None), (404, "No such project.")),
-                (member, "editor", self.as_role("viewer"), (403, "You can read this project but not change it.")),
-                (member, "owner", self.as_role("editor"), (403, "Only an owner can do this."))):
+                (member, "editor", self.as_role("viewer"), (403, "You can read this project but not change it."))):
             with self.subTest(needed=needed, expected=expected):
                 with self.assertRaises(HttpError) as refused:
                     self.require(claims, needed, stub)

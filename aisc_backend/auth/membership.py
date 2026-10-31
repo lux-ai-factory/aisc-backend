@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from contextlib import nullcontext
 
-from aisc_identity.access import MANAGE, Refused, admit
+from aisc_identity.access import Refused, admit
 from aisc_identity.caller import IdentityMissing, caller_from_claims
 from django.db import DEFAULT_DB_ALIAS, connections
 from ninja.errors import HttpError
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 ADMIN_ROLE = "admin"
 
 #: What `admit` is asked for, by the role a check needs.
-_WANT = {"viewer": "GET", "editor": "POST", "owner": MANAGE}
+_WANT = {"viewer": "GET", "editor": "POST"}
 
 
 def _platform():
@@ -99,7 +99,7 @@ def require(request, platform_project_id, needed: str = "viewer") -> str | None:
 # Everything else behind the door is a row of the admitted project's database.
 
 
-def _require_owner(request, project, needed: str) -> str | None:
+def _require_owner(request, project) -> str | None:
     """Membership of the project a row belongs to.
 
     A row with no project belongs to nobody: nobody reaches it, an admin
@@ -110,10 +110,10 @@ def _require_owner(request, project, needed: str) -> str | None:
         return None
     if project is None:
         raise HttpError(404, "no such thing")
-    return require(request, project.platform_project_id, needed)
+    return require(request, project.platform_project_id)
 
 
-def for_stored_file(request, container, file_name: str, needed: str = "viewer") -> str | None:
+def for_stored_file(request, container, file_name: str) -> str | None:
     """A file in object storage, by the name it is stored under.
 
     The names are uuids, so this was never a guessable address, but it was
@@ -131,22 +131,22 @@ def for_stored_file(request, container, file_name: str, needed: str = "viewer") 
             .select_related("system__project")
             .first()
         )
-        return _require_owner(request, getattr(getattr(found, "system", None), "project", None), needed)
+        return _require_owner(request, getattr(getattr(found, "system", None), "project", None))
     artifact = (
         Artifact.objects.filter(data=file_name)
         .select_related("evaluation_plugin__evaluation__project")
         .first()
     )
     evaluation = getattr(getattr(artifact, "evaluation_plugin", None), "evaluation", None)
-    return _require_owner(request, getattr(evaluation, "project", None), needed)
+    return _require_owner(request, getattr(evaluation, "project", None))
 
 
-def for_task(request, task_pid, needed: str = "viewer") -> str | None:
+def for_task(request, task_pid) -> str | None:
     """A Celery task id, which the evaluation that started it records."""
     from aisc_backend.models.evaluation import Evaluation
 
     if not enforced():
         return None
     found = Evaluation.objects.filter(task=task_pid).select_related("project").first()
-    return _require_owner(request, found.project if found else None, needed)
+    return _require_owner(request, found.project if found else None)
 
