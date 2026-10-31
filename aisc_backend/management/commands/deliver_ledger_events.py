@@ -1,9 +1,11 @@
 """`manage.py deliver_ledger_events`: send the engine's queued ledger events to the platform.
 
-Each request starts a pass for its project's database after its commit (aisc_backend.ledger). This
-command makes the passes those could not finish: the platform was down, a token was missing, the
-process stopped before its thread ran. With `--every N` it makes one pass over every project database
-each N seconds until it is stopped; without, one pass.
+In the Configurator this command is what sends: the backend is not given the ledger token, so its
+requests only queue their events, and the aisc-backend-ledger service runs this command. A process
+that does hold the token also starts a pass for its project's database after each commit
+(aisc_backend.ledger); this command then makes the passes those could not finish: the platform was
+down, the process stopped before its thread ran. With `--every N` it makes one pass over every project
+database each N seconds until it is stopped; without, one pass.
 
 The databases are the ones migrate_projects lists, from pg_database. Output names databases and
 counts only, never an event.

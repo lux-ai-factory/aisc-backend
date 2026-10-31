@@ -1,12 +1,14 @@
 """The engine's changes in the project's ledger, the platform's record of who changed what.
 
 Each change writes its event to the engine's outbox (models.LedgerOutbox) in the transaction of the
-change, so a rolled back change leaves no event and a committed one always has one. After the
-commit the project's queued events are posted, in order and once each, to the platform's internal
-route (POST /internal/projects/{pid}/ledger/events) with PLATFORM_LEDGER_ENGINE_TOKEN, in a thread
-of their own: a request never waits for the platform, and never fails because of it. What a pass
-could not send stays queued for the next one; `manage.py deliver_ledger_events` makes those passes
-for every project database.
+change, so a rolled back change leaves no event and a committed one always has one. The events
+are posted, in order and once each, to the platform's internal route
+(POST /internal/projects/{pid}/ledger/events) with PLATFORM_LEDGER_ENGINE_TOKEN, by
+`manage.py deliver_ledger_events`, which makes a pass over every project database (the
+aisc-backend-ledger service). In the Configurator the backend is not given that token (can_send), so
+it only queues. A process that does hold it also posts the project's queued events after the commit,
+in a thread of their own: a request never waits for the platform, and never fails because of it.
+What a pass could not send stays queued for the next one.
 
 The outbox is the engine's own table rather than the project database's `ledger.emit`: the
 platform lists the engine among the callers of its internal route (LEDGER_CALLERS), and its relay
