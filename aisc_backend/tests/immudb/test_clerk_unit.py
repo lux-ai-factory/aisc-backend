@@ -92,6 +92,23 @@ class AuditClerkUnitTest(SimpleTestCase):
         self.assertIn("name=Demo", summary)
 
 
+class ReadingTheLogAsksImmudbForTheNewestRowsOnly(SimpleTestCase):
+    """An admin's read of the log asks immudb for the newest `limit` rows, rather than reading the whole
+    log into memory and keeping the end of it."""
+
+    def test_the_query_orders_and_limits_and_the_rows_come_back_as_given(self):
+        mock_client = mock.MagicMock()
+        mock_client.databaseList.return_value = [b"auditdb"]
+        row = (7, None, "admin", "delete", "project", "p-1", "backend", None, "ok", "{}", "admin deleted")
+        mock_client.sqlQuery.return_value = iter([row, (6, *row[1:])])
+        with mock.patch.object(clerk_mod, "ImmudbClient", return_value=mock_client):
+            events = clerk_mod.AuditClerk().list_events(limit=2)
+        sql = mock_client.sqlQuery.call_args.args[0]
+        self.assertIn("ORDER BY id DESC LIMIT @limit", sql)
+        self.assertEqual(mock_client.sqlQuery.call_args.kwargs["params"], {"limit": 2})
+        self.assertEqual([e["id"] for e in events], [7, 6])
+
+
 class _RpcError(Exception):
     """A gRPC error as the immudb SDK raises it: a status code and the server's message."""
 

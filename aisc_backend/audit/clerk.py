@@ -176,7 +176,8 @@ class AuditClerk:
         # read in full inside the retry: the rows are a stream, and an ended login surfaces as they are read
         rows = self._run(lambda client: list(client.sqlQuery(
             "SELECT id, occurred_at, actor, action, resource_type, resource_id, "
-            "source_app, source_ip, outcome, metadata, summary FROM audit_log;"
+            "source_app, source_ip, outcome, metadata, summary FROM audit_log ORDER BY id DESC LIMIT @limit;",
+            params={"limit": limit},
         )))
         events = []
         for r in rows:
@@ -184,8 +185,7 @@ class AuditClerk:
             ts = e.get("occurred_at")
             e["occurred_at"] = ts.isoformat() if hasattr(ts, "isoformat") else ts  # JSON-friendly
             events.append(e)
-        events.sort(key=lambda e: e["id"], reverse=True)   # newest first
-        return events[:limit]
+        return events
 
     def verify(self) -> bool:
         """
