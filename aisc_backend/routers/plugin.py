@@ -61,6 +61,8 @@ class AdapterAvailableSchema(Schema):
     version: str
     adapter_class: str
     source: str
+    input_types: list[str] | None = None
+    output_type: str | None = None
 
 
 @router.get("", response=list[PackageAvailableSchema])
@@ -87,12 +89,16 @@ async def get_adapters(request):
     available_adapters = []
     for pkg_name, versions_dict in adapters_dict.items():
         for version, meta in versions_dict.items():
+            type_hints = meta.get("adapter_type_hints", {})
             for adapter_class in meta.get("adapter_classes", []):
+                hints = type_hints.get(adapter_class, {})
                 available_adapters.append(AdapterAvailableSchema(
                     package_name=pkg_name,
                     version=version,
                     adapter_class=adapter_class,
                     source=meta.get("source", "unknown"),
+                    input_types=hints.get("input_types"),
+                    output_type=hints.get("output_type"),
                 ))
 
     return available_adapters

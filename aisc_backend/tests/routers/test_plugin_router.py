@@ -1,9 +1,12 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project, ProjectStatus
-from aisc_backend.routers.plugin import router
+from aisc_backend.routers.plugin import plugin_loader, router
+from aisc_plugin_interface.models.evaluation_input import InputDefinition, InputType
 
 
 client = TestAsyncClient(router)
@@ -39,3 +42,51 @@ class PluginRouterTestCase(TestCase):
         response = await client.patch(f"/{self.plugin.pid}/enabled", json={"enabled": False})
         self.assertEqual(200, response.status_code, response.text)
         self.assertFalse(response.data["enabled"])
+
+    async def test_adapters_include_optional_type_hints(self):
+        discovered = {
+            "demo-pkg": {
+                "0.1.0": {
+                    "source": "local",
+                    "adapter_classes": ["UppercaseAdapter"],
+                    "adapter_type_hints": {
+                        "UppercaseAdapter": {
+                            "input_types": ["*.txt", "bytes"],
+                            "output_type": "bytes",
+                        }
+                    },
+                }
+            }
+        }
+        with patch.object(plugin_loader, "list_adapters", return_value=discovered):
+            response = await client.get("/adapters")
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(response.data, [{
+            "package_name": "demo-pkg",
+            "version": "0.1.0",
+            "adapter_class": "UppercaseAdapter",
+            "source": "local",
+            "input_types": ["*.txt", "bytes"],
+            "output_type": "bytes",
+        }])
+
+    async def test_input_definitions_include_optional_type_hints(self):
+        class FakePlugin:
+            input_definitions = [
+                InputDefinition(
+                    name="dataset",
+                    label="Dataset",
+                    input_type=InputType.DATASET,
+                    required=True,
+                    input_types=["*.txt"],
+                    output_type="str",
+                )
+            ]
+
+        with patch.object(plugin_loader, "load_plugin", return_value=FakePlugin()):
+            response = await client.get(f"/{self.plugin.pid}/input_definitions")
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual(response.data[0]["input_types"], ["*.txt"])
+        self.assertEqual(response.data[0]["output_type"], "str")
