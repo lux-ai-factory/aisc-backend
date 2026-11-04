@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import logging
 import uuid
 from pathlib import Path
@@ -457,6 +458,11 @@ async def upload_evaluation_artifact(
     plugin = evaluation_plugin.plugin_config.plugin
 
     original_filename = file.name
+    # the ledger keeps the file's hash, so its exact bytes can be proven later (the run's recorded calls too)
+    digest = hashlib.sha256()
+    for chunk in file.chunks():
+        digest.update(chunk)
+    file.seek(0)
     suffix = Path(file.name).suffix.lower()
     file.name = f"{str(uuid.uuid4())}{suffix}"
 
@@ -475,7 +481,7 @@ async def upload_evaluation_artifact(
         saved = await artifact_repository.save(artifact)
         await sync_to_async(ledger.emit_for_run)(
             "engine.artifact.uploaded", evaluation.pid, item_type="artifact", item_id=saved.pid,
-            details={"size": file.size})
+            details={"size": file.size, "sha256": digest.hexdigest()})
         return saved
 
     artifact = await ledger.atomically(record)

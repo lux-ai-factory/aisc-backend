@@ -63,10 +63,13 @@ class Project(Base):
         )
 
     def get_plugins(self) -> list[Plugin]:
+        # within a package, the version on comes first (one is on at a time): a page that takes the first
+        # plugin of a name (the engine's settings page) then opens that one
         return sorted(
             list(self.enabled_plugins.all()),
             key=lambda plugin: (
                 plugin.package_name.lower(),
+                not plugin.enabled,
                 plugin.version.lower(),
                 plugin.name.lower(),
             ),

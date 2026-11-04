@@ -41,6 +41,15 @@ class PluginRepository(BaseRepository[Plugin]):
             name=name,
         ).afirst()
 
+    async def list_other_versions_on(self, project_pid: uuid.UUID, package_name: str, version: str) -> list[Plugin]:
+        """The package's plugins of another version that are on in this project."""
+        return [
+            plugin
+            async for plugin in Plugin.objects.filter(
+                project__pid=project_pid, package_name=package_name, enabled=True,
+            ).exclude(version=version)
+        ]
+
     async def list_by_package(self, project_pid: uuid.UUID, package_name: str, version: str) -> list[Plugin]:
         return [
             plugin

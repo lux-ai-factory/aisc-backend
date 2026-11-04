@@ -40,7 +40,7 @@ class PluginConfigOutSchema(ModelSchema):
 
     class Meta:
         model = PluginConfig
-        fields = ["id", "config", "created_at"]
+        fields = ["id", "name", "config", "created_at"]
 
 
 class ShownPluginConfigOutSchema(PluginConfigOutSchema):

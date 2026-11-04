@@ -3,6 +3,7 @@
 The routes are called as the door would let them run: a project admitted, the gateway's request id
 held, LEDGER_MODE on. Each test reads the events the route left in the outbox.
 """
+import hashlib
 import json
 import os
 from unittest import mock
@@ -317,7 +318,9 @@ class Runs(Recording):
         self.assertEqual(res.status_code, 200, res.text)
         artifact = await Artifact.objects.aget(data=res.json()["file_name"])
         _, uploaded = await events()
-        self.assertRunEvent(uploaded, "engine.artifact.uploaded", "artifact", artifact.pid, {"size": 8})
+        # the file's hash anchors its exact bytes in the ledger (a run's recorded calls among them)
+        self.assertRunEvent(uploaded, "engine.artifact.uploaded", "artifact", artifact.pid,
+                            {"size": 8, "sha256": hashlib.sha256(b"log body").hexdigest()})
 
     async def test_marking_a_run_local_names_the_input_and_the_file_only(self):
         from aisc_backend.models import EvaluationInput

@@ -2,7 +2,7 @@ import logging
 import uuid
 
 from asgiref.sync import sync_to_async
-from ninja import Router, Schema
+from ninja import Field, Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend import ledger
@@ -204,6 +204,8 @@ def _hinted(ui_schema, kept: dict[str, ProjectConfig]) -> dict:
 
 class PluginConfigStateResponse(Schema):
     plugin_config_id: int | None
+    #: the name its author gave the configuration at save time ("" for none, and for an unsaved form)
+    name: str = ""
     config: dict | None
     formSchema: dict
     uiSchema: dict
@@ -267,6 +269,19 @@ async def get_plugin_project_config_definitions(request, plugin_pid: uuid.UUID):
     return [definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions]
 
 
+async def _turn_other_versions_off(project_pid, package_name: str, version: str) -> dict:
+    """One version of a package is on in a project: the others are turned off, never deleted, so their
+    settings and evaluations stay. The versions turned off, as `turned_off` details for the event the
+    request already writes (none when there were none): the ledger ties each event to its request's route
+    and item, so a toggle of each other plugin would be refused under an install or another's switch."""
+    off = set()
+    for other in await plugin_repository.list_other_versions_on(project_pid, package_name, version):
+        other.enabled = False
+        await plugin_repository.save(other)
+        off.add(other.version)
+    return {"turned_off": sorted(off)} if off else {}
+
+
 class CreatePluginsRequest(Schema):
     package_name: str
     version: str
@@ -321,7 +336,9 @@ async def create_plugins(request, data: CreatePluginsRequest):
             for p in created_plugins:
                 p.enabled = True
                 await plugin_repository.save(p)
-        await sync_to_async(_package_event)("plugin.installed", data.package_name, data.version, reused=reused)
+        turned_off = await _turn_other_versions_off(data.project_uuid, data.package_name, data.version)
+        await sync_to_async(_package_event)("plugin.installed", data.package_name, data.version, reused=reused,
+                                            **turned_off)
         return created_plugins
 
     created_plugins = await ledger.atomically(install)
@@ -424,8 +441,10 @@ async def update_plugin_enabled(
 
     async def toggle():
         await plugin_repository.save(plugin)
+        turned_off = (await _turn_other_versions_off(plugin.project.pid, plugin.package_name, plugin.version)
+                      if data.enabled else {})
         await sync_to_async(ledger.emit)("engine.plugin.toggled", item_type="plugin", item_id=plugin_pid,
-                                         details={"enabled": data.enabled})
+                                         details={"enabled": data.enabled, **turned_off})
 
     await ledger.atomically(toggle)
     await sync_to_async(log_action)(
@@ -486,6 +505,8 @@ async def restore_plugin_config(
 class UpdatePluginConfigRequest(Schema):
     config: dict
     project_config_selections: list[ProjectConfigSelectionSchema] = []
+    #: what the author calls this configuration, so a run can name the configuration it used; optional
+    name: str = Field(default="", max_length=255)
 
 
 @router.post("/{plugin_pid}/config", response=PluginConfigStateResponse)
@@ -510,7 +531,7 @@ async def update_plugin_config_state(
     selections = [selection for selection in data.project_config_selections
                   if not (selection.plugin_config_key or "").startswith(CONFIG_SECRET_PREFIX)]
 
-    plugin_config = PluginConfig(plugin=project_plugin, config=split.kept)
+    plugin_config = PluginConfig(plugin=project_plugin, config=split.kept, name=data.name.strip())
 
     async def configure():
         previous = await _kept_secrets(project_plugin.current_config_id)
@@ -553,6 +574,7 @@ async def update_plugin_config_state(
 
     response = PluginConfigStateResponse(
         plugin_config_id=plugin_config.id,
+        name=plugin_config.name,
         config=config,
         formSchema=schema,
         uiSchema=_hinted(ui_schema, kept),
@@ -667,6 +689,7 @@ async def get_project_plugin_config_state(
 
     response = PluginConfigStateResponse(
         plugin_config_id=plugin_config_id,
+        name=project_plugin.current_config.name if project_plugin.current_config else "",
         config=config,
         formSchema=schema,
         uiSchema=_hinted(ui_schema, kept),
