@@ -44,6 +44,16 @@ TABLES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
 #: index, which name the column, are as new.
 COLUMNS_NEWER_THAN_LIVE_SHAPE: dict[tuple[str, str], str] = {
     ("aisc_backend_observation", "evaluation_plugin_id"): "0026_observation_evaluation_plugin",
+    ("aisc_backend_evaluationinput", "helper_ref"): "0025_evaluation_input_helper_ref",
+}
+#: Constraints on tables the live shape has, made by a later migration, by name.
+CONSTRAINTS_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
+    "evaluation_input_component_or_helper_ref": "0025_evaluation_input_helper_ref",
+}
+#: Columns the live shape has whose nullability a later migration changed, as (table, column): a run input
+#: names a component or a helper, so its component may be empty.
+COLUMNS_CHANGED_SINCE_LIVE_SHAPE: dict[tuple[str, str], str] = {
+    ("aisc_backend_evaluationinput", "component_id"): "0025_evaluation_input_helper_ref",
 }
 #: Indexes on tables the live shape has, made by a later migration.
 INDEXES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
@@ -64,7 +74,17 @@ def newer_than_live_shape(kind: str, row: tuple) -> bool:
     if kind in ("constraints", "indexes") and any(
             row[0] == table and f"({column})" in row[-1] for table, column in COLUMNS_NEWER_THAN_LIVE_SHAPE):
         return True
+    if kind == "constraints" and row[1] in CONSTRAINTS_NEWER_THAN_LIVE_SHAPE:
+        return True
     return kind == "indexes" and row[1] in INDEXES_NEWER_THAN_LIVE_SHAPE
+
+
+def as_compared(kind: str, row: tuple) -> tuple:
+    """The catalog row as the live-shape comparison sees it: a column whose nullability a later migration
+    changed has its not-null field (the fourth) set to None; every other row is left as it is."""
+    if kind == "columns" and (row[0], row[1]) in COLUMNS_CHANGED_SINCE_LIVE_SHAPE:
+        return (*row[:3], None, *row[4:])
+    return row
 
 #: The example pid of every language's tests.
 EXAMPLE_PID = "3f2b8c1e-0d4a-4e7b-9a55-1c2d3e4f5a6b"

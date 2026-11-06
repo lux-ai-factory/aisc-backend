@@ -44,8 +44,9 @@ from django.conf import settings
 
 from aisc_backend.tests.isolation_support import (
     configurator_only,
-    BACKEND, COLUMNS_NEWER_THAN_LIVE_SHAPE, INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
-    Cluster, catalog, database_name, newer_than_live_shape, superuser_url,
+    BACKEND, COLUMNS_CHANGED_SINCE_LIVE_SHAPE, COLUMNS_NEWER_THAN_LIVE_SHAPE, CONSTRAINTS_NEWER_THAN_LIVE_SHAPE,
+    INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
+    Cluster, as_compared, catalog, database_name, newer_than_live_shape, superuser_url,
 )
 
 SKIP_REASON = (f"needs a throwaway Postgres: set {SUPERUSER_URL_VAR} and the engine's DB_* to it "
@@ -351,15 +352,25 @@ class TheShapeIsTheLiveShape(PostgresCase):
         # What the live shape predates: the tables in TABLES_NEWER_THAN_LIVE_SHAPE (the mode marker of
         # 0021_engine_deployment_marker, the ledger outbox of 0023_ledger_outbox) and the index in
         # INDEXES_NEWER_THAN_LIVE_SHAPE (0022_one_system_target_per_system).
-        mine = {kind: {r for r in rows if not newer_than_live_shape(kind, r)} for kind, rows in mine.items()}
+        mine = {kind: {as_compared(kind, r) for r in rows if not newer_than_live_shape(kind, r)}
+                for kind, rows in mine.items()}
         live["constraints"] = {
             (t, self.RENAMED.get(name, name), kind,
              d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
             for t, name, kind, d in live["constraints"] if name not in self.ALLOWED_GONE}
+        live = {kind: {as_compared(kind, r) for r in rows} for kind, rows in live.items()}
         for kind in live:
             with self.subTest(kind=kind):
                 self.assertEqual(sorted(mine[kind] - live[kind]), [], f"{kind} only in the project database")
                 self.assertEqual(sorted(live[kind] - mine[kind]), [], f"{kind} only in the live shape")
+
+    def test_a_run_input_may_name_a_helper_instead_of_a_component(self):
+        with self.cluster.connect(self.w["A"]["database"]) as conn:
+            mine = catalog(conn, "engine")
+        columns = {(r[0], r[1]): r for r in mine["columns"]}
+        self.assertIn(("aisc_backend_evaluationinput", "helper_ref"), columns)
+        self.assertIn("evaluation_input_component_or_helper_ref", {r[1] for r in mine["constraints"]})
+        self.assertIn(("aisc_backend_evaluationinput", "component_id"), COLUMNS_CHANGED_SINCE_LIVE_SHAPE)
 
     def test_every_exemption_is_in_the_project_database_and_not_in_the_live_shape(self):
         live = self._live()
@@ -373,6 +384,12 @@ class TheShapeIsTheLiveShape(PostgresCase):
             with self.subTest(index=index):
                 self.assertIn(index, {r[1] for r in mine["indexes"]}, "an exempt index the migrations no longer make")
                 self.assertNotIn(index, {r[1] for r in live["indexes"]}, "an exempt index the live shape has")
+        for constraint in CONSTRAINTS_NEWER_THAN_LIVE_SHAPE:
+            with self.subTest(constraint=constraint):
+                self.assertIn(constraint, {r[1] for r in mine["constraints"]},
+                              "an exempt constraint the migrations no longer make")
+                self.assertNotIn(constraint, {r[1] for r in live["constraints"]},
+                                 "an exempt constraint the live shape has")
 
     def test_the_ledger_outbox_is_as_its_migration_makes_it(self):
         table = "aisc_backend_ledgeroutbox"
@@ -498,8 +515,11 @@ class WhatTheLiveShapePredates(unittest.TestCase):
 
     def test_every_exemption_names_a_migration(self):
         migrations = [*TABLES_NEWER_THAN_LIVE_SHAPE.values(), *INDEXES_NEWER_THAN_LIVE_SHAPE.values(),
-                      *COLUMNS_NEWER_THAN_LIVE_SHAPE.values()]
-        self.assertEqual(len(migrations), 4)
+                      *COLUMNS_NEWER_THAN_LIVE_SHAPE.values(), *CONSTRAINTS_NEWER_THAN_LIVE_SHAPE.values(),
+                      *COLUMNS_CHANGED_SINCE_LIVE_SHAPE.values()]
+        self.assertEqual(set(migrations), {"0021_engine_deployment_marker", "0022_one_system_target_per_system",
+                                           "0023_ledger_outbox", "0025_evaluation_input_helper_ref",
+                                           "0026_observation_evaluation_plugin"})
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())
@@ -614,6 +634,7 @@ ROUTES = [
     ("GET", "/api/v1/projects/{pid}/evaluations", None, "user"),
     ("GET", "/api/v1/projects/{pid}/evaluation-inputs-template", None, "user"),
     ("GET", "/api/v1/projects/{pid}/helpers", None, "user"),
+    ("GET", "/api/v1/projects/{pid}/helpers/models?ref=helper:x/probe", None, "user"),
     ("GET", "/api/v1/projects/{pid}/plugins/{plugin_name}/config", None, "user"),
     ("POST", "/api/v1/projects/{pid}/measurements/aggregate", {}, "user"),
     ("GET", "/api/v1/projects/{pid}/measurements/dimension-keys", None, "user"),
@@ -627,6 +648,9 @@ ROUTES = [
     ("GET", "/api/v1/evaluations/{evaluation_pid}", None, "user"),
     ("GET", "/api/v1/evaluations/{evaluation_pid}/plugins/status", None, "user"),
     ("GET", "/api/v1/evaluations/{evaluation_pid}/artifacts", None, "user"),
+    ("PATCH", "/api/v1/evaluations/{evaluation_pid}/name", {"name": "renamed"}, "user"),
+    # under B, A's run is not found before the worker is told anything
+    ("POST", "/api/v1/evaluations/{evaluation_pid}/stop", None, "user"),
     ("POST", "/api/v1/evaluations/{evaluation_pid}/measurements/aggregate", {}, "user"),
     ("POST", "/api/v1/evaluations/{evaluation_pid}/measurements/dimension-keys", {}, "user"),
     ("POST", "/api/v1/evaluations/{evaluation_pid}/measurements/dimension-values/{key}", {}, "user"),
