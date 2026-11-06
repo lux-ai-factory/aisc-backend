@@ -79,6 +79,12 @@ class EvaluationPluginOutSchema(ModelSchema):
     plugin_pid: uuid.UUID = Field(alias="plugin_config.plugin.pid")
     plugin_config: PluginConfigOutSchema | None = Field(default=None, alias="plugin_config")
     evaluation_inputs: list[EvaluationInputOutSchema] = Field(default=[], alias="evaluation_inputs")
+    #: what the run was named (empty: the automatic name); `name` is the plugin's
+    run_name: str = ""
+
+    @staticmethod
+    def resolve_run_name(obj) -> str:
+        return getattr(obj, "name", "") or ""
 
     class Meta:
         model = EvaluationPlugin

@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from asgiref.sync import sync_to_async
@@ -16,6 +17,10 @@ celery: Celery = Celery(
 )
 
 RUN_EVAL_TASK = "aisc_eval.celery_tasks.run_evaluation"
+#: Celery raises SoftTimeLimitExceeded inside a task sent this signal: the worker's failure handler then ends the
+#: plugin's processes and its run pass, as for a test that failed. SIGTERM would end the worker's child instead,
+#: leaving the plugin (its own process group) running.
+STOP_SIGNAL = "SIGUSR1"
 
 
 async def _platform_pid_of(evaluation_uuid: uuid.UUID) -> str:
@@ -86,6 +91,18 @@ async def run_evaluation(evaluation_uuid: uuid.UUID):
         args=[evaluation_uuid],
         headers={"aisc_run": {"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket}},
     ))
+
+
+@sync_to_async
+def stop_run(evaluation_pid, dispatcher_task_id: str | None) -> None:
+    """Revoke a run's tasks: its dispatcher (run_evaluation, in case it has not started) and every install and
+    test the worker listed for the run (eval_tasks:<pid>). The one running ends; those queued never start."""
+    tasks = [str(dispatcher_task_id)] if dispatcher_task_id else []
+    listed = celery.backend.client.get(f"eval_tasks:{evaluation_pid}")
+    if listed:
+        tasks += [str(task) for task in json.loads(listed)]
+    for task in tasks:
+        celery.control.revoke(task, terminate=True, signal=STOP_SIGNAL)
 
 
 async def get_evaluation_tasks_status(task_pid: uuid.UUID) -> dict[str, TaskProgress]:

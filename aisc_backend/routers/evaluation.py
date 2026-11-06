@@ -1,4 +1,5 @@
 import base64
+import datetime
 import json
 import logging
 import os
@@ -72,9 +73,27 @@ class EvaluationPluginInSchema(Schema):
     inputs: list[EvaluationPluginInputInSchema] | None = None
 
 
+#: a run's name: the plugin run's name field (aisc_backend.models.common.Base.name)
+RUN_NAME_MAX = 255
+
+
 class CreateEvaluationRequest(Schema):
     project_pid: uuid.UUID
     plugins_to_run: list[EvaluationPluginInSchema]
+    #: what the run is called in the results (empty: the automatic name, its number, target and time)
+    name: str = ""
+
+
+class RunNameRequest(Schema):
+    name: str = ""
+
+
+def _run_name(name: str | None) -> str:
+    """A run's name as kept: without surrounding spaces; refused when longer than the field."""
+    name = (name or "").strip()
+    if len(name) > RUN_NAME_MAX:
+        raise HttpError(400, f"A run's name is at most {RUN_NAME_MAX} characters")
+    return name
 
 
 REACHABLE_TIMEOUT = 3  # seconds
@@ -268,6 +287,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
 
 async def _create_evaluation_task(request, data: CreateEvaluationRequest):
+    run_name = _run_name(data.name)
     project = await project_repository.get(data.project_pid, True)
 
     # Resolve and validate plugins before writing anything to DB
@@ -313,7 +333,7 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     evaluation_plugins = []
     for plugin_config, plugin_obj, helpers, inputs in resolved:
         run_plugin = EvaluationPlugin(
-            plugin_config=plugin_config, evaluation=evaluation
+            plugin_config=plugin_config, evaluation=evaluation, name=run_name
         )
         run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
@@ -347,6 +367,55 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
         metadata={"projectPid": str(data.project_pid),
                   "plugins": [p.name for p in data.plugins_to_run]})
     return evaluation
+
+
+@router.patch("/{evaluation_pid}/name", response=dict)
+async def rename_evaluation(request, evaluation_pid: uuid.UUID, data: RunNameRequest):
+    """Names a run afterwards (every plugin run of it); an empty name gives the automatic one back."""
+    name = _run_name(data.name)
+    evaluation = await Evaluation.objects.filter(pid=evaluation_pid).afirst()
+    if evaluation is None:
+        raise HttpError(404, "Evaluation not found")
+    await EvaluationPlugin.objects.filter(evaluation=evaluation).aupdate(name=name)
+    # AUDIT: who renamed which run, and to what
+    await sync_to_async(log_action)(
+        request, action="rename", resource_type="evaluation", resource_id=str(evaluation.pid),
+        metadata={"name": name})
+    return {"pid": str(evaluation.pid), "name": name}
+
+
+#: why a test stopped from the progress bar ended; kept even when the worker reports its own end afterwards
+STOPPED_BY_A_PERSON = ("Stopped by a person before it finished. The calls already made to the system under test "
+                       "are kept in the run's record.")
+STILL_GOING = (EvaluationStatus.Pending, EvaluationStatus.Processing)
+
+
+@router.post("/{evaluation_pid}/stop", response=dict)
+async def stop_evaluation(request, evaluation_pid: uuid.UUID):
+    """Stops a run still going: its unfinished tests are failed as stopped by a person (a finished one keeps its
+    result), the run is failed, and the worker is told to end the run's tasks. The run is failed first, so a test
+    still queued reads it and never starts even when the worker cannot be told."""
+    evaluation = await Evaluation.objects.filter(pid=evaluation_pid).afirst()
+    if evaluation is None:
+        raise HttpError(404, "Evaluation not found")
+    if evaluation.status not in STILL_GOING:
+        raise HttpError(409, f"The run has already ended ({evaluation.status}), so there is nothing to stop")
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    await (EvaluationPlugin.objects.filter(evaluation=evaluation, status__in=("Pending", "Running"))
+           .aupdate(status="Failed", error_message=STOPPED_BY_A_PERSON, finished_at=now))
+    evaluation.status = EvaluationStatus.Failed
+    await evaluation.asave(update_fields=["status"])
+    # AUDIT: who stopped which run
+    await sync_to_async(log_action)(
+        request, action="stop", resource_type="evaluation", resource_id=str(evaluation.pid),
+        metadata={"task": str(evaluation.task or "")})
+    try:
+        await celery_service.stop_run(evaluation.pid, evaluation.task)
+    except Exception as exc:
+        logger.warning(f"Run {evaluation.pid} failed as stopped, but the worker was not told: {type(exc).__name__}")
+        raise HttpError(502, "The run is marked stopped and no queued test will start, but the worker could not "
+                             "be reached to end the test running now. Try Stop again in a moment.")
+    return {"pid": str(evaluation.pid), "status": str(evaluation.status)}
 
 
 @router.get("/{evaluation_pid}", response=ShownEvaluationDetailOutSchema)

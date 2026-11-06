@@ -18,6 +18,8 @@ from urllib.parse import quote, urlencode
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 3  # seconds
+#: a model list is asked live from the tool's provider by the platform, which allows itself 10 s for it
+LIST_TIMEOUT = 15
 
 
 class HelpersUnavailable(Exception):
@@ -28,10 +30,10 @@ class HelpersUnavailable(Exception):
         self.message = message
 
 
-def _get(url: str, headers: dict) -> tuple[int, object]:
+def _get(url: str, headers: dict, timeout: float = TIMEOUT) -> tuple[int, object]:
     req = urlrequest.Request(url, method="GET", headers=headers)
     try:
-        with urlrequest.urlopen(req, timeout=TIMEOUT) as res:
+        with urlrequest.urlopen(req, timeout=timeout) as res:
             return res.status, json.loads(res.read() or b"null")
     except error.HTTPError as exc:
         return exc.code, None
@@ -59,3 +61,21 @@ def list_helpers(project_pid: str, role: str | None) -> list[dict]:
         logger.warning("the platform answered %s on the helper models of project %s", status, project_pid)
         raise HelpersUnavailable(f"the platform answered {status}: helper models cannot be listed")
     return helpers
+
+
+def list_helper_models(project_pid: str, name: str) -> dict:
+    """{"models": [...], "error": None or why} of the platform project's test tool `name`, as the platform lists
+    them live with the tool's own connection (chat models first). HelpersUnavailable when it cannot be asked."""
+    base = (os.environ.get("PLATFORM_URL") or "").rstrip("/")
+    token = os.environ.get("PLATFORM_ENGINE_TOKEN") or ""
+    if not base or not token:
+        raise HelpersUnavailable("PLATFORM_URL or PLATFORM_ENGINE_TOKEN is not set: the models cannot be listed")
+    url = f"{base}/internal/projects/{quote(str(project_pid), safe='')}/helpers/{quote(name, safe='')}/models"
+    try:
+        status, body = _get(url, {"X-AISC-Service-Token": token}, timeout=LIST_TIMEOUT)
+    except Exception as exc:  # noqa: BLE001 - the platform is down, or the URL is wrong
+        logger.warning("the platform can't be reached (%s): the models cannot be listed", type(exc).__name__)
+        raise HelpersUnavailable("the platform can't be reached: the models cannot be listed") from exc
+    if status != 200 or not isinstance(body, dict) or not isinstance(body.get("models"), list):
+        raise HelpersUnavailable(f"the platform answered {status}: the models cannot be listed")
+    return {"models": [m for m in body["models"] if isinstance(m, str)], "error": body.get("error")}

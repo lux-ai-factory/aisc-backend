@@ -45,7 +45,7 @@ PROJECT_KEYS = {"name", "pid"}
 EVALUATION_PLUGIN_KEYS = {
     "id", "pid", "created_at", "description", "display_name", "error_message", "evaluation",
     "evaluation_inputs", "finished_at", "name", "package_name", "plugin_config", "plugin_pid",
-    "started_at", "status", "version",
+    "run_name", "started_at", "status", "version",
 }
 EVALUATION_INPUT_KEYS = {"name", "input_type", "input_file", "helper_ref", "value"}
 

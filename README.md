@@ -2,7 +2,7 @@
 
 This repository is the API of **the engine** of AISC (the AI Assessment Sandbox Configurator): a Django service
 with a Django Ninja API under `/api/`. The engine installs the tests chosen in step 3 (Choose tests and
-checklists) and runs them in step 4 (Collect evidence). In the AISC stack this repository runs as the compose
+checklists) and runs them in step 4 (AI Assessment Sandbox). In the AISC stack this repository runs as the compose
 services `aisc-backend`, `aisc-backend-migrate` and `aisc-backend-ledger`.
 
 ## Stack architecture (high-level)

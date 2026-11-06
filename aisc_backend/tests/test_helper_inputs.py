@@ -271,6 +271,38 @@ class TheProjectsHelpers(TestCase):
         self.assertEqual(response.status_code, 503)
 
 
+@override_settings(AISC_DEPLOYMENT="configurator")
+class AToolsModels(TestCase):
+    """The run form lists the models of the test tool it picked, by its reference, as the platform lists them."""
+
+    def setUp(self):
+        self.f = Fixture()
+
+    async def test_a_tools_models_are_listed_by_its_reference(self):
+        listed_models = {"models": ["gpt-4o", "gpt-4o-mini", "text-embedding-3-small"], "error": None}
+        with mock.patch.object(platform_helpers, "list_helper_models", return_value=listed_models) as listing:
+            response = await helpers_client.get(f"/{self.f.project.pid}/helpers/models?ref={self.f.ref}",
+                                                headers=SIGNED_IN)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), listed_models)
+        listing.assert_called_once_with(str(self.f.platform_pid), self.f.ref.rsplit("/", 1)[1])
+
+    async def test_a_reference_of_another_project_is_404(self):
+        with mock.patch.object(platform_helpers, "list_helper_models") as listing:
+            response = await helpers_client.get(f"/{self.f.project.pid}/helpers/models?ref=helper:{uuid.uuid4()}/judge",
+                                                headers=SIGNED_IN)
+        self.assertEqual(response.status_code, 404)
+        listing.assert_not_called()
+
+    async def test_models_that_cannot_be_listed_give_the_reason_not_an_error(self):
+        with mock.patch.object(platform_helpers, "list_helper_models",
+                               side_effect=platform_helpers.HelpersUnavailable("the platform is down")):
+            response = await helpers_client.get(f"/{self.f.project.pid}/helpers/models?ref={self.f.ref}",
+                                                headers=SIGNED_IN)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"models": [], "error": "the platform is down"})
+
+
 class AskingThePlatform(TestCase):
     """platform_helpers asks the platform's internal list route with the engine's token."""
 
@@ -284,6 +316,16 @@ class AskingThePlatform(TestCase):
         self.assertEqual(out, [listed(pid)])
         get.assert_called_once_with(f"http://platform:8000/internal/projects/{pid}/helpers?role=judge",
                                     {"X-AISC-Service-Token": "engine-token"})
+
+    def test_the_model_list_route_is_asked_with_the_engine_token(self):
+        pid = str(uuid.uuid4())
+        answer = {"models": ["gpt-4o"], "error": None}
+        with mock.patch.dict(os.environ, self.PLATFORM), \
+             mock.patch.object(platform_helpers, "_get", return_value=(200, answer)) as get:
+            out = platform_helpers.list_helper_models(pid, "judge")
+        self.assertEqual(out, answer)
+        get.assert_called_once_with(f"http://platform:8000/internal/projects/{pid}/helpers/judge/models",
+                                    {"X-AISC-Service-Token": "engine-token"}, timeout=platform_helpers.LIST_TIMEOUT)
 
     def test_no_platform_settings_means_unavailable(self):
         with mock.patch.dict(os.environ, {"PLATFORM_URL": "", "PLATFORM_ENGINE_TOKEN": ""}), \
