@@ -190,3 +190,39 @@ class TheWorkerIsTold(TestCase):
 async def sync(fn, *args):
     from asgiref.sync import sync_to_async
     return await sync_to_async(fn)(*args)
+
+
+class AStopTheWorkerMissedStaysStopped(TestCase):
+    """When Stop cannot reach the worker, a test still setting up goes on to report its start and its end. The test
+    stays failed as stopped, and the run is not turned Done."""
+
+    async def as_the_worker(self, method, path, **kw):
+        with patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}):
+            return await getattr(internal, method)(path, headers={"X-Internal-Secret": INTERNAL_SECRET}, **kw)
+
+    async def test_a_stopped_test_that_reports_its_start_and_end_stays_failed_and_its_run_failed(self):
+        project = await Project.objects.acreate(name="p", status=ProjectStatus.Ready)
+        plugin = await Plugin.objects.acreate(name="P", display_name="P", description="", package_name="pkg",
+                                              version="1", project=project)
+        config = await PluginConfig.objects.acreate(plugin=plugin, config={})
+        evaluation = await Evaluation.objects.acreate(status=EvaluationStatus.Failed, project=project)
+        test = await EvaluationPlugin.objects.acreate(plugin_config=config, evaluation=evaluation, status="Failed",
+                                                      error_message=evaluation_routes.STOPPED_BY_A_PERSON)
+        base = f"/evaluations/{evaluation.pid}/plugins/{test.pid}/timestamp"
+        for field in ("started_at", "finished_at"):
+            response = await self.as_the_worker("patch", base, json={"field": field})
+            self.assertEqual(response.status_code, 200, response.content)
+            await test.arefresh_from_db()
+            self.assertEqual(test.status, "Failed", field)
+        response = await self.as_the_worker("put", f"/evaluations/{evaluation.pid}?status=Done")
+        self.assertEqual(response.status_code, 200, response.content)
+        await evaluation.arefresh_from_db()
+        self.assertEqual(evaluation.status, EvaluationStatus.Failed)
+
+    async def test_a_failed_run_is_not_turned_done_even_when_none_of_its_tests_failed(self):
+        project = await Project.objects.acreate(name="p", status=ProjectStatus.Ready)
+        evaluation = await Evaluation.objects.acreate(status=EvaluationStatus.Failed, project=project)
+        response = await self.as_the_worker("put", f"/evaluations/{evaluation.pid}?status=Done")
+        self.assertEqual(response.status_code, 200, response.content)
+        await evaluation.arefresh_from_db()
+        self.assertEqual(evaluation.status, EvaluationStatus.Failed)

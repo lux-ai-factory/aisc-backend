@@ -302,6 +302,9 @@ async def update_evaluation_status(
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
+    # a run already failed (stopped by a person, or one of its tests failed) is never turned Done afterwards
+    if status == EvaluationStatus.Done and evaluation.status == EvaluationStatus.Failed:
+        return evaluation.status
     # If trying to mark as Done, check if any plugins failed
     if status == EvaluationStatus.Done:
         has_failed_plugins, _ = await evaluation_repository.plugin_status(evaluation)
@@ -339,11 +342,9 @@ async def update_plugin_timestamp(
         )
 
     setattr(eval_plugin, data.field, datetime.datetime.now(tz=datetime.timezone.utc))
-    if data.field == "started_at":
-        eval_plugin.status = "Running"
-    elif data.field == "finished_at":
-        if eval_plugin.status != "Failed":
-            eval_plugin.status = "Done"
+    # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later
+    if eval_plugin.status != "Failed":
+        eval_plugin.status = "Running" if data.field == "started_at" else "Done"
     await evaluation_plugin_repository.save(eval_plugin)
 
     return "ok"
