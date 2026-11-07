@@ -10,7 +10,7 @@ from unittest import mock
 
 from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from ninja.testing import TestAsyncClient
 
 from aisc_backend import ledger, projectdb
@@ -238,6 +238,23 @@ class Runs(Recording):
         [event] = await events()
         self.assertRunEvent(event, "engine.evaluation.run_requested", "evaluation", self.evaluation.pid,
                             {"plugins": ["DemoPlugin"]})
+
+    @override_settings(AISC_DEPLOYMENT="configurator")
+    async def test_the_worker_is_sent_the_request_and_the_run_its_start_cites(self):
+        """The worker's own events (the platform's seal of a test's calls, when the worker ends the run's pass)
+        cite the run's start: the run carries the request and the run id the start event names."""
+        send = await self._start()
+        [event] = await events()
+        run = send.call_args.kwargs["headers"]["aisc_run"]
+        self.assertEqual((run["request_id"], run["run_id"]), (REQUEST, event["run_id"]))
+        self.assertEqual(event["request_id"], REQUEST)
+
+    @override_settings(AISC_DEPLOYMENT="configurator")
+    async def test_a_run_whose_start_is_not_recorded_carries_no_ids(self):
+        with unrecorded():
+            send = await self._start()
+        run = send.call_args.kwargs["headers"]["aisc_run"]
+        self.assertEqual(set(run), {"project", "evaluation", "ticket"})
 
     async def test_a_run_local_from_its_creation_says_so_when_it_starts(self):
         from aisc_backend.models import EvaluationInput

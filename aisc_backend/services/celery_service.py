@@ -54,10 +54,13 @@ def _local_models(evaluation_uuid: uuid.UUID, using: str) -> list[dict]:
 def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
     """Send the run to the worker with its start in the project's ledger, in one transaction: the
     worker's events cite the start, so it is written before the worker can call back, and it is
-    rolled back when the message cannot be sent. The evaluation is the run."""
-    from aisc_backend.models import Evaluation, EvaluationPlugin
+    rolled back when the message cannot be sent. The evaluation is the run. `send` takes the request and the
+    run the start cites ({"request_id", "run_id"}, or {} when no start was recorded), for the worker's own
+    events to cite."""
+    from aisc_backend.models import Evaluation, EvaluationPlugin, LedgerOutbox
 
     using = router.db_for_write(Evaluation)
+    start = {}
     with transaction.atomic(using=using):
         if ledger.on():
             plugins = list(EvaluationPlugin.objects.using(using).filter(evaluation__pid=evaluation_uuid)
@@ -66,9 +69,12 @@ def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
             local_models = _local_models(evaluation_uuid, using)
             if local_models:
                 details["local_models"] = local_models
-            ledger.emit(ledger.RUN_REQUESTED, item_type="evaluation", item_id=evaluation_uuid,
-                        run_id=evaluation_uuid, details=details, using=using)
-        return send()
+            row = ledger.emit(ledger.RUN_REQUESTED, item_type="evaluation", item_id=evaluation_uuid,
+                              run_id=evaluation_uuid, details=details, using=using)
+            event = LedgerOutbox.objects.using(using).get(pk=row).event if row is not None else {}
+            if event.get("request_id") and event.get("run_id"):
+                start = {"request_id": event["request_id"], "run_id": event["run_id"]}
+        return send(start)
 
 
 async def run_evaluation(evaluation_uuid: uuid.UUID):
@@ -78,18 +84,20 @@ async def run_evaluation(evaluation_uuid: uuid.UUID):
     Celery message headers, under aisc_run: the platform pid, the evaluation pid and the
     ticket that binds the run to both. The worker copies that header onto every task it
     publishes and sends the three back on every internal call; the door checks them. No DSN
-    is sent: the door opens the project's database from the platform pid.
+    is sent: the door opens the project's database from the platform pid. When the run's start is in the
+    ledger, aisc_run also carries the request and the run id the start cites (request_id, run_id): the worker
+    sends them to the platform when it ends the run's pass, whose seal of the run's calls cites them.
     """
     if not deployment.is_configurator():
         return await _recorded_and_sent(evaluation_uuid,
-                                        lambda: celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid]))
+                                        lambda _start: celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid]))
     platform_pid = await _platform_pid_of(evaluation_uuid)
     evaluation_pid = projectdb.normalise(evaluation_uuid)
     ticket = projectdb.run_ticket(platform_pid, evaluation_pid)
-    return await _recorded_and_sent(evaluation_uuid, lambda: celery.send_task(
+    return await _recorded_and_sent(evaluation_uuid, lambda start: celery.send_task(
         RUN_EVAL_TASK,
         args=[evaluation_uuid],
-        headers={"aisc_run": {"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket}},
+        headers={"aisc_run": {"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket, **start}},
     ))
 
 
