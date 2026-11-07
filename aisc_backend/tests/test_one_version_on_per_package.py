@@ -28,6 +28,14 @@ class OneVersionOn(Recording):
         self.assertEqual(res.status_code, 200, res.text)
         return res.json()[0]["pid"]
 
+    async def _install_two(self, version):
+        """Installs a version of a package of two plugins, DemoA and DemoB; their pids by name."""
+        with mock.patch(LOAD, return_value={"DemoA": _OldPlugin(), "DemoB": _OldPlugin()}):
+            res = await self.plugins.post("", json={"package_name": "demo-pkg", "version": version,
+                                                    "project_uuid": str(self.project.pid)})
+        self.assertEqual(res.status_code, 200, res.text)
+        return {p["name"]: p["pid"] for p in res.json()}
+
     def _on(self, project=None):
         return sorted((p.package_name, p.version) for p in
                       Plugin.objects.filter(project=project or self.project, enabled=True))
@@ -50,6 +58,22 @@ class OneVersionOn(Recording):
         res = async_to_sync(self.plugins.patch)(f"/{old}/enabled", json={"enabled": True})
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(self._on(), [("demo-pkg", "0.1.0")])
+
+    def test_switching_one_plugin_of_an_older_version_on_brings_its_siblings_that_were_on_along(self):
+        old = async_to_sync(self._install_two)("0.1.0")
+        async_to_sync(self._install_two)("0.2.0")
+        res = async_to_sync(self.plugins.patch)(f"/{old['DemoA']}/enabled", json={"enabled": True})
+        self.assertEqual(res.status_code, 200, res.text)
+        on = sorted((p.name, p.version) for p in Plugin.objects.filter(project=self.project, enabled=True))
+        self.assertEqual(on, [("DemoA", "0.1.0"), ("DemoB", "0.1.0")])
+
+    def test_a_sibling_that_was_off_in_the_version_turned_off_stays_off(self):
+        old = async_to_sync(self._install_two)("0.1.0")
+        new = async_to_sync(self._install_two)("0.2.0")
+        async_to_sync(self.plugins.patch)(f"/{new['DemoB']}/enabled", json={"enabled": False})
+        async_to_sync(self.plugins.patch)(f"/{old['DemoA']}/enabled", json={"enabled": True})
+        on = sorted((p.name, p.version) for p in Plugin.objects.filter(project=self.project, enabled=True))
+        self.assertEqual(on, [("DemoA", "0.1.0")])
 
     def test_another_package_is_left_alone(self):
         async_to_sync(self._install)("1.0", package="other-pkg")

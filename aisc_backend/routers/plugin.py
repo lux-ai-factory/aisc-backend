@@ -441,8 +441,17 @@ async def update_plugin_enabled(
 
     async def toggle():
         await plugin_repository.save(plugin)
-        turned_off = (await _turn_other_versions_off(plugin.project.pid, plugin.package_name, plugin.version)
-                      if data.enabled else {})
+        turned_off = {}
+        if data.enabled:
+            # the package's plugins on in the version turned off stay on, in this version
+            was_on = {other.name for other in await plugin_repository.list_other_versions_on(
+                plugin.project.pid, plugin.package_name, plugin.version)}
+            turned_off = await _turn_other_versions_off(plugin.project.pid, plugin.package_name, plugin.version)
+            for sibling in await plugin_repository.list_by_package(
+                    plugin.project.pid, plugin.package_name, plugin.version):
+                if sibling.name in was_on and not sibling.enabled:
+                    sibling.enabled = True
+                    await plugin_repository.save(sibling)
         await sync_to_async(ledger.emit)("engine.plugin.toggled", item_type="plugin", item_id=plugin_pid,
                                          details={"enabled": data.enabled, **turned_off})
 
