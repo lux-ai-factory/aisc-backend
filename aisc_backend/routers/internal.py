@@ -361,15 +361,18 @@ async def mark_plugin_failed(
     evaluation = await _evaluation_or_404(evaluation_pid)
     eval_plugin = await _run_of_evaluation_or_404(evaluation_plugin_pid, evaluation_pid)
 
-    # a test already failed (stopped by a person, or by another test's failure) keeps its first reason
-    if eval_plugin.status != "Failed":
-        eval_plugin.status = "Failed"
-        eval_plugin.error_message = scrub_text(data.error_message)
-        eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
-        await evaluation_plugin_repository.save(eval_plugin)
+    async def fail():
+        # the test and its run fail together, each with its status event
+        # a test already failed (stopped by a person, or by another test's failure) keeps its first reason
+        if eval_plugin.status != "Failed":
+            eval_plugin.status = "Failed"
+            eval_plugin.error_message = scrub_text(data.error_message)
+            eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
+            await evaluation_plugin_repository.save(eval_plugin)
+        evaluation.status = EvaluationStatus.Failed
+        await evaluation_repository.save(evaluation)
 
-    evaluation.status = EvaluationStatus.Failed
-    await evaluation_repository.save(evaluation)
+    await ledger.atomically(fail)
 
     await sync_to_async(log_action)(
         request, action="plugin_failed", resource_type="evaluation", resource_id=str(evaluation_pid),

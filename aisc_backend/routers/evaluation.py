@@ -12,7 +12,7 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend import platform_helpers
+from aisc_backend import ledger, platform_helpers
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -401,10 +401,24 @@ async def stop_evaluation(request, evaluation_pid: uuid.UUID):
     if evaluation.status not in STILL_GOING:
         raise HttpError(409, f"The run has already ended ({evaluation.status}), so there is nothing to stop")
     now = datetime.datetime.now(tz=datetime.timezone.utc)
-    await (EvaluationPlugin.objects.filter(evaluation=evaluation, status__in=("Pending", "Running"))
-           .aupdate(status="Failed", error_message=STOPPED_BY_A_PERSON, finished_at=now))
-    evaluation.status = EvaluationStatus.Failed
-    await evaluation.asave(update_fields=["status"])
+    status_before = str(evaluation.status)
+
+    async def stop():
+        # each test and the run saved on their own rows, so each gets its status event, and the person's Stop
+        # as one event citing this request: all of it commits together, or none of it
+        stopped = []
+        async for test in (EvaluationPlugin.objects.select_related("plugin_config__plugin")
+                           .filter(evaluation=evaluation, status__in=("Pending", "Running")).order_by("id")):
+            test.status, test.error_message, test.finished_at = "Failed", STOPPED_BY_A_PERSON, now
+            await test.asave(update_fields=["status", "error_message", "finished_at"])
+            stopped.append(test.plugin_config.plugin.name)
+        evaluation.status = EvaluationStatus.Failed
+        await evaluation.asave(update_fields=["status"])
+        await sync_to_async(ledger.emit)("engine.evaluation.stopped", item_type="evaluation",
+                                         item_id=evaluation.pid,
+                                         details={"status_before": status_before, "tests": stopped})
+
+    await ledger.atomically(stop)
     # AUDIT: who stopped which run
     await sync_to_async(log_action)(
         request, action="stop", resource_type="evaluation", resource_id=str(evaluation.pid),

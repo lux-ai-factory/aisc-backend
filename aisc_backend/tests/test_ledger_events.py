@@ -26,6 +26,8 @@ from aisc_backend.routers.project_config import router as project_config_router
 
 PID = "0f0e0d0c-0b0a-4908-8706-050403020100"
 REQUEST = "11111111-2222-4333-8444-555555555555"
+#: the request of a person pressing Stop, another than the run's start
+STOP_REQUEST = "66666666-7777-4888-8999-000000000000"
 
 components = TestAsyncClient(component_router)
 projects = TestAsyncClient(project_router)
@@ -347,6 +349,74 @@ class Runs(Recording):
         res = await self._as_the_worker("put", f"/evaluations/{self.evaluation.pid}?status=Processing")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(await events(), [])
+
+
+    async def _stop(self, sent=None):
+        from aisc_backend.routers import evaluation as evaluation_routes
+
+        stop_request = ledger.current_request.set(STOP_REQUEST)
+        try:
+            with mock.patch.object(evaluation_routes.celery_service, "stop_run", new=mock.AsyncMock()), \
+                 mock.patch.object(evaluation_routes, "log_action"):
+                return await TestAsyncClient(evaluation_routes.router).post(f"/{self.evaluation.pid}/stop")
+        finally:
+            ledger.current_request.reset(stop_request)
+
+    async def test_stopping_a_run_records_each_stopped_test_and_the_stop_cited_to_the_stop_request(self):
+        from aisc_backend.models import EvaluationPlugin
+
+        with unrecorded():
+            await EvaluationPlugin.objects.acreate(evaluation=self.evaluation, status="Running",
+                                                            plugin_config=self.evaluation_plugin.plugin_config)
+            await EvaluationPlugin.objects.acreate(evaluation=self.evaluation, status="Done",
+                                                   plugin_config=self.evaluation_plugin.plugin_config)
+        await self._start()
+        res = await self._stop()
+        self.assertEqual(res.status_code, 200, res.text)
+        _, *recorded = await events()
+        tests = [e for e in recorded if e["action"] == "engine.evaluation.plugin_status_changed"]
+        self.assertEqual(sorted(e["details"]["status_before"] for e in tests), ["Pending", "Running"])
+        self.assertTrue(all(e["details"]["status_after"] == "Failed" for e in tests))
+        [run] = [e for e in recorded if e["action"] == "engine.evaluation.status_changed"]
+        self.assertEqual(run["details"], {"status_before": "Pending", "status_after": "Failed"})
+        [stopped] = [e for e in recorded if e["action"] == "engine.evaluation.stopped"]
+        self.assertEqual((stopped["item_type"], stopped["item_id"], stopped["request_id"]),
+                         ("evaluation", str(self.evaluation.pid), STOP_REQUEST))
+        self.assertEqual(stopped["details"], {"status_before": "Pending", "tests": ["DemoPlugin", "DemoPlugin"]})
+
+    async def test_a_stop_whose_event_cannot_be_written_changes_nothing(self):
+        from aisc_backend.models import Evaluation, EvaluationPlugin
+
+        await self._start()
+        real = ledger.emit
+
+        def refuse_the_stop(action, **kw):
+            if action == "engine.evaluation.stopped":
+                raise RuntimeError("the outbox is full")
+            return real(action, **kw)
+
+        with mock.patch.object(ledger, "emit", side_effect=refuse_the_stop):
+            with self.assertRaises(RuntimeError):
+                await self._stop()
+        self.assertEqual((await Evaluation.objects.aget(pk=self.evaluation.pk)).status, "Pending")
+        self.assertEqual((await EvaluationPlugin.objects.aget(pk=self.evaluation_plugin.pk)).status, "Pending")
+
+    async def test_a_failed_test_and_its_failed_run_are_saved_together(self):
+        from aisc_backend.models import EvaluationPlugin
+
+        await self._start()
+        real = ledger.emit_for_run
+
+        def refuse_the_runs_event(action, *args, **kw):
+            if action == "engine.evaluation.status_changed":
+                raise RuntimeError("the outbox is full")
+            return real(action, *args, **kw)
+
+        with mock.patch.object(ledger, "emit_for_run", side_effect=refuse_the_runs_event):
+            with self.assertRaises(RuntimeError):
+                await self._as_the_worker("patch", f"/evaluations/{self.evaluation.pid}/plugins/"
+                                                   f"{self.evaluation_plugin.pid}/fail", json={"error_message": "x"})
+        self.assertEqual((await EvaluationPlugin.objects.aget(pk=self.evaluation_plugin.pk)).status, "Pending")
 
 
 class _FakePlugin:
