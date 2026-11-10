@@ -241,6 +241,10 @@ IMMUDB_DATABASE = env("IMMUDB_DATABASE", default="auditdb")
 SERVICE_TOKEN = env("SERVICE_TOKEN", default="")
 SERVICE_TOKEN_FOR_APPS = env("SERVICE_TOKEN_FOR_APPS", default="")
 
+# --- Membership backfill (read by the bootstrap_membership command) ---
+# Comma-separated Keycloak subjects who own every existing project that has no
+# members yet (the single-tenant backfill; run once after upgrading to membership).
+PROJECT_BOOTSTRAP_OWNERS = env("PROJECT_BOOTSTRAP_OWNERS", default="")
 # --- Headless qualification service (read by services.qualification_service) ---
 # The isolated qualification compute service: answers in, AI card out. Empty
 # means the backend falls back to a deterministic summary card (dev/tests).
