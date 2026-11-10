@@ -224,6 +224,12 @@ IMMUDB_PASSWORD = env("IMMUDB_PASSWORD", default=env("IMMUDB_ADMIN_PASSWORD", de
 # The dedicated audit database (separate from immudb's defaultdb).
 IMMUDB_DATABASE = env("IMMUDB_DATABASE", default="auditdb")
 
+# --- Service tokens (read by aisc_backend.auth.service_token) ---
+# The shared secret that accepts a service-to-service call at the backend's own
+# service door (an isolated app calling back), and the one the backend sends
+# when it calls an app's door. Made by scripts/secrets.sh. Empty = door closed.
+SERVICE_TOKEN = env("SERVICE_TOKEN", default="")
+SERVICE_TOKEN_FOR_APPS = env("SERVICE_TOKEN_FOR_APPS", default="")
 
 ## .env vars
 
