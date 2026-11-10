@@ -30,6 +30,8 @@ from aisc_backend.routers.file import router as file_router
 from aisc_backend.routers.stats import router as stats_router
 from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
+from aisc_backend.routers.qualification import router as qualification_router
+from aisc_backend.routers.questionnaire import router as questionnaire_router
 from aisc_backend.routers.internal import router as internal_router
 from aisc_backend.routers.project_config import router as project_config_router
 
@@ -50,6 +52,7 @@ v1_router = Router()
 v1_router.add_router("/app", app_router)
 # Our endpoints
 v1_router.add_router("/projects", project_router)
+v1_router.add_router("/projects", qualification_router)  # /{pid}/system-versions, /questionnaire, /qualification
 v1_router.add_router("/components", component_router)
 v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)
@@ -58,6 +61,7 @@ v1_router.add_router("/files", file_router)
 v1_router.add_router("/stats", stats_router)
 v1_router.add_router("/me", me_router)
 v1_router.add_router("/audit", audit_router)
+v1_router.add_router("/questionnaires", questionnaire_router)
 v1_router.add_router("/project/settings", project_config_router)
 
 api.add_router("/v1/", v1_router)

@@ -231,6 +231,10 @@ IMMUDB_DATABASE = env("IMMUDB_DATABASE", default="auditdb")
 SERVICE_TOKEN = env("SERVICE_TOKEN", default="")
 SERVICE_TOKEN_FOR_APPS = env("SERVICE_TOKEN_FOR_APPS", default="")
 
+# --- Headless qualification service (read by services.qualification_service) ---
+# The isolated qualification compute service: answers in, AI card out. Empty
+# means the backend falls back to a deterministic summary card (dev/tests).
+QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
 ## .env vars
 
 APP_NAME = env("APP_NAME","aisc-backend")
