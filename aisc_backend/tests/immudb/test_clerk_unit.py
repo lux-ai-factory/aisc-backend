@@ -51,6 +51,24 @@ class AuditClerkUnitTest(SimpleTestCase):
         c.connect()                       # second call must be a no-op (already connected)
         m.login.assert_called_once()
 
+    def test_project_column_alter_runs_once_per_process(self):
+        clerk_mod._PROJECT_COLUMN_CHECKED = False
+        c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
+        c.connect()
+        alters = [
+            a for a in m.sqlExec.call_args_list
+            if isinstance(a.args[0], str) and a.args[0].startswith("ALTER TABLE")
+        ]
+        self.assertEqual(len(alters), 1)   # CREATE table + one ALTER on first connect
+        # A later connect in the same process must not pay the ALTER again.
+        c2, m2 = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
+        c2.connect()
+        alters2 = [
+            a for a in m2.sqlExec.call_args_list
+            if isinstance(a.args[0], str) and a.args[0].startswith("ALTER TABLE")
+        ]
+        self.assertEqual(len(alters2), 0)
+
     def test_write_event_issues_parameterized_insert(self):
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
         c.write_event(actor="admin", action="delete", resource_type="project",

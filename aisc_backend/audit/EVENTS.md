@@ -15,14 +15,22 @@ The schema follows standard audit-log practice: fields are **queryable** (query 
 | `resource_id` | which one | the object's id/pid (nullable) |
 | `source_app` | **WHERE** | `backend` · `webapp` · `controls` · `qualification` |
 | `source_ip` | **WHERE FROM** | client IP (honours `X-Forwarded-For`) |
+| `project` | **WHICH project** | the project the event belongs to (filterable; derived from `metadata.projectPid`) |
 | `outcome` | result | `ok` / `failed` |
-| `metadata` | **WHY / details** | JSON: what actually changed |
+| `metadata` | **WHY / details** | JSON: what actually changed; any event inside a project carries `projectPid` |
 | `summary` | — | human-readable one-liner (deterministic, no LLM) |
 
 How it gets there: the **backend is the single writer**. The webapp's actions are logged by the backend
 directly; **controls** and **qualification** POST their events to `POST /api/v1/audit` (forwarding the
-user's token — the server sets `actor` + `source_ip`, so they can't be forged). Reading/verifying the log
-is admin-only (`GET /api/v1/audit`, requires the `admin` role).
+user's token — the server sets `actor` + `source_ip`, so they can't be forged). The `project` column is
+filled by `log_action`/the audit door FROM `metadata.projectPid` (one place, never recomputed per site),
+so a project's whole log is one `WHERE project = …` query away.
+
+Reading the log:
+- `GET /api/v1/audit` — **admin-only**, every event + the tamper `verified` proof.
+- `GET /api/v1/audit/project/{pid}` (alias `GET /api/v1/projects/{pid}/logs`) — **any member** of that
+  project, only its events. Same shape minus `verified`.
+
 
 ## Events  (`action` on `resource_type`)
 
@@ -34,6 +42,13 @@ is admin-only (`GET /api/v1/audit`, requires the `admin` role).
 | `create`/`upload` · model | register a model / upload its file |
 | `install`/`disable`/`toggle`/`configure` · plugin | manage project plugins |
 | `run` · evaluation | start an evaluation |
+| `member_added`/`member_role_changed`/`member_removed` · project_member | manage who is in a project (owner only) |
+
+### component
+| action · resource_type | when |
+|---|---|
+| `create`/`update`/`upload` · component | create / edit a component / upload its data file |
+| `delete` · component | delete a component (audited with `projectPid`) |
 
 ### system (eval-worker) → backend — evaluation lifecycle
 | action · resource_type | when |
@@ -43,20 +58,33 @@ is admin-only (`GET /api/v1/audit`, requires the `admin` role).
 | `upload_artifact` · evaluation | an artifact was produced |
 | `record_measures` · evaluation | measurements recorded |
 
-### controls
+### controls (backend-native — the reference lifecycle, no UI)
 | action · resource_type | when |
 |---|---|
-| `answer` · checklist | submit a filled checklist |
-| `review` · checklist | save a reviewed checklist |
-| `create` · source | add a source/authority |
-| `save_draft`/`close` · submission | save / close a submission draft |
-| `reopen`/`archive`/`restore` · submission | (planned — server-component-triggered; needs token-forwarding to attribute the actor) |
+| `create` · submission | open a draft checklist submission |
+| `answer` · submission | save answers on a submission |
+| `close` · submission | close a submission (Draft → Closed) |
+| `reopen` · submission | reopen → next version (the version chain) |
+| `generate` · submission_report | build the PDF report payload for a closed submission |
 
-### qualification
+### catalogue (backend-native)
 | action · resource_type | when |
 |---|---|
-| `create` · qualification | qualify an AI system |
-| `generate` · systemcard | generate its system card |
+| `install` · control | install a seeded checklist template into the project's library (idempotent) |
+| `install` · plugin | install a plugin from the catalogue into the engine loader |
+| `export` · control | export a control's install-package (compat surface) |
+
+### qualifying the system (backend-native)
+| action · resource_type | when |
+|---|---|
+| `create` · qualification | qualify an AI system (answers + built card + version) |
+| `create` · system_version | create the next AI-card version |
+| `update` · questionnaire_selection | select the project's active questionnaire |
+
+### reporting (backend-native)
+| action · resource_type | when |
+|---|---|
+| `generate` · report | assemble the report snapshot and render the PDF/HTML |
 
 > `action` + `resource_type` are always server-decided (never from the request body); `actor` + `source_ip`
 > come from the verified request.

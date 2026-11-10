@@ -147,7 +147,7 @@ async def create_plugins(request, data: CreatePluginsRequest):
 
     await sync_to_async(log_action)(
         request, action="install", resource_type="plugin", resource_id=data.package_name,
-        metadata={"version": data.version, "projectPid": str(data.project_uuid),
+        metadata={"projectPid": str(data.project_uuid), "version": data.version,
                   "plugins": [p.name for p in created_plugins]})
 
     return created_plugins
@@ -204,7 +204,7 @@ async def delete_plugin(request, data: DeletePluginsRequest):
             await plugin_repository.save(plugin)
     await sync_to_async(log_action)(
         request, action="disable", resource_type="plugin", resource_id=data.package_name,
-        metadata={"version": data.version, "projectPid": str(data.project_uuid)})
+        metadata={"projectPid": str(data.project_uuid), "version": data.version})
     return 204, None
 
 

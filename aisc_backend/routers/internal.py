@@ -186,7 +186,11 @@ async def update_evaluation_status(
             await evaluation_repository.save(evaluation)
             await sync_to_async(log_action)(
                 request, action="status_change", resource_type="evaluation",
-                resource_id=str(evaluation_pid), metadata={"status": str(evaluation.status)})
+                resource_id=str(evaluation_pid), source_app="eval",
+                metadata={
+                    "projectPid": str(evaluation.project.pid),
+                    "status": str(evaluation.status),
+                })
             return evaluation.status
 
     evaluation.status = status
@@ -194,7 +198,11 @@ async def update_evaluation_status(
 
     await sync_to_async(log_action)(
         request, action="status_change", resource_type="evaluation",
-        resource_id=str(evaluation_pid), metadata={"status": str(evaluation.status)})
+        resource_id=str(evaluation_pid),
+        metadata={
+            "projectPid": str(evaluation.project.pid),
+            "status": str(evaluation.status),
+        })
     return evaluation.status
 
 
@@ -238,7 +246,7 @@ class PluginFailureSchema(Schema):
 async def mark_plugin_failed(
     request, evaluation_pid: uuid.UUID, evaluation_plugin_pid: uuid.UUID, data: PluginFailureSchema
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid)
+    evaluation = await evaluation_repository.get(evaluation_pid, True)
     if evaluation is None:
         raise HttpError(404, "No evaluation found")
 
@@ -256,7 +264,11 @@ async def mark_plugin_failed(
 
     await sync_to_async(log_action)(
         request, action="plugin_failed", resource_type="evaluation", resource_id=str(evaluation_pid),
-        outcome="failed", metadata={"pluginPid": str(evaluation_plugin_pid)})
+        outcome="failed", source_app="eval",
+        metadata={
+            "projectPid": str(evaluation.project.pid),
+            "pluginPid": str(evaluation_plugin_pid),
+        })
     return "ok"
 
 
@@ -308,7 +320,8 @@ async def create_evaluation_measures(
 
     await sync_to_async(log_action)(
         request, action="record_measures", resource_type="evaluation",
-        resource_id=str(evaluation_pid), metadata={"plugins": len(data)})
+        resource_id=str(evaluation_pid), source_app="eval",
+        metadata={"projectPid": str(evaluation.project.pid), "plugins": len(data)})
     return Schema()
 
 
@@ -323,7 +336,7 @@ async def upload_evaluation_artifact(
     evaluation_plugin_uuid: uuid.UUID = Form(...),
     file: UploadedFile = File(...),
 ):
-    evaluation = await evaluation_repository.get(evaluation_pid)
+    evaluation = await evaluation_repository.get(evaluation_pid, True)
     if evaluation is None:
         raise HttpError(404, "No evaluation found")
 
@@ -351,7 +364,8 @@ async def upload_evaluation_artifact(
 
     await sync_to_async(log_action)(
         request, action="upload_artifact", resource_type="evaluation",
-        resource_id=str(evaluation_pid), metadata={"artifact": original_filename})
+        resource_id=str(evaluation_pid), source_app="eval",
+        metadata={"projectPid": str(evaluation.project.pid), "artifact": original_filename})
     return UploadArtifactResponse(file_name=file.name)
 
 

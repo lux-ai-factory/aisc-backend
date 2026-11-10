@@ -34,6 +34,9 @@ class FakeImmudbClient:
 
     # --- SQL surface (only the shapes the clerk issues) ---
     def sqlExec(self, stmt, params=None):
+        # DDL (CREATE TABLE / ALTER TABLE) provisions the shape, not a row.
+        if stmt.lstrip().upper().startswith(("CREATE", "ALTER")):
+            return
         self._next_id += 1
         row = {"id": self._next_id}
         row.update({k: v for k, v in (params or {}).items()})
@@ -45,12 +48,13 @@ class FakeImmudbClient:
             return []
         columns = [c.strip() for c in select_match.group(1).split(",")]
 
+        rows = list(self._rows)
         if "WHERE" in stmt and params:
-            # support the single filter pattern the clerk/tests use: WHERE resource_type = @rt
-            rt = params.get("rt")
-            rows = [r for r in self._rows if rt is None or r.get("resource_type") == rt]
-        else:
-            rows = list(self._rows)
+            # WHERE col = @param (single clause): bind the param value onto its column.
+            where_match = re.search(r"WHERE\s+(\w+)\s*=\s*@(\w+)", stmt, re.IGNORECASE)
+            if where_match:
+                col, param_name = where_match.group(1), where_match.group(2)
+                rows = [r for r in rows if r.get(col) == params.get(param_name)]
 
         return [tuple(r.get(c) for c in columns) for r in rows]
 

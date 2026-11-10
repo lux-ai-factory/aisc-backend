@@ -29,6 +29,19 @@ def source_ip_of(request) -> str | None:
     return meta.get("REMOTE_ADDR")
 
 
+def project_id_of(metadata: dict | None) -> str | None:
+    """The project an event belongs to, from its metadata.
+
+    `projectPid` is the established key the call sites already carry; the
+    filterable `project` column is derived from it here — in one place — so a
+    call site never has to work it out again.
+    """
+    if not metadata:
+        return None
+    value = metadata.get("projectPid")
+    return str(value) if value else None
+
+
 def log_action(request, action: str, resource_type: str, resource_id=None,
                metadata: dict | None = None, source_app: str = "backend",
                outcome: str = "ok") -> None:
@@ -37,7 +50,7 @@ def log_action(request, action: str, resource_type: str, resource_id=None,
       action        - the verb (create | update | delete | run | upload | ...)
       resource_type - the object type (project | dataset | evaluation | plugin | ...)
       resource_id   - which object (id/pid), optional
-      metadata      - dict of what changed / details
+      metadata      - dict of what changed / details; may carry `projectPid`
     """
     try:
         clerk.write_event(
@@ -47,6 +60,7 @@ def log_action(request, action: str, resource_type: str, resource_id=None,
             resource_id=str(resource_id) if resource_id is not None else None,
             source_app=source_app,
             source_ip=source_ip_of(request),
+            project_id=project_id_of(metadata),
             outcome=outcome,
             metadata=metadata or {},
         )

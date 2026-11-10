@@ -1,8 +1,10 @@
 import uuid
 
+from asgiref.sync import sync_to_async
 from ninja import Router
 from ninja.errors import HttpError
 
+from aisc_backend.audit.log import log_action
 from aisc_backend.models import AIComponentType, ProjectConfig, ProjectConfigCategory
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
@@ -60,6 +62,10 @@ async def create_project_config(request, project_pid: uuid.UUID, data: ProjectCo
             json_value=data.json_value.model_dump() if data.json_value is not None else {},
         )
     )
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="project_config",
+        resource_id=str(project_config.pid), metadata={"projectPid": str(project_pid),
+                                                       "category": data.category, "key": key})
     return project_config
 
 
@@ -86,11 +92,19 @@ async def update_project_config(request, project_pid: uuid.UUID, project_config_
     if data.json_value is not None:
         project_config.json_value = data.json_value.model_dump()
     await project_config_repository.save(project_config)
+    await sync_to_async(log_action)(
+        request, action="update", resource_type="project_config",
+        resource_id=str(project_config_pid),
+        metadata={"projectPid": str(project_pid), "key": project_config.key})
     return project_config
 
 
 @router.delete("/{project_pid}/{project_config_pid}", response={204: None})
 async def delete_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID):
     project_config = await project_config_repository.get(project_config_pid)
+    await sync_to_async(log_action)(
+        request, action="delete", resource_type="project_config",
+        resource_id=str(project_config_pid),
+        metadata={"projectPid": str(project_pid), "key": project_config.key})
     await project_config_repository.delete(project_config)
     return 204, None
