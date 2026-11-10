@@ -245,7 +245,12 @@ REDIS_BACKEND_URL = env("REDIS_BACKEND_URL","")
 CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 
-PLUGIN_PATH = env('PLUGIN_PATH', '')
+# Where plugins are discovered from (local disk). Defaults to the repo's
+# bundled def_plugins folder so the explore catalogue shows local packages
+# out of the box; PACKAGE_REGISTRY_* adds the public devpi catalogue.
+REPO_ROOT = BASE_DIR.parent.parent
+_DEFAULT_PLUGIN_PATH = str(REPO_ROOT / "def_plugins") if (REPO_ROOT / "def_plugins").is_dir() else ""
+PLUGIN_PATH = env('PLUGIN_PATH', _DEFAULT_PLUGIN_PATH)
 PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
 PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
 PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))
