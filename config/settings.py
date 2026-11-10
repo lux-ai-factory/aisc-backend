@@ -235,6 +235,10 @@ SERVICE_TOKEN_FOR_APPS = env("SERVICE_TOKEN_FOR_APPS", default="")
 # The isolated qualification compute service: answers in, AI card out. Empty
 # means the backend falls back to a deterministic summary card (dev/tests).
 QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
+# --- Headless report service (read by services.report_service) ---
+# The isolated report renderer: snapshot in, PDF/HTML out. Empty means the
+# backend falls back to a deterministic HTML summary (dev/tests).
+REPORT_SERVICE_URL = env("REPORT_SERVICE_URL", default="")
 # --- Controls catalogue (read by services.controls_catalogue) ---
 # The hosted checklist catalogue (AI Factory Sandbox Configurator API v1.1).
 # `manage.py sync_controls_catalogue` upserts its rows into the control tables;
