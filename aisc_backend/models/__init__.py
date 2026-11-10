@@ -1,4 +1,5 @@
 from .project import *
+from .project_member import *
 from .ai_system import *
 from .evaluation import *
 from .metric import *
