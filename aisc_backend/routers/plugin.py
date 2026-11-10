@@ -21,6 +21,7 @@ from aisc_backend.schemas.project_config import ProjectConfigOptionSchema, Proje
 from aisc_plugin_manager import Loader
 from aisc_plugin_interface import MetricVisualization
 from aisc_plugin_interface.models.evaluation_input import InputDefinition
+from packaging.version import parse as parse_version
 from config.settings import PLUGIN_PATH, PACKAGE_REGISTRY_URL, PACKAGE_REGISTRY_INDEX, PACKAGE_REGISTRY_USER, \
     PACKAGE_REGISTRY_PASSWORD
 
@@ -440,3 +441,114 @@ async def parse_plugin_config_state_from_dataset(
     )
 
     return response
+
+
+# --- version switching + update-from-catalogue --------------------------------
+
+
+class UpdatePluginVersionRequest(Schema):
+    version: str
+
+
+@router.patch("/{plugin_pid}/version", response=list[PluginOutSchema])
+async def update_plugin_version(request, plugin_pid: uuid.UUID, data: UpdatePluginVersionRequest):
+    """Switch a project's plugin(s) of this package to another available version.
+
+    Keeps history: the current-version rows are soft-disabled (same convention
+    as delete), and the target-version rows (existing or new) are enabled, so
+    evaluation/plugin-config history stays attached to its version. Audited.
+    """
+    return await _switch_version(request, plugin_pid, data.version, action="version_change")
+
+
+class UpdatePluginFromCatalogueRequest(Schema):
+    """Optional pin to a specific version; empty = latest available."""
+
+    version: str = ""
+
+
+@router.post("/{plugin_pid}/update", response=list[PluginOutSchema])
+async def update_plugin_from_catalogue(
+    request, plugin_pid: uuid.UUID, data: UpdatePluginFromCatalogueRequest
+):
+    """Bring a plugin card up to date from the catalogue.
+
+    With no version this picks the latest available version of the package; with
+    a version it pins exactly like PATCH version. Same history-preserving
+    semantics. Audited.
+    """
+    plugin = await plugin_repository.get(plugin_pid)
+    packages = plugin_loader.list_packages()
+    versions = packages.get(plugin.package_name, {})
+    if not versions:
+        raise HttpError(422, f"{plugin.package_name} is not available in the catalogue")
+
+    target = data.version or _latest_version(versions)
+    return await _switch_version(request, plugin_pid, target, action="update", versions=versions)
+
+
+def _latest_version(versions: dict) -> str:
+    """The newest key, by PEP 440: '0.10' beats '0.9' (plain max() on strings would not)."""
+    return str(max(versions, key=parse_version))
+
+
+async def _switch_version(
+    request, plugin_pid: uuid.UUID, target: str, action: str, versions: dict | None = None
+) -> list[Plugin]:
+    """Shared switch logic: validate, disable old version, enable/create new."""
+    plugin = await plugin_repository.get_with_related(plugin_pid)
+    project = plugin.project   # prefetched by get_with_related (select_related)
+
+    if versions is None:
+        packages = plugin_loader.list_packages()
+        versions = packages.get(plugin.package_name, {})
+    if target not in versions:
+        raise HttpError(422, f"version {target} of {plugin.package_name} is not available")
+
+    old_version = plugin.version
+    if target != old_version:
+        await _set_version_enabled(request, plugin, project, old_version, enable=False)
+    result = await _set_version_enabled(request, plugin, project, target, enable=True)
+    await sync_to_async(log_action)(
+        request, action=action, resource_type="plugin", resource_id=str(plugin.pid),
+        metadata={"projectPid": str(project.pid), "package_name": plugin.package_name,
+                  "from_version": old_version, "to_version": target,
+                  "plugins": [row.name for row in result]})
+    return result
+
+
+async def _set_version_enabled(
+    request, plugin: Plugin, project, version: str, enable: bool
+) -> list[Plugin]:
+    """Enable/disable every row of the package's given version in a project,
+    creating the version's rows when enabling (mirroring create_plugins)."""
+    if enable:
+        loaded = plugin_loader.load_package(plugin.package_name, version)
+        result = []
+        for name, plugin_obj in loaded.items():
+            existing = await plugin_repository.find_by_identity(
+                project, plugin.package_name, version, name
+            )
+            if existing is not None:
+                row = existing
+                if not row.enabled:
+                    row.enabled = True
+                    await plugin_repository.save(row)
+            else:
+                row = await plugin_repository.create(Plugin(
+                    name=name,
+                    display_name=plugin_obj.display_name,
+                    package_name=plugin.package_name,
+                    version=version,
+                    project=project,
+                    enabled=True,
+                ))
+            result.append(row)
+        return result
+
+    rows = await plugin_repository.list_by_package(project.pid, plugin.package_name, version)
+    for row in rows:
+        if row.enabled:
+            row.enabled = False
+            await plugin_repository.save(row)
+    return rows
