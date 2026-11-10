@@ -208,6 +208,16 @@ KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
 
+# --- Keycloak Admin (read by services.keycloak_admin) ---
+# The backend talks to Keycloak's Admin REST API with a confidential
+# service-account client (never the browser, never a user's password). Empty
+# means the admin surface is off (the client methods fail closed / return
+# empty lists, like the other stub-able services). Made by scripts/secrets.sh.
+KEYCLOAK_ADMIN_URL = env("KEYCLOAK_ADMIN_URL", default="")
+KEYCLOAK_REALM = env("KEYCLOAK_REALM", default="aisc")
+KEYCLOAK_ADMIN_CLIENT_ID = env("KEYCLOAK_ADMIN_CLIENT_ID", default="aisc-backend-admin")
+KEYCLOAK_ADMIN_CLIENT_SECRET = env("KEYCLOAK_ADMIN_CLIENT_SECRET", default="")
+
 # --- Model listing TLS ---
 # Controls TLS certificate verification when listing models from an
 # OpenAI-compatible endpoint. Set to "False" to skip verification (allow
