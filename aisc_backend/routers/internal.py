@@ -281,6 +281,16 @@ async def create_evaluation_measures(
         )
         observation = await observation_repository.save(observation)
 
+        # Resolve every metric name once instead of one DB query per measure
+        # (a fairness run can send hundreds of thousands of measurements).
+        metric_names = {measure_in_schema.name for measure_in_schema in measures}
+        metric_by_name: dict[str, Metric] = {}
+        for name in metric_names:
+            try:
+                metric_by_name[name] = await metric_repository.get_one(name=name)
+            except ObjectDoesNotExist:
+                metric_by_name[name] = await metric_repository.save(Metric(name=name))
+
         measurement_objs = []
         for measure_in_schema in measures:
             measure_in_schema.description = (
@@ -289,18 +299,8 @@ async def create_evaluation_measures(
                 else measure_in_schema.description
             )
 
-            # Get or create Metric
-            try:
-                metric = await metric_repository.get_one(name=measure_in_schema.name)
-            except ObjectDoesNotExist:
-                metric = await metric_repository.save(
-                    Metric(name=measure_in_schema.name)
-                )
-
-            # Save Measure associated with the Observation
             measure_in_schema.observation = observation
-            measure_in_schema.metric = metric
-
+            measure_in_schema.metric = metric_by_name[measure_in_schema.name]
             measurement_objs.append(Measurement(**measure_in_schema.model_dump()))
 
         if measurement_objs:
