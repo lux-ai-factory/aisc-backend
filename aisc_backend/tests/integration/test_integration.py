@@ -168,3 +168,38 @@ class IntegrationTestCase(TestCase):
         # The recorded metric names are queryable via the measurements API
         metric_names = await evaluation_test_client.get_evaluation_metric_names(evaluation.pid)
         self.assertEqual(set(metric_names), {"Accuracy", "F1", "Precision", "Recall", "MCC", "ROCAUC"})
+
+    async def test_evaluation_uses_requested_config(self):
+        # A plugin with two configs: the router must run the requested one,
+        # not always the current (latest) one.
+        project = await project_test_client.create_project("cfg-test")
+        project_model = await Project.objects.aget(pid=project.pid)
+        plugin = await Plugin.objects.acreate(
+            package_name="demo-pkg", version="0.1.0",
+            display_name="Demo Plugin", project=project_model,
+        )
+        plugin.name = "DemoPlugin"
+        older = await PluginConfig.objects.acreate(plugin=plugin, config={"version": 1})
+        latest = await PluginConfig.objects.acreate(plugin=plugin, config={"version": 2})
+        plugin.current_config = latest
+        await plugin.asave()
+
+        with (
+            mock.patch(
+                "aisc_backend.routers.plugin.plugin_loader.load_plugin",
+                return_value=SimpleNamespace(project_config_definitions=[]),
+            ),
+            mock.patch(
+                "aisc_backend.services.celery_service.run_evaluation",
+                new=mock.AsyncMock(return_value=SimpleNamespace(task_id=str(uuid.uuid4()))),
+            ),
+        ):
+            evaluation = await evaluation_test_client.create_evaluation(
+                project.pid,
+                [{"name": "DemoPlugin", "inputs": [], "config_id": older.id}],
+            )
+
+        detail = await evaluation_test_client.get_evaluation_including(evaluation.pid, "plugin")
+        plugin_config = detail.evaluation_plugins[0]["plugin_config"]
+        self.assertEqual(plugin_config["id"], older.id)
+        self.assertEqual(plugin_config["config"], {"version": 1})
