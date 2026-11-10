@@ -30,6 +30,8 @@ from aisc_backend.routers.file import router as file_router
 from aisc_backend.routers.stats import router as stats_router
 from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
+from aisc_backend.routers.catalogue import router as catalogue_router
+from aisc_backend.routers.control import router as control_router
 from aisc_backend.routers.control_objectives import router as control_objectives_router
 from aisc_backend.routers.qualification import router as qualification_router
 from aisc_backend.routers.questionnaire import router as questionnaire_router
@@ -55,6 +57,8 @@ v1_router.add_router("/app", app_router)
 v1_router.add_router("/projects", project_router)
 v1_router.add_router("/projects", qualification_router)  # /{pid}/system-versions, /questionnaire, /qualification
 v1_router.add_router("/projects", control_objectives_router)  # /{pid}/control-objectives/*
+v1_router.add_router("/projects", control_router)  # /{pid}/controls/* (library, submissions)
+v1_router.add_router("", catalogue_router)  # /catalogue + /projects/{pid}/catalogue/*
 v1_router.add_router("/components", component_router)
 v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)

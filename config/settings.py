@@ -235,6 +235,12 @@ SERVICE_TOKEN_FOR_APPS = env("SERVICE_TOKEN_FOR_APPS", default="")
 # The isolated qualification compute service: answers in, AI card out. Empty
 # means the backend falls back to a deterministic summary card (dev/tests).
 QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
+# --- Controls catalogue (read by services.controls_catalogue) ---
+# The hosted checklist catalogue (AI Factory Sandbox Configurator API v1.1).
+# `manage.py sync_controls_catalogue` upserts its rows into the control tables;
+# the catalogue surface reads them like the old vendored seed.
+CONTROLS_CATALOG_URL = env("CONTROLS_CATALOG_URL",
+                           default="https://sandboxconfigurator.aifactory.lu/api/api")
 ## .env vars
 
 APP_NAME = env("APP_NAME","aisc-backend")
