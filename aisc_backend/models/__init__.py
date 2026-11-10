@@ -1,6 +1,7 @@
 from .project import *
 from .project_member import *
 from .qualification import *
+from .control_objective import *
 from .ai_system import *
 from .evaluation import *
 from .metric import *
