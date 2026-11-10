@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.models import (
@@ -97,3 +97,40 @@ class ProjectComponentRouterTestCase(TestCase):
         self.assertEqual(200, response.status_code, response.text)
         entries = response.data["DemoPlugin"]["ds"]
         self.assertEqual(entries["component_pid"], str(dataset.pid))
+
+
+# The uniqueness of project names is enforced by a DB constraint on Project.name.
+# The API must turn the resulting IntegrityError into a 409, not a 500 (and not
+# leak a 500). Exception handlers live on the NinjaAPI, not on a Router, so this
+# exercises a real NinjaAPI with the production handlers registered. The
+# project's own LoggingNinjaAPI is not used here because its create_response()
+# reads ASGI scope, which the test client does not provide.
+from ninja import NinjaAPI
+
+from aisc_backend.routers.project import router as project_router
+from aisc_backend.utils.exception_handlers import register_exception_handlers
+
+uniqueness_api = NinjaAPI()
+register_exception_handlers(uniqueness_api)
+uniqueness_api.add_router("/projects", project_router)
+uniqueness_client = TestAsyncClient(uniqueness_api)
+
+
+class ProjectNameUniquenessTestCase(TransactionTestCase):
+    async def test_duplicate_name_on_create_returns_409(self):
+        await project_repository.create("dup")
+
+        response = await uniqueness_client.post("/projects", json={"name": "dup"})
+
+        self.assertEqual(409, response.status_code, response.content)
+
+    async def test_duplicate_name_on_rename_returns_409(self):
+        await project_repository.create("first")
+        other = await project_repository.create("second")
+
+        response = await uniqueness_client.patch(
+            f"/projects/{other.pid}", json={"name": "first"}
+        )
+
+        self.assertEqual(409, response.status_code, response.content)
+

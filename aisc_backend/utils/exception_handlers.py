@@ -2,6 +2,7 @@ from ninja import NinjaAPI
 import traceback
 
 from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
+from django.db import IntegrityError
 
 from aisc_backend.utils.log_util import get_logger
 from config.settings import APP_NAME, LOG_LEVEL
@@ -22,6 +23,21 @@ def register_exception_handlers(api: NinjaAPI):
         return api.create_response(
             request,
             {"message": f"{exc} — Endpoint: {request.method} {request.path}"},
+            status=409,
+        )
+
+    @api.exception_handler(IntegrityError)
+    def integrity_error_handler(request, exc: IntegrityError):
+        # A unique/foreign-key constraint rejected the write. Report it as a
+        # conflict rather than a 500 so callers can react (e.g. duplicate project
+        # name). The detail stays in the log; the response carries the reason.
+        logger.warning(
+            f"IntegrityError while processing request "
+            f"{request.method} {request.path}: {exc}"
+        )
+        return api.create_response(
+            request,
+            {"message": str(exc), "detail": "constraint violation"},
             status=409,
         )
 

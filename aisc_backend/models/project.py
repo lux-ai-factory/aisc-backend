@@ -16,6 +16,10 @@ class ProjectStatus(models.TextChoices):
 
 
 class Project(Base):
+    # Project names identify a project to the user, so they are unique across the
+    # platform. Enforced here (and not only in the API) so no write path can
+    # create a duplicate.
+    name = models.CharField(max_length=255, unique=True)
     status = models.CharField(max_length=255, choices=ProjectStatus.choices)
 
     def get_components(self) -> list[AIComponent]:
