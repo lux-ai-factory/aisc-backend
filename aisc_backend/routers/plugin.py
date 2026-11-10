@@ -161,9 +161,10 @@ class RefreshPluginRequest(Schema):
 
 @router.post("/refresh", response=list[PluginOutSchema])
 async def refresh_plugins(request, data: RefreshPluginRequest):
+    """Re-import a package's plugin code. Only the project's already-installed
+    plugins from that package are updated (metadata refreshed) — plugins the
+    project did not install are never created or enabled here."""
     plugins_package_dict = plugin_loader.refresh_package(data.package_name, data.version)
-
-    project = await project_repository.get(data.project_uuid, True)
 
     existing = await plugin_repository.list_by_package(
         data.project_uuid, data.package_name, data.version
@@ -172,21 +173,11 @@ async def refresh_plugins(request, data: RefreshPluginRequest):
 
     result = []
     for plugin_name, plugin_obj in plugins_package_dict.items():
-        if plugin_name in existing_by_name:
-            project_plugin = existing_by_name[plugin_name]
-            project_plugin.display_name = plugin_obj.display_name
-            await plugin_repository.save(project_plugin)
-        else:
-            project_plugin = Plugin(
-                name=plugin_name,
-                display_name=plugin_obj.display_name,
-                package_name=data.package_name,
-                version=data.version,
-                project=project,
-                enabled=True,
-            )
-            project_plugin = await plugin_repository.create(project_plugin)
-
+        project_plugin = existing_by_name.get(plugin_name)
+        if project_plugin is None:
+            continue
+        project_plugin.display_name = plugin_obj.display_name
+        await plugin_repository.save(project_plugin)
         result.append(project_plugin)
 
     return result
@@ -225,12 +216,15 @@ class UpdatePluginEnabledRequest(Schema):
 async def update_plugin_enabled(
         request, plugin_pid: uuid.UUID, data: UpdatePluginEnabledRequest
 ):
-    plugin = await plugin_repository.get(plugin_pid)
+    # get_with_related prefetches current_config + setting mappings so the
+    # schema's `config` serializes without hitting a lazy related query async.
+    plugin = await plugin_repository.get_with_related(plugin_pid)
     plugin.enabled = data.enabled
     await plugin_repository.save(plugin)
     await sync_to_async(log_action)(
         request, action="toggle", resource_type="plugin",
-        resource_id=str(plugin_pid), metadata={"enabled": data.enabled})
+        resource_id=str(plugin_pid),
+        metadata={"projectPid": str(plugin.project.pid), "enabled": data.enabled})
     return plugin
 
 

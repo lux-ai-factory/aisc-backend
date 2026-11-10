@@ -36,6 +36,10 @@ class PluginRepository(BaseRepository[Plugin]):
                 package_name=package_name,
                 version=version,
             )
+            # PluginOutSchema resolves `config` (current_config.config) and the
+            # setting mappings: prefetch them so serialization is sync-free.
+            .select_related("current_config")
+            .prefetch_related("current_config__setting_mappings__project_config")
         ]
 
     async def configs_with_mappings(self, plugin: Plugin) -> list[PluginConfig]:
