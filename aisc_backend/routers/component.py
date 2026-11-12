@@ -3,12 +3,13 @@ from pathlib import Path
 
 from asgiref.sync import sync_to_async
 from django.http import StreamingHttpResponse
+from django.utils import timezone
 from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from aisc_backend.audit.log import log_action
-from aisc_backend.models import AIComponent, AIComponentType
+from aisc_backend.models import AIComponent, AIComponentType, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
@@ -99,13 +100,45 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
     return component
 
 
-@router.delete("/{component_pid}", response={204: None})
+class RetiredOutSchema(Schema):
+    retired: bool
+    evaluations: int
+
+
+@router.delete("/{component_pid}", response={200: RetiredOutSchema, 204: None})
 async def delete_component(request, component_pid: uuid.UUID):
+    """Delete the component; one that evaluations used is retired instead, so their record keeps what they ran
+    on (an evaluation's inputs protect their component)."""
     component = await ai_component_repository.get(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
+    used_by = await (EvaluationInput.objects.filter(component=component)
+                     .values("evaluation_plugin__evaluation").distinct().acount())
+    if used_by:
+        if component.retired_at is None:
+            component.retired_at = timezone.now()
+            await component.asave(update_fields=["retired_at"])
+            await sync_to_async(log_action)(
+                request, action="retire", resource_type="component", resource_id=str(component_pid),
+                metadata={"name": component.name, "evaluations": used_by})
+        return 200, {"retired": True, "evaluations": used_by}
     await ai_component_repository.delete(component)
     return 204, None
+
+
+@router.post("/{component_pid}/restore", response=AIComponentOutSchema)
+async def restore_component(request, component_pid: uuid.UUID):
+    """Bring a retired component back into the lists and the choices for new runs."""
+    component = await ai_component_repository.get(component_pid)
+    if not component:
+        raise HttpError(404, f"Component {component_pid} not found")
+    if component.retired_at is not None:
+        component.retired_at = None
+        await component.asave(update_fields=["retired_at"])
+        await sync_to_async(log_action)(
+            request, action="restore", resource_type="component", resource_id=str(component_pid),
+            metadata={"name": component.name})
+    return await ai_component_repository.get_with_source_dataset(component.pid)
 
 
 @router.put("/{component_pid}/data", response=UploadComponentFileResponse)

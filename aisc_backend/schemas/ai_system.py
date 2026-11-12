@@ -10,7 +10,7 @@ class AIComponentOutSchema(ModelSchema):
     class Meta:
         model = AIComponent
         fields = ["pid", "name", "description", "component_type", "data",
-                  "file_size", "json_value"]
+                  "file_size", "json_value", "retired_at"]
 
 
 class AIComponentInSchema(Schema):

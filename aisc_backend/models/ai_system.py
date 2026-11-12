@@ -56,6 +56,9 @@ class AIComponent(HasData):
     # DataShape for datashape, an LLMConfig for llm, a ResourceConfig for
     # resource).
     json_value = models.JSONField(blank=True, default=dict)
+    # set when the component was deleted while evaluations still used it: it stays for their record, out of the
+    # lists and the choices for new runs, until it is restored
+    retired_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def is_file_backed(self) -> bool:
