@@ -32,7 +32,6 @@ from aisc_backend.schemas.control_objective import (
     ObjectiveProfileIn,
     ObjectiveProfileOut,
     ObjectiveRatingsIn,
-    RiskIn,
     RiskObjectiveMappingIn,
     RiskObjectiveMappingOut,
     RiskOut,
@@ -236,24 +235,6 @@ async def list_risks(request, pid: uuid.UUID):
         _risk_out(r)
         async for r in Risk.objects.filter(project=project).order_by("position")
     ]
-
-
-@router.post("/{pid}/control-objectives/risks", response=RiskOut)
-async def add_risk(request, pid: uuid.UUID, data: RiskIn):
-    project = await _project_for(request, pid, needed="editor")
-    position = (
-        (await Risk.objects.filter(project=project).order_by("-position").afirst()).position + 1
-    ) if await Risk.objects.filter(project=project).aexists() else 1
-    risk = await Risk.objects.acreate(
-        project=project, position=position,
-        name=data.name, airo_text=data.airo_text,
-        impact=data.impact, likelihood=data.likelihood, comment=data.comment,
-    )
-    await _create_risk_version(risk, caller_of(request).subject)
-    await sync_to_async(log_action)(
-        request, action="create", resource_type="control_risk",
-        resource_id=str(risk.pid), metadata={"projectPid": str(pid), "name": risk.name})
-    return _risk_out(risk)
 
 
 @router.post("/{pid}/control-objectives/risks/from-card", response=dict)

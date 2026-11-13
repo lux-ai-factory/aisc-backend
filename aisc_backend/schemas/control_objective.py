@@ -44,14 +44,6 @@ class RiskOut(Schema):
     comment: str = ""
 
 
-class RiskIn(Schema):
-    name: str
-    airo_text: str = ""
-    impact: int | None = None
-    likelihood: int | None = None
-    comment: str = ""
-
-
 class RiskRatingIn(Schema):
     impact: int | None = None
     likelihood: int | None = None

@@ -6,7 +6,7 @@ mapping, and the matrix computed on read — all project-scoped (a stranger gets
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import ControlObjective
+from aisc_backend.models.control_objective import ControlObjective, Risk, RiskVersion
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.models.qualification import Qualification
@@ -21,6 +21,33 @@ async def _project():
         project=project, subject="development", role=MembershipRole.Owner,
     )
     return project
+
+
+async def _risk(project, name, impact=None, likelihood=None):
+    """Seed one register risk straight into the DB (risks come from the AI card;
+    there is no manual "add risk" endpoint any more). Also records its initial
+    v1 revision, exactly as the from-card import does."""
+    last = await Risk.objects.filter(project=project).order_by("-position").afirst()
+    position = (last.position + 1) if last is not None else 1
+    risk = await Risk.objects.acreate(
+        project=project,
+        position=position,
+        name=name,
+        impact=impact,
+        likelihood=likelihood,
+    )
+    await RiskVersion.objects.acreate(
+        risk=risk,
+        number=1,
+        name=name,
+        description="",
+        impact=impact,
+        likelihood=likelihood,
+        comment="",
+        airo_text="",
+        created_by="development",
+    )
+    return risk
 
 
 async def _seed_objectives():
@@ -207,21 +234,19 @@ class ControlObjectivesRouterTest(TestCase):
         await _seed_objectives()
         project = await _project()
 
-        # add a risk, then rate it
-        risk = (await co_client.post(f"/{project.pid}/control-objectives/risks", json={
-            "name": "Poisoned training data",
-        })).json()
-        self.assertEqual(risk["rating"], 0)   # unrated
+        # the register is seeded from the AI card, not a manual add form
+        risk = await _risk(project, "Poisoned training data")
+        self.assertEqual(0, risk.impact or 0)   # unrated
 
         rated = (await co_client.patch(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/rating",
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
             json={"impact": 3, "likelihood": 4},
         )).json()
         self.assertEqual(rated["rating"], 12)   # 3 * 4 = 12 -> High band
 
         # map it to an objective (manual)
         mapped = (await co_client.post(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/mappings",
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/mappings",
             json={"objective_id": "O3",
                   "quote": "training data", "rationale": "mitigates poisoning"},
         )).json()
@@ -230,43 +255,41 @@ class ControlObjectivesRouterTest(TestCase):
 
     async def test_risk_versions_append_only(self):
         project = await _project()
-        risk = (await co_client.post(f"/{project.pid}/control-objectives/risks", json={
-            "name": "Poisoned training data",
-        })).json()
+        risk = await _risk(project, "Poisoned training data")
 
-        # adding a risk records v1 (its initial, unrated state)
+        # a seeded risk records v1 (its initial, unrated state)
         versions = (await co_client.get(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/versions")).json()
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions")).json()
         self.assertEqual([v["number"] for v in versions], [1])
         self.assertEqual(versions[0]["rating"], 0)
 
         # rating creates v2 with the new assessment
         (await co_client.patch(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/rating",
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
             json={"impact": 3, "likelihood": 4},
         )).json()
         versions = (await co_client.get(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/versions")).json()
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions")).json()
         self.assertEqual([v["number"] for v in versions], [1, 2])
         self.assertEqual(versions[-1]["rating"], 12)
         self.assertEqual(versions[-1]["name"], "Poisoned training data")
 
         # a no-op re-rate (same impact/likelihood/comment) does NOT create a version
         (await co_client.patch(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/rating",
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
             json={"impact": 3, "likelihood": 4, "comment": ""},
         )).json()
         versions = (await co_client.get(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/versions")).json()
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions")).json()
         self.assertEqual([v["number"] for v in versions], [1, 2])
 
         # reading an old number returns the assessment as it was
         v1 = (await co_client.get(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/versions/1")).json()
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions/1")).json()
         self.assertEqual(v1["rating"], 0)
-        self.assertEqual(v1["risk_pid"], risk["pid"])
+        self.assertEqual(v1["risk_pid"], str(risk.pid))
         missing = await co_client.get(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/versions/99")
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions/99")
         self.assertEqual(missing.status_code, 404)
 
 
@@ -274,19 +297,18 @@ class ControlObjectivesRouterTest(TestCase):
         await _seed_objectives()
         project = await _project()
         risks = [
-            (await co_client.post(f"/{project.pid}/control-objectives/risks",
-                                  json={"name": f"risk {i}"})).json()
+            await _risk(project, f"risk {i}")
             for i in (1, 2)
         ]
         await co_client.patch(
-            f"/{project.pid}/control-objectives/risks/{risks[0]['pid']}/rating",
+            f"/{project.pid}/control-objectives/risks/{risks[0].pid}/rating",
             json={"impact": 5, "likelihood": 5})   # 25 critical
         await co_client.patch(
-            f"/{project.pid}/control-objectives/risks/{risks[1]['pid']}/rating",
+            f"/{project.pid}/control-objectives/risks/{risks[1].pid}/rating",
             json={"impact": 2, "likelihood": 2})   # 4 low
-        await co_client.post(f"/{project.pid}/control-objectives/risks/{risks[0]['pid']}/mappings",
+        await co_client.post(f"/{project.pid}/control-objectives/risks/{risks[0].pid}/mappings",
                              json={"objective_id": "O1"})
-        await co_client.post(f"/{project.pid}/control-objectives/risks/{risks[1]['pid']}/mappings",
+        await co_client.post(f"/{project.pid}/control-objectives/risks/{risks[1].pid}/mappings",
                              json={"objective_id": "O1"})
 
         matrix = (await co_client.get(f"/{project.pid}/control-objectives/matrix")).json()
@@ -315,12 +337,11 @@ class ControlObjectivesRouterTest(TestCase):
     async def test_assessor_key_choice_overrides_in_matrix(self):
         await _seed_objectives()
         project = await _project()
-        risk = (await co_client.post(f"/{project.pid}/control-objectives/risks",
-                                     json={"name": "r"})).json()
+        risk = await _risk(project, "r")
         await co_client.patch(
-            f"/{project.pid}/control-objectives/risks/{risk['pid']}/rating",
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
             json={"impact": 3, "likelihood": 3})   # 9 medium
-        await co_client.post(f"/{project.pid}/control-objectives/risks/{risk['pid']}/mappings",
+        await co_client.post(f"/{project.pid}/control-objectives/risks/{risk.pid}/mappings",
                              json={"objective_id": "O9"})
         # force O9 key even though its risk is only Medium
         await co_client.put(f"/{project.pid}/control-objectives/profile", json={
