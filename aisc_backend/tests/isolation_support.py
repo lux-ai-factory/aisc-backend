@@ -190,13 +190,13 @@ class Cluster:
 
     def platform_schema(self):
         """core.* as the platform makes it at start (platform_service.migrate, as
-        platform_rw, its owner). Idempotent."""
+        platform_migrator, whose sessions act as platform_owner). Idempotent."""
         import psycopg
 
         _platform_on_path()
         from platform_service.migrate import migrate
 
-        with psycopg.connect(dsn_for(self.url, user="platform_rw")) as conn:
+        with psycopg.connect(dsn_for(self.url, user="platform_migrator")) as conn:
             migrate(conn)
 
     def platform_project(self, name: str, members: dict[str, str]) -> str:
@@ -213,11 +213,12 @@ class Cluster:
         return pid
 
     def provision(self, pid: str) -> str:
-        """The project's database with every template file there is (projectdb.provision)."""
+        """The project's database with every template file there is (projectdb.provision, as platform_migrator,
+        as the platform makes it)."""
         _platform_on_path()
         from platform_service import projectdb
 
-        return projectdb.provision(dsn_for(self.url), pid)
+        return projectdb.provision(dsn_for(self.url, user="platform_migrator"), pid)
 
     def bare_database(self) -> str:
         """A project_<hex> database with no template: engine_rw may not connect to it."""
