@@ -111,6 +111,8 @@ DEPLOYED_ENV = {
     "RUN_TICKET_KEY": "not-a-real-ticket-key",
     # the Configurator refuses to start without the door's bearer check (deployment.check_environment)
     "AUTH_ENABLED": "true",
+    # and without the key of the credentials it stores, of its own (not DJANGO_SECRET_KEY)
+    "ENGINE_SECRETS_KEY": "bm90LWEtcmVhbC1lbmdpbmUta2V5LTAxMjM0NTY3ODk=",
 }
 
 

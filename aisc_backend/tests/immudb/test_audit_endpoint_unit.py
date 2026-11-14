@@ -6,7 +6,8 @@ but ninja's HttpBearer still requires an Authorization header to be PRESENT (it 
 before the bypass runs) — real callers always forward the user's token, so we send a dummy bearer here.
 With AUTH_ENABLED False the token isn't verified and request.auth becomes True -> actor = "unknown".
 
-We assert the BODY maps to the clerk call and that identity is NEVER taken from the body.
+We assert the BODY maps to the clerk call and that identity (actor, source app) is NEVER taken from the body:
+a body naming either is refused.
 
 Run:  uv run manage.py test aisc_backend.tests.immudb.test_audit_endpoint_unit
 """
@@ -35,7 +36,7 @@ class AuditEndpointUnitTest(SimpleTestCase):
     def test_post_audit_delegates_body_to_clerk(self):
         resp = self.client.post("", json={
             "action": "answer", "resource_type": "checklist", "resource_id": "chk-3",
-            "source_app": "controls", "metadata": {"submission": 45, "q": "Q3"}, "outcome": "ok",
+            "metadata": {"submission": 45, "q": "Q3"}, "outcome": "ok",
         }, headers=AUTH)
         self.assertEqual(resp.status_code, 200)
         self.mock_clerk.write_event.assert_called_once()
@@ -43,23 +44,24 @@ class AuditEndpointUnitTest(SimpleTestCase):
         self.assertEqual(kw["action"], "answer")
         self.assertEqual(kw["resource_type"], "checklist")
         self.assertEqual(kw["resource_id"], "chk-3")
-        self.assertEqual(kw["source_app"], "controls")
+        self.assertEqual(kw["source_app"], "unknown")  # no verified token here: no client to name
         self.assertEqual(kw["metadata"], {"submission": 45, "q": "Q3"})
         self.assertEqual(kw["outcome"], "ok")
 
-    def test_actor_is_not_taken_from_body(self):
-        self.client.post("", json={"action": "x", "resource_type": "y", "source_app": "controls",
-                                   "actor": "hacker"}, headers=AUTH)
-        kw = self.mock_clerk.write_event.call_args.kwargs
-        self.assertNotEqual(kw["actor"], "hacker")   # never trusts the body's actor
+    def test_actor_or_source_app_in_the_body_is_refused(self):
+        for field, value in (("actor", "hacker"), ("source_app", "controls")):
+            with self.subTest(field=field):
+                resp = self.client.post("", json={"action": "x", "resource_type": "y", field: value}, headers=AUTH)
+                self.assertEqual(resp.status_code, 422)   # never trusts the body's identity
+        self.mock_clerk.write_event.assert_not_called()
 
     def test_schema_has_no_actor_field(self):
         self.assertNotIn("actor", AuditEventIn.model_fields)     # input contract excludes actor by design
-        self.assertNotIn("source_ip", AuditEventIn.model_fields) # nor source_ip — server-derived
+        self.assertNotIn("source_ip", AuditEventIn.model_fields) # nor source_ip: server-derived
+        self.assertNotIn("source_app", AuditEventIn.model_fields) # nor source_app: the token's client
 
     def test_metadata_and_outcome_default(self):
-        resp = self.client.post("", json={"action": "generate", "resource_type": "systemcard",
-                                          "source_app": "qualification"}, headers=AUTH)
+        resp = self.client.post("", json={"action": "generate", "resource_type": "systemcard"}, headers=AUTH)
         self.assertEqual(resp.status_code, 200)
         kw = self.mock_clerk.write_event.call_args.kwargs
         self.assertEqual(kw["metadata"], {})
@@ -67,7 +69,7 @@ class AuditEndpointUnitTest(SimpleTestCase):
 
     def test_missing_token_is_rejected(self):
         # No Authorization header at all -> ninja HttpBearer 401s (the door still needs a token presented).
-        resp = self.client.post("", json={"action": "x", "resource_type": "y", "source_app": "controls"})
+        resp = self.client.post("", json={"action": "x", "resource_type": "y"})
         self.assertEqual(resp.status_code, 401)
 
     def test_get_audit_returns_verify_and_events(self):

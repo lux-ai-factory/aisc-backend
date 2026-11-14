@@ -76,11 +76,12 @@ INTERNAL_PREFIX = "/api/v1/internal/"
 GATEWAY_TOKEN_HEADER = "X-Auth-Request-Access-Token"
 
 #: Routes that need no project, whatever the method.
-EXEMPT = {"/api/docs", "/api/openapi.json", "/api/v1/app/app-name", "/api/v1/me", "/api/v1/me/admin",
-          "/api/v1/audit"}
+EXEMPT = {"/api/docs", "/api/openapi.json", "/api/v1/app/app-name", "/api/v1/me", "/api/v1/me/admin"}
 #: Routes that need no project for these methods only: the list of installable
-#: plugins. Installing one (POST) is recorded in a project, so it needs one.
-EXEMPT_FOR = {("GET", "/api/v1/plugins"), ("HEAD", "/api/v1/plugins")}
+#: plugins (installing one, a POST, is recorded in a project, so it needs one), and reading
+#: the audit log, an admin's (writing an event to it is work in a project: an editor's).
+EXEMPT_FOR = {("GET", "/api/v1/plugins"), ("HEAD", "/api/v1/plugins"),
+              ("GET", "/api/v1/audit"), ("HEAD", "/api/v1/audit")}
 
 #: POST routes that only read: a viewer may call them.
 READ_POSTS = re.compile(

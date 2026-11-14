@@ -42,6 +42,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 # Default random key only to get the build not to fail
 SECRET_KEY = env("DJANGO_SECRET_KEY",default=get_random_secret_key())
+# The key that encrypts the credentials the engine stores (aisc_backend/utils/encryption.py), its own so that a new
+# SECRET_KEY leaves them readable. Values stored under the key derived from SECRET_KEY before still decrypt. The
+# configurator refuses to start without it (deployment.check_environment).
+ENGINE_SECRETS_KEY = env("ENGINE_SECRETS_KEY", default="")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", False)

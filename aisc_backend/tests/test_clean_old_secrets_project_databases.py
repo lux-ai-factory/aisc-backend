@@ -21,8 +21,8 @@ from datetime import datetime, timezone
 
 from django.conf import settings
 
-from aisc_backend.tests.isolation_support import (BACKEND, SUPERUSER_URL_VAR, Cluster, configurator_only,
-                                                  database_name, superuser_url)
+from aisc_backend.tests.isolation_support import (BACKEND, DEPLOYED_ENV, SUPERUSER_URL_VAR, Cluster,
+                                                  configurator_only, database_name, superuser_url)
 
 KEY = "lb-judge-0123456789abcdef"
 STRONG = "planted-strong-0123456789"
@@ -40,6 +40,7 @@ def _manage(*args) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env.setdefault("RUN_TICKET_KEY", settings.RUN_TICKET_KEY)
     env.setdefault("AUTH_ENABLED", "true")
+    env.setdefault("ENGINE_SECRETS_KEY", DEPLOYED_ENV["ENGINE_SECRETS_KEY"])
     return subprocess.run([sys.executable, "manage.py", *args], cwd=BACKEND, env=env, capture_output=True,
                           text=True, timeout=600)
 

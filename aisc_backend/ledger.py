@@ -17,8 +17,10 @@ reads `ledger.outbox` only for the roles it knows.
 An event never names who acted. It cites the request the gateway witnessed (X-AISC-Request-Id),
 and the platform takes the person from its record of that request. The worker's events cite the
 request that started their run, and the evaluation is the run. A setting's or a secret's value is
-never in an event, only its key. Nothing is written while LEDGER_MODE is off (the default), or
-outside a project: an engine on its own has no ledger to write to.
+never in an event, only its key. Nothing is written while LEDGER_MODE is off, or outside the
+Configurator: an engine on its own has no ledger to write to. Inside the Configurator an absent
+LEDGER_MODE means record, and a value that is not off, record or enforce is refused at start
+(deployment.check_environment).
 
 The engine's own audit log (aisc_backend.audit) is kept as it is.
 """
@@ -33,10 +35,11 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from urllib import error, request as urlrequest
 
+from aisc_identity.switches import ledger_mode
 from asgiref.sync import async_to_sync, markcoroutinefunction, sync_to_async
 from django.db import connections, router, transaction
 
-from aisc_backend import config_secrets, projectdb
+from aisc_backend import config_secrets, deployment, projectdb
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,8 @@ TIMEOUT = 5.0
 
 
 def on() -> bool:
-    return (os.environ.get("LEDGER_MODE") or "off").strip().lower() in ("record", "enforce")
+    """True only inside the Configurator with LEDGER_MODE record or enforce (absent means record)."""
+    return deployment.is_configurator() and ledger_mode() != "off"
 
 
 def request_id_of(value) -> str | None:

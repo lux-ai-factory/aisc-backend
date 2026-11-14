@@ -27,6 +27,7 @@ from aisc_backend.repositories.measurement_repository import MeasurementReposito
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.routers import plugin as plugin_routes
+from aisc_backend.routers.component import upload_cap_bytes
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
@@ -462,6 +463,10 @@ async def upload_evaluation_artifact(
     evaluation_plugin = await _run_of_evaluation_or_404(evaluation_plugin_uuid, evaluation_pid, True)
 
     plugin = evaluation_plugin.plugin_config.plugin
+
+    cap = upload_cap_bytes()
+    if file.size > cap:
+        raise HttpError(413, f"an artifact is at most {cap // (1024 * 1024)} MB")
 
     original_filename = file.name
     # the ledger keeps the file's hash, so its exact bytes can be proven later (the run's recorded calls too)

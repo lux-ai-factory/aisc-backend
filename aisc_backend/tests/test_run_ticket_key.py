@@ -102,7 +102,7 @@ class TheTicketExpires(SimpleTestCase):
 class TheConfiguratorRefusesToStart(SimpleTestCase):
     def env(self, **more):
         return {"AISC_DEPLOYMENT": "configurator", "DB_ENGINE": POSTGRES, "DJANGO_SECRET_KEY": "s",
-                "AUTH_ENABLED": "true", **more}
+                "AUTH_ENABLED": "true", "ENGINE_SECRETS_KEY": "e", **more}
 
     def test_without_a_run_ticket_key(self):
         with self.assertRaisesRegex(ImproperlyConfigured, "RUN_TICKET_KEY"):

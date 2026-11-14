@@ -45,6 +45,7 @@ from django.conf import settings
 from aisc_backend.tests.isolation_support import (
     configurator_only,
     BACKEND, COLUMNS_CHANGED_SINCE_LIVE_SHAPE, COLUMNS_NEWER_THAN_LIVE_SHAPE, CONSTRAINTS_NEWER_THAN_LIVE_SHAPE,
+    DEPLOYED_ENV,
     INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
     Cluster, as_compared, catalog, database_name, newer_than_live_shape, superuser_url,
 )
@@ -70,6 +71,7 @@ def _migrate_projects(extra_env=None) -> subprocess.CompletedProcess:
     # a deployed configurator refuses to start without its run tickets' key: the test run's own
     env.setdefault("RUN_TICKET_KEY", settings.RUN_TICKET_KEY)
     env.setdefault("AUTH_ENABLED", "true")  # and its door's bearer check
+    env.setdefault("ENGINE_SECRETS_KEY", DEPLOYED_ENV["ENGINE_SECRETS_KEY"])  # and its stored credentials' key
     env.update(extra_env or {})
     return subprocess.run([sys.executable, "manage.py", "migrate_projects"], cwd=BACKEND, env=env,
                           capture_output=True, text=True, timeout=600)
@@ -242,6 +244,7 @@ class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
         env = dict(os.environ)
         env.setdefault("RUN_TICKET_KEY", settings.RUN_TICKET_KEY)
         env.setdefault("AUTH_ENABLED", "true")
+        env.setdefault("ENGINE_SECRETS_KEY", DEPLOYED_ENV["ENGINE_SECRETS_KEY"])
         runs = [subprocess.Popen([sys.executable, "manage.py", "migrate_projects"], cwd=BACKEND, env=env,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(2)]
         codes = [r.wait(timeout=600) for r in runs]

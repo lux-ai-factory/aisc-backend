@@ -6,12 +6,14 @@ module; nothing else reads the variable.
 import os
 from collections.abc import Callable, Mapping
 
+from aisc_identity.switches import SwitchInvalid, ledger_mode
 from django.core.exceptions import ImproperlyConfigured
 
 STANDALONE = "standalone"
 CONFIGURATOR = "configurator"
 MODES = (STANDALONE, CONFIGURATOR)
-_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE", "RUN_TICKET_KEY", "DJANGO_SECRET_KEY", "AUTH_ENABLED")
+_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE", "RUN_TICKET_KEY", "DJANGO_SECRET_KEY", "AUTH_ENABLED",
+                   "ENGINE_SECRETS_KEY", "LEDGER_MODE")
 #: What settings.py's env.bool("AUTH_ENABLED") reads as on.
 _ON = {"t", "true", "on", "y", "yes", "1"}
 
@@ -48,6 +50,11 @@ def check_environment(env: Mapping[str, str] = os.environ, testing: bool | None 
     if testing is None:
         import sys
         testing = sys.argv[1:2] == ["test"]
+    # A misspelt LEDGER_MODE used to mean off without a word; it is refused in either mode.
+    try:
+        ledger_mode(env)
+    except SwitchInvalid as exc:
+        raise ImproperlyConfigured(str(exc)) from exc
     if mode(env) == CONFIGURATOR and not _postgres(env) and not testing:
         raise ImproperlyConfigured(
             f"AISC_DEPLOYMENT is {CONFIGURATOR}: DB_ENGINE must be django.db.backends.postgresql "
@@ -67,6 +74,16 @@ def check_environment(env: Mapping[str, str] = os.environ, testing: bool | None 
         if (env.get("AUTH_ENABLED") or "").strip().lower() not in _ON:
             raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: AUTH_ENABLED must be true (without it "
                                        "the door checks no caller's membership or role)")
+        # The stored credentials' key is the engine's own: with none, or with DJANGO_SECRET_KEY's value, a new
+        # Django key would make every stored credential unreadable again. Only a process given the Django key
+        # stores or reads credentials; one without it (the ledger sender, migrate_projects) needs neither.
+        engine_key = (env.get("ENGINE_SECRETS_KEY") or "").strip()
+        django_key = (env.get("DJANGO_SECRET_KEY") or "").strip()
+        if django_key and not engine_key:
+            raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: ENGINE_SECRETS_KEY must be set (the key "
+                                       "of the credentials the engine stores; run scripts/secrets.sh)")
+        if engine_key and engine_key == django_key:
+            raise ImproperlyConfigured("ENGINE_SECRETS_KEY must differ from DJANGO_SECRET_KEY")
 
 
 def is_configurator() -> bool:

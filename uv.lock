@@ -69,7 +69,7 @@ dependencies = [
     { name = "pyjwt", extra = ["crypto"] },
 ]
 wheels = [
-    { filename = "aisc_identity-0.1.0-py3-none-any.whl", hash = "sha256:bff113d74b4595a3acb3d900a9db34a5ffb600cbf9f2ac0038e93f81d47d800f" },
+    { filename = "aisc_identity-0.1.0-py3-none-any.whl", hash = "sha256:29b6e819b52e83db227430ad4a75d56f5073f8a274aba386de29d5d9e6563fd3" },
 ]
 
 [package.metadata]
@@ -91,7 +91,7 @@ dependencies = [
     { name = "rich" },
 ]
 wheels = [
-    { filename = "aisc_plugin_interface-0.4.0-py3-none-any.whl", hash = "sha256:9d6c1f58c5eeb54a462bc273acfaea643a5dff052373ec55692d81570411a0c1" },
+    { filename = "aisc_plugin_interface-0.4.0-py3-none-any.whl", hash = "sha256:e626dcad531c70679727177884fa00d3729439cd04b85fb6d6445266c866db6f" },
 ]
 
 [package.metadata]
