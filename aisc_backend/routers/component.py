@@ -123,6 +123,9 @@ async def delete_component(request, component_pid: uuid.UUID):
                 metadata={"name": component.name, "evaluations": used_by})
         return 200, {"retired": True, "evaluations": used_by}
     await ai_component_repository.delete(component)
+    await sync_to_async(log_action)(
+        request, action="delete", resource_type="component", resource_id=str(component_pid),
+        metadata={"name": component.name, "component_type": component.component_type})
     return 204, None
 
 
