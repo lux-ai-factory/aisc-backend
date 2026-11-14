@@ -57,5 +57,10 @@ class TheConfiguratorNeedsTheEngineKey(SimpleTestCase):
     def test_configurator_starts_with_an_engine_key_of_its_own(self):
         deployment.check_environment({**CONFIGURATOR, "ENGINE_SECRETS_KEY": NEW}, testing=False)
 
+    def test_a_process_without_the_django_key_needs_no_engine_key(self):
+        # the ledger sender and migrate_projects store and read no credentials: they get neither key
+        env = {k: v for k, v in CONFIGURATOR.items() if k != "DJANGO_SECRET_KEY"}
+        deployment.check_environment(env, testing=False)
+
     def test_the_settings_source_carries_the_engine_key(self):
         self.assertIn("ENGINE_SECRETS_KEY", deployment.settings_source({"ENGINE_SECRETS_KEY": NEW}.get))

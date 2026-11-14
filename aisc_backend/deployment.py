@@ -69,12 +69,14 @@ def check_environment(env: Mapping[str, str] = os.environ, testing: bool | None 
             raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: AUTH_ENABLED must be true (without it "
                                        "the door checks no caller's membership or role)")
         # The stored credentials' key is the engine's own: with none, or with DJANGO_SECRET_KEY's value, a new
-        # Django key would make every stored credential unreadable again.
+        # Django key would make every stored credential unreadable again. Only a process given the Django key
+        # stores or reads credentials; one without it (the ledger sender, migrate_projects) needs neither.
         engine_key = (env.get("ENGINE_SECRETS_KEY") or "").strip()
-        if not engine_key:
+        django_key = (env.get("DJANGO_SECRET_KEY") or "").strip()
+        if django_key and not engine_key:
             raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: ENGINE_SECRETS_KEY must be set (the key "
                                        "of the credentials the engine stores; run scripts/secrets.sh)")
-        if engine_key == (env.get("DJANGO_SECRET_KEY") or "").strip():
+        if engine_key and engine_key == django_key:
             raise ImproperlyConfigured("ENGINE_SECRETS_KEY must differ from DJANGO_SECRET_KEY")
 
 
