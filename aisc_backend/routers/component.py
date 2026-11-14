@@ -1,3 +1,4 @@
+import os
 import uuid
 from pathlib import Path
 
@@ -144,10 +145,33 @@ async def restore_component(request, component_pid: uuid.UUID):
     return await ai_component_repository.get_with_source_dataset(component.pid)
 
 
+#: the largest component file, in MB, when TARGET_FILE_MAX_MB does not say
+UPLOAD_CAP_MB = 2048
+
+#: the file extensions each file-backed component type takes
+EXTENSIONS: dict[str, frozenset[str]] = {
+    AIComponentType.DATASET: frozenset({".csv", ".tsv", ".parquet", ".json", ".jsonl", ".zip"}),
+    AIComponentType.MODEL: frozenset({".onnx", ".pkl", ".joblib", ".pt", ".pth", ".safetensors", ".h5", ".keras",
+                                      ".zip"}),
+}
+
+
+def upload_cap_bytes() -> int:
+    """The largest file a component or a plugin artifact may be: TARGET_FILE_MAX_MB, read at each call, or
+    UPLOAD_CAP_MB when it is unset or not a positive whole number."""
+    try:
+        mb = int(os.environ.get("TARGET_FILE_MAX_MB") or UPLOAD_CAP_MB)
+    except ValueError:
+        mb = UPLOAD_CAP_MB
+    return (mb if mb > 0 else UPLOAD_CAP_MB) * 1024 * 1024
+
+
 @router.put("/{component_pid}/data", response=UploadComponentFileResponse)
 async def upload_component_file(request, component_pid: uuid.UUID, file: File[UploadedFile]):
+    """Store the file of a dataset or model component. A file without a name or empty (422), above the cap
+    (413) or without an extension of its component's type (415) is refused before anything is stored."""
     if not file or not file.name:
-        raise HttpError(500, "Invalid file")
+        raise HttpError(422, "the file has no name")
 
     component = await ai_component_repository.get(component_pid)
     if not component:
@@ -155,7 +179,15 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     if not component.is_file_backed:
         raise HttpError(400, "Only dataset/model/file components accept an uploaded file")
 
+    if not file.size:
+        raise HttpError(422, "the file is empty")
+    cap = upload_cap_bytes()
+    if file.size > cap:
+        raise HttpError(413, f"a file is at most {cap // (1024 * 1024)} MB")
     suffix = Path(file.name).suffix.lower()
+    allowed = EXTENSIONS.get(component.component_type, frozenset())
+    if suffix not in allowed:
+        raise HttpError(415, f"a {component.component_type} file ends in one of {', '.join(sorted(allowed))}")
     file.name = f"{str(uuid.uuid4())}{suffix}"
 
     container = storage_container_for(component)
