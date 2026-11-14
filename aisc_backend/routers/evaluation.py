@@ -1,4 +1,3 @@
-import base64
 import datetime
 import json
 import logging
@@ -36,7 +35,7 @@ from aisc_backend.schemas.measure import MeasurementAggregationResponse, \
     MeasurementAggregationRequest, DimensionKeysResponse, DimensionValuesResponse, \
     DimensionKeysRequest, DimensionValuesRequest, MetricNamesResponse, MetricNamesRequest
 from aisc_backend.services import celery_service
-from aisc_backend.utils.file_utils import csv_bytes_to_rows, zip_bytes_to_file_list
+from aisc_backend.utils.file_utils import PREVIEW_BYTES, preview_of
 from aisc_backend.audit.log import log_action
 from aisc_backend.routers.plugin import plugin_loader
 from aisc_backend.routers.target_input import CARD, LOCAL_MODEL, TARGET, _configurator
@@ -481,28 +480,15 @@ async def get_evaluation_artifacts(
         path = Path(artifact.data)
         suffix = path.suffix.lower()
 
-        preview_data = None
-        object_response = file_repository.get_object(
-            StorageContainer.Artifacts, artifact.data
-        )
-        file_content = object_response["Body"].read()
-
-        if suffix == ".csv":
-            preview_data = csv_bytes_to_rows(file_content)
-
-        if suffix == ".png":
-            base64_image = base64.b64encode(file_content).decode("utf-8")
-            preview_data = f"data:image/png;base64,{base64_image}"
-
-        if suffix == ".pdf":
-            base64_pdf = base64.b64encode(file_content).decode("utf-8")
-            preview_data = f"data:application/pdf;base64,{base64_pdf}"
-
-        if suffix == ".zip":
-            preview_data = zip_bytes_to_file_list(file_content)
-
-        if suffix == ".log" or suffix == ".txt":
-            preview_data = file_content.decode('utf-8')
+        try:
+            body = file_repository.get_object(StorageContainer.Artifacts, artifact.data)["Body"]
+            head = body.read(PREVIEW_BYTES + 1)
+            preview_data = preview_of(suffix, head[:PREVIEW_BYTES], len(head) > PREVIEW_BYTES)
+        except Exception as exc:
+            # one artifact that cannot be read leaves the others listed: it shows no preview, and can still
+            # be downloaded once the store answers
+            logger.warning(f"Artifact {artifact.pid} not previewed: {type(exc).__name__}")
+            preview_data = None
 
         artifact_out_schema = ArtifactOutSchema.model_validate(artifact)
         artifact_preview: ArtifactPreviewSchema = ArtifactPreviewSchema(
