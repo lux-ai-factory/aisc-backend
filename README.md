@@ -194,7 +194,7 @@ Read in `config/settings.py` (and, for the platform calls, where named). The sta
 | `PLUGIN_PATH` | folder of local plugins | empty | `./local_plugins/`, mounted at `/app/plugins` |
 | `PACKAGE_REGISTRY_URL`, `PACKAGE_REGISTRY_INDEX`, `PACKAGE_REGISTRY_USER`, `PACKAGE_REGISTRY_PASSWORD` | the package index tests are installed from | empty | `http://devpi:3141`, `root/public`, no login |
 | `IMMUDB_URL`, `IMMUDB_USER`, `IMMUDB_PASSWORD`, `IMMUDB_DATABASE` | the engine's own audit log (`audit/clerk.py`) | `localhost:3322`, `immudb`, empty, `auditdb` | `immudb:3322`, `aisc_engine`, `auditdb` |
-| `LEDGER_MODE` | `off`, `record` or `enforce`: whether changes are written to the ledger outbox (`aisc_backend/ledger.py`) | `off` | `record` |
+| `LEDGER_MODE` | `off`, `record` or `enforce`: whether changes are written to the ledger outbox (`aisc_backend/ledger.py`), inside the Configurator only (a standalone engine writes none). Any other value, empty included, stops the start | absent means `record` | `record` |
 | `PLATFORM_URL`, `PLATFORM_ENGINE_TOKEN` | ask the platform whether a card target has a connection, and list the project's helper models | empty | `http://platform:8000`, from the secrets |
 | `PLATFORM_LEDGER_ENGINE_TOKEN` | send the outbox to the platform (`aisc-backend-ledger` only) | empty | from the secrets |
 | `MODEL_LISTING_SSL_VERIFY` | verify TLS when listing an endpoint's models | true | from `env.runtime` |

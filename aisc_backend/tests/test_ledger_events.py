@@ -47,10 +47,14 @@ def unrecorded():
 
 
 class Recording(TestCase):
-    """LEDGER_MODE on, PID admitted, REQUEST witnessed."""
+    """Inside the Configurator (an engine on its own records nothing), LEDGER_MODE on, PID admitted, REQUEST
+    witnessed."""
 
     def setUp(self):
         super().setUp()
+        inside = override_settings(AISC_DEPLOYMENT="configurator")
+        inside.enable()
+        self.addCleanup(inside.disable)
         patcher = mock.patch.dict(os.environ, {"LEDGER_MODE": "record"})
         patcher.start()
         self.addCleanup(patcher.stop)

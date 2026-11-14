@@ -7,7 +7,7 @@ from unittest import mock
 
 from asgiref.sync import sync_to_async
 from django.db import transaction
-from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
 from aisc_backend import ledger, projectdb
 from aisc_backend.models import LedgerOutbox, Project, ProjectStatus
@@ -19,10 +19,14 @@ SENDER = {"PLATFORM_URL": "http://platform:8000", "PLATFORM_LEDGER_ENGINE_TOKEN"
 
 
 class InAProject:
-    """The door has admitted PID and the gateway witnessed REQUEST."""
+    """Inside the Configurator (an engine on its own records nothing), the door has admitted PID and the
+    gateway witnessed REQUEST."""
 
     def setUp(self):
         super().setUp()
+        inside = override_settings(AISC_DEPLOYMENT="configurator")
+        inside.enable()
+        self.addCleanup(inside.disable)
         self._pid = projectdb.admitted_pid.set(PID)
         self._request = ledger.current_request.set(REQUEST)
 

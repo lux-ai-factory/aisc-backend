@@ -6,13 +6,14 @@ module; nothing else reads the variable.
 import os
 from collections.abc import Callable, Mapping
 
+from aisc_identity.switches import SwitchInvalid, ledger_mode
 from django.core.exceptions import ImproperlyConfigured
 
 STANDALONE = "standalone"
 CONFIGURATOR = "configurator"
 MODES = (STANDALONE, CONFIGURATOR)
 _SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE", "RUN_TICKET_KEY", "DJANGO_SECRET_KEY", "AUTH_ENABLED",
-                   "ENGINE_SECRETS_KEY")
+                   "ENGINE_SECRETS_KEY", "LEDGER_MODE")
 #: What settings.py's env.bool("AUTH_ENABLED") reads as on.
 _ON = {"t", "true", "on", "y", "yes", "1"}
 
@@ -49,6 +50,11 @@ def check_environment(env: Mapping[str, str] = os.environ, testing: bool | None 
     if testing is None:
         import sys
         testing = sys.argv[1:2] == ["test"]
+    # A misspelt LEDGER_MODE used to mean off without a word; it is refused in either mode.
+    try:
+        ledger_mode(env)
+    except SwitchInvalid as exc:
+        raise ImproperlyConfigured(str(exc)) from exc
     if mode(env) == CONFIGURATOR and not _postgres(env) and not testing:
         raise ImproperlyConfigured(
             f"AISC_DEPLOYMENT is {CONFIGURATOR}: DB_ENGINE must be django.db.backends.postgresql "
