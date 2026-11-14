@@ -55,8 +55,7 @@ class AuditEndpointIntegrationTest(SimpleTestCase):
         token = _get_token("admin", "admin")
         marker = "endpoint_itest_probe"   # unique resource_type
         resp = self.client.post(
-            "", json={"action": "probe", "resource_type": marker, "resource_id": "e-1",
-                      "source_app": "controls", "metadata": {"x": 1}},
+            "", json={"action": "probe", "resource_type": marker, "resource_id": "e-1", "metadata": {"x": 1}},
             headers={"Authorization": f"Bearer {token}"},
         )
         self.assertEqual(resp.status_code, 200)
@@ -70,7 +69,7 @@ class AuditEndpointIntegrationTest(SimpleTestCase):
         self.assertTrue(rows)
         actor, action, app = rows[-1]
         self.assertEqual(actor, "admin")
-        self.assertEqual(app, "controls")
+        self.assertEqual(app, "aisc-webapp")   # the app is the token's client, never the body
 
     def test_get_audit_admin_only(self):
         # ADMIN: can read + verify the ledger
