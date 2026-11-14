@@ -19,7 +19,7 @@ from aisc_backend.models import (AIComponent, Evaluation, EvaluationPlugin, Proj
 _FIELDS = {
     Project: {"name": "name", "description": "description"},
     AIComponent: {"name": "name", "description": "description", "json_value": "json_value",
-                  "source_dataset_id": "source_dataset", "data": "data"},
+                  "source_dataset_id": "source_dataset", "data": "data", "retired_at": "retired"},
     ProjectConfig: {"name": "name", "encrypted_value": "value", "json_value": "json_value"},
     Evaluation: {"status": "status"},
     EvaluationPlugin: {"status": "status"},
@@ -75,7 +75,11 @@ def component_saved(sender, instance, created, raw=False, using=None, **kwargs):
                     details={"component_type": instance.component_type}, using=using)
         return
     changed = _changed(instance)
-    if "data" in changed:                                             # a new file: the upstream PUT .../data
+    if "retired" in changed:              # DELETE of a component runs used retires it; POST .../restore undoes it
+        ledger.emit("engine.component.retired" if instance.retired_at else "engine.component.restored",
+                    item_type="component", item_id=instance.pid,
+                    details={"component_type": instance.component_type}, using=using)
+    elif "data" in changed:                                           # a new file: the upstream PUT .../data
         ledger.emit("engine.component.file_uploaded", item_type="component", item_id=instance.pid,
                     details={"size": instance.file_size}, using=using)
     else:
