@@ -321,6 +321,8 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
                     component = await ai_component_repository.get(input_data.pid)
                     if not component:
                         raise HttpError(400, f"Component {input_data.pid} not found")
+                    if component.retired_at is not None:
+                        raise HttpError(400, f"{component.name} is retired: restore it to use it in a new run")
                 inputs.append((input_data, component))
             resolved.append((plugin.current_config, plugin_obj, helpers, inputs))
 

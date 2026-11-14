@@ -11,11 +11,13 @@ from unittest import mock
 from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from ninja.testing import TestAsyncClient
 
 from aisc_backend import ledger, projectdb
-from aisc_backend.models import (AIComponent, AIComponentType, LedgerOutbox, Project, ProjectConfig,
-                                 ProjectConfigCategory, ProjectStatus)
+from aisc_backend.models import (AIComponent, AIComponentType, Evaluation, EvaluationInput, EvaluationPlugin,
+                                 EvaluationStatus, LedgerOutbox, Project, ProjectConfig, ProjectConfigCategory,
+                                 ProjectStatus)
 from aisc_backend.models.ai_system import AISystem
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
@@ -101,6 +103,27 @@ class Components(Recording):
         self.assertEqual(res.status_code, 204, res.text)
         [event] = await events()
         self.assertEvent(event, "engine.component.deleted", "component", comp.pid, {"component_type": "model"})
+
+    def _used_by_a_run(self, comp):
+        evaluation = Evaluation.objects.create(status=EvaluationStatus.Done, project=self.project)
+        run = EvaluationPlugin.objects.create(evaluation=evaluation, name="run")
+        EvaluationInput.objects.create(evaluation_plugin=run, name="dataset", component=comp)
+
+    async def test_retiring_a_used_component(self):
+        comp = await self._component()
+        with unrecorded():
+            await sync_to_async(self._used_by_a_run)(comp)
+        res = await components.delete(f"/{comp.pid}")
+        self.assertEqual(res.status_code, 200, res.text)
+        [event] = await events()
+        self.assertEvent(event, "engine.component.retired", "component", comp.pid, {"component_type": "dataset"})
+
+    async def test_restoring_a_retired_component(self):
+        comp = await self._component(retired_at=timezone.now())
+        res = await components.post(f"/{comp.pid}/restore")
+        self.assertEqual(res.status_code, 200, res.text)
+        [event] = await events()
+        self.assertEvent(event, "engine.component.restored", "component", comp.pid, {"component_type": "dataset"})
 
     async def test_the_platforms_target_mirror_is_not_a_persons_change(self):
         from aisc_backend.routers import target_input

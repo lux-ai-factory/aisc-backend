@@ -100,3 +100,11 @@ class LaunchWrites(TestCase):
         evaluation = await Evaluation.objects.aget()
         self.assertEqual(str(evaluation.task), TASK)
         self.assertEqual(evaluation.status, EvaluationStatus.Processing)
+
+    async def test_a_retired_component_is_refused_and_nothing_is_stored(self):
+        from django.utils import timezone
+        await AIComponent.objects.filter(pk=self.dataset.pk).aupdate(retired_at=timezone.now())
+        response = await self.launch(self.dataset.pid)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("retired", response.json()["detail"])
+        self.assertEqual(await Evaluation.objects.acount(), 0)

@@ -519,7 +519,7 @@ class WhatTheLiveShapePredates(unittest.TestCase):
                       *COLUMNS_CHANGED_SINCE_LIVE_SHAPE.values()]
         self.assertEqual(set(migrations), {"0021_engine_deployment_marker", "0022_one_system_target_per_system",
                                            "0023_ledger_outbox", "0025_evaluation_input_helper_ref",
-                                           "0026_observation_evaluation_plugin"})
+                                           "0026_observation_evaluation_plugin", "0027_component_retired_at"})
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())
@@ -645,6 +645,7 @@ ROUTES = [
     ("PUT", "/api/v1/components/{component_pid}/data", ("multipart", {}), "user"),
     ("GET", "/api/v1/components/{component_pid}/models", None, "user"),
     ("GET", "/api/v1/components/{component_pid}/data", None, "user"),
+    ("POST", "/api/v1/components/{component_pid}/restore", None, "user"),
     ("GET", "/api/v1/evaluations/{evaluation_pid}", None, "user"),
     ("GET", "/api/v1/evaluations/{evaluation_pid}/plugins/status", None, "user"),
     ("GET", "/api/v1/evaluations/{evaluation_pid}/artifacts", None, "user"),
