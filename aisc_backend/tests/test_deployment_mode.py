@@ -17,7 +17,7 @@ class TheConfiguratorNeedsTheBearerCheck(SimpleTestCase):
 
     def env(self, **more):
         return {"AISC_DEPLOYMENT": "configurator", "DB_ENGINE": "django.db.backends.postgresql",
-                "DJANGO_SECRET_KEY": "s", "RUN_TICKET_KEY": "t", **more}
+                "DJANGO_SECRET_KEY": "s", "RUN_TICKET_KEY": "t", "ENGINE_SECRETS_KEY": "e", **more}
 
     def test_unset_is_refused(self):
         with self.assertRaisesRegex(ImproperlyConfigured, "AUTH_ENABLED"):
@@ -61,7 +61,8 @@ class TheMode(SimpleTestCase):
                                           "DB_ENGINE": "django.db.backends.sqlite3"}, testing=False)
         deployment.check_environment({"AISC_DEPLOYMENT": "configurator",
                                       "DB_ENGINE": "django.db.backends.postgresql",
-                                      "DJANGO_SECRET_KEY": "s", "RUN_TICKET_KEY": "t", "AUTH_ENABLED": "true"},
+                                      "DJANGO_SECRET_KEY": "s", "RUN_TICKET_KEY": "t", "AUTH_ENABLED": "true",
+                                      "ENGINE_SECRETS_KEY": "e"},
                                      testing=False)
 
     def test_the_test_runner_may_run_configurator_on_one_sqlite_database(self):

@@ -11,7 +11,8 @@ from django.core.exceptions import ImproperlyConfigured
 STANDALONE = "standalone"
 CONFIGURATOR = "configurator"
 MODES = (STANDALONE, CONFIGURATOR)
-_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE", "RUN_TICKET_KEY", "DJANGO_SECRET_KEY", "AUTH_ENABLED")
+_SETTINGS_NAMES = ("AISC_DEPLOYMENT", "DB_ENGINE", "RUN_TICKET_KEY", "DJANGO_SECRET_KEY", "AUTH_ENABLED",
+                   "ENGINE_SECRETS_KEY")
 #: What settings.py's env.bool("AUTH_ENABLED") reads as on.
 _ON = {"t", "true", "on", "y", "yes", "1"}
 
@@ -67,6 +68,14 @@ def check_environment(env: Mapping[str, str] = os.environ, testing: bool | None 
         if (env.get("AUTH_ENABLED") or "").strip().lower() not in _ON:
             raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: AUTH_ENABLED must be true (without it "
                                        "the door checks no caller's membership or role)")
+        # The stored credentials' key is the engine's own: with none, or with DJANGO_SECRET_KEY's value, a new
+        # Django key would make every stored credential unreadable again.
+        engine_key = (env.get("ENGINE_SECRETS_KEY") or "").strip()
+        if not engine_key:
+            raise ImproperlyConfigured(f"AISC_DEPLOYMENT is {CONFIGURATOR}: ENGINE_SECRETS_KEY must be set (the key "
+                                       "of the credentials the engine stores; run scripts/secrets.sh)")
+        if engine_key == (env.get("DJANGO_SECRET_KEY") or "").strip():
+            raise ImproperlyConfigured("ENGINE_SECRETS_KEY must differ from DJANGO_SECRET_KEY")
 
 
 def is_configurator() -> bool:

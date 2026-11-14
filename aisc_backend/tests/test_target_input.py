@@ -347,7 +347,8 @@ class WhoAnswersTheForm(SimpleTestCase):
     def test_configurator_answers_from_this_module(self):
         self.assertIn("target_input.input_definitions_with_target",
                       self.handler(AISC_DEPLOYMENT="configurator", DB_ENGINE="django.db.backends.postgresql",
-                                   DJANGO_SECRET_KEY="s", RUN_TICKET_KEY="t", AUTH_ENABLED="true"))
+                                   DJANGO_SECRET_KEY="s", RUN_TICKET_KEY="t", AUTH_ENABLED="true",
+                                   ENGINE_SECRETS_KEY="e"))
 
     def test_standalone_answers_from_the_upstream_route(self):
         self.assertIn("routers.plugin.get_plugin_input_definitions", self.handler(AISC_DEPLOYMENT="standalone"))
