@@ -31,7 +31,7 @@ NOT_PROJECT_SCOPED = {
     "/api/v1/app/app-name": "the application's own name",
     "/api/v1/me": "who the caller is",
     "/api/v1/me/admin": "admin only, by role",
-    "/api/v1/audit": "admin only, by role",
+    "/api/v1/audit": "GET: admin only, by role; POST: through the door as an editor",
     "/api/v1/plugins": "installed plugins are the same for everyone; writing takes admin",
     "/api/v1/plugins/refresh": "admin only, by role",
     "/api/v1/projects": "the door admits the one project named in the header and refuses strangers; POST is refused",
