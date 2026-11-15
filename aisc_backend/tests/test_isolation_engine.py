@@ -69,6 +69,7 @@ OWNER_ROLE = ("aisc_backend", "0028_owner_role")
 APPEND_ONLY = ("aisc_backend", "0029_append_only_results")
 #: a deleted setting is marked deleted, not removed
 SETTINGS_KEPT = ("aisc_backend", "0030_settings_are_kept")
+FILE_HASH = ("aisc_backend", "0031_component_file_hash")
 
 #: These stay byte for byte as they are (their core blocks are already
 #: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (an
@@ -125,10 +126,11 @@ class TheNewMigration(SimpleTestCase):
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_the_leaf_is_0030_on_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
-        """The same leaf as test_one_system_per_project.py (test_0030_is_the_leaf)."""
+    def test_the_leaf_is_0031_on_0030_on_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_0031_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
-        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [SETTINGS_KEPT])
+        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [FILE_HASH])
+        self.assertEqual({p.key for p in loader.graph.node_map[FILE_HASH].parents}, {SETTINGS_KEPT})
         self.assertEqual({p.key for p in loader.graph.node_map[SETTINGS_KEPT].parents}, {APPEND_ONLY})
         self.assertEqual({p.key for p in loader.graph.node_map[APPEND_ONLY].parents}, {OWNER_ROLE})
         self.assertEqual({p.key for p in loader.graph.node_map[OWNER_ROLE].parents}, {RETIRED})
@@ -312,11 +314,11 @@ class OnlyTwoFilesReadPlatform(SimpleTestCase):
                 self.assertRegex(text, r"connections\[\s*['\"]platform['\"]\s*\]")
                 self.assertNotRegex(text, r"from django\.db import[^\n]*\bconnection\b(?!s)")
 
-    def test_latest_reads_project_system(self):
+    def test_latest_reads_the_saved_versions_of_project_system(self):
         from aisc_backend.repositories import system_version_repository
 
         self.assertEqual(system_version_repository.LATEST,
-                         "SELECT pid FROM project.system ORDER BY number DESC LIMIT 1")
+                         "SELECT pid FROM project.saved_system ORDER BY number DESC LIMIT 1")
 
 
 @configurator_only

@@ -530,7 +530,7 @@ class WhatTheLiveShapePredates(unittest.TestCase):
         self.assertEqual(set(migrations), {"0021_engine_deployment_marker", "0022_one_system_target_per_system",
                                            "0023_ledger_outbox", "0025_evaluation_input_helper_ref",
                                            "0026_observation_evaluation_plugin", "0027_component_retired_at",
-                                           "0030_settings_are_kept"})
+                                           "0030_settings_are_kept", "0031_component_file_hash"})
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())

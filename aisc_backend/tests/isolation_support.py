@@ -47,6 +47,7 @@ COLUMNS_NEWER_THAN_LIVE_SHAPE: dict[tuple[str, str], str] = {
     ("aisc_backend_evaluationinput", "helper_ref"): "0025_evaluation_input_helper_ref",
     ("aisc_backend_aicomponent", "retired_at"): "0027_component_retired_at",
     ("aisc_backend_projectconfig", "deleted_at"): "0030_settings_are_kept",
+    ("aisc_backend_aicomponent", "data_sha256"): "0031_component_file_hash",
 }
 #: Constraints on tables the live shape has, made by a later migration, by name.
 CONSTRAINTS_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
