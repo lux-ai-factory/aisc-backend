@@ -303,6 +303,16 @@ async def _turn_other_versions_off(project_pid, package_name: str, version: str)
     return {"turned_off": sorted(off)} if off else {}
 
 
+def _installed_code(read: dict) -> dict:
+    """Which code an install installed, for its ledger event: the wheel's sha256 (none for a local plugin) and,
+    for a local plugin only, its folder's digest."""
+    code = read.get("code") if isinstance(read.get("code"), dict) else {}
+    details = {"wheel_sha256": read.get("wheel_sha256") or None}
+    if code.get("digest"):
+        details["code_digest"] = code["digest"]
+    return details
+
+
 class CreatePluginsRequest(Schema):
     package_name: str
     version: str
@@ -372,7 +382,7 @@ async def create_plugins(request, data: CreatePluginsRequest):
                 await plugin_repository.save(p)
         turned_off = await _turn_other_versions_off(data.project_uuid, data.package_name, data.version)
         await sync_to_async(_package_event)("plugin.installed", data.package_name, data.version, reused=reused,
-                                            **turned_off)
+                                            **turned_off, **_installed_code(read))
         return created_plugins
 
     created_plugins = await ledger.atomically(install)

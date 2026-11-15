@@ -25,7 +25,7 @@ from aisc_backend.routers.component import router as component_router
 from aisc_backend.routers.platform_project import router as platform_project_router
 from aisc_backend.routers.project import router as project_router
 from aisc_backend.routers.project_config import router as project_config_router
-from aisc_backend.tests.stored_manifest import as_declared, reads
+from aisc_backend.tests.stored_manifest import WHEEL, as_declared, reads
 
 PID = "0f0e0d0c-0b0a-4908-8706-050403020100"
 REQUEST = "11111111-2222-4333-8444-555555555555"
@@ -513,7 +513,7 @@ class Plugins(Recording):
         self.assertEqual(res.status_code, 200, res.text)
         [event] = await events()
         self.assertEvent(event, "plugin.installed", "plugin", "demo-pkg",
-                         {"package": "demo-pkg", "version": "0.1.0", "reused": False})
+                         {"package": "demo-pkg", "version": "0.1.0", "reused": False, "wheel_sha256": WHEEL})
         await self._install()
         self.assertEqual((await events())[1]["details"]["reused"], True)
 
