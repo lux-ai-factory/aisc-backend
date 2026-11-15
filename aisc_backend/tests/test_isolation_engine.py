@@ -74,6 +74,7 @@ FILE_HASH = ("aisc_backend", "0031_component_file_hash")
 MEASURES_ONCE = ("aisc_backend", "0032_measures_recorded_once")
 LAUNCH_KEY = ("aisc_backend", "0033_evaluation_launch_key")
 PLUGIN_MANIFEST = ("aisc_backend", "0034_plugin_manifest_and_pins")
+RUN_CODE = ("aisc_backend", "0035_run_code_identity")
 
 #: These stay byte for byte as they are (their core blocks are already
 #: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (an
@@ -130,10 +131,11 @@ class TheNewMigration(SimpleTestCase):
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_the_leaf_is_0034_on_0033_on_0032_on_0031_on_0030_on_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
-        """The same leaf as test_one_system_per_project.py (test_0034_is_the_leaf)."""
+    def test_the_leaf_is_0035_on_0034_on_0033_on_0032_on_0031_on_0030_on_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_0035_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
-        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [PLUGIN_MANIFEST])
+        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [RUN_CODE])
+        self.assertEqual({p.key for p in loader.graph.node_map[RUN_CODE].parents}, {PLUGIN_MANIFEST})
         self.assertEqual({p.key for p in loader.graph.node_map[PLUGIN_MANIFEST].parents}, {LAUNCH_KEY})
         self.assertEqual({p.key for p in loader.graph.node_map[LAUNCH_KEY].parents}, {MEASURES_ONCE})
         self.assertEqual({p.key for p in loader.graph.node_map[MEASURES_ONCE].parents}, {FILE_HASH})

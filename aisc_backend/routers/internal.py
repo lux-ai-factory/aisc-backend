@@ -31,7 +31,7 @@ from aisc_backend.repositories.measurement_repository import MeasurementReposito
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.routers.component import upload_cap_bytes
-from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
+from aisc_backend.schemas.evaluation import WorkerEvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 from aisc_plugin_interface import LLMConfig
@@ -163,7 +163,7 @@ async def get_project_configs_by_pid(
     ]
 
 
-@router.get("/evaluations/{evaluation_pid}", response=EvaluationDetailOutSchema)
+@router.get("/evaluations/{evaluation_pid}", response=WorkerEvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
     try:
         return await evaluation_repository.get_including(evaluation_pid, include)
@@ -346,8 +346,20 @@ async def update_evaluation_status(
     return evaluation.status
 
 
+class CodeIdentity(BaseModel):
+    """The code a local plugin's test runs, as the worker read its folder: the folder's sha256, its git commit
+    and whether the folder differed from that commit. Each may be unknown (None); nothing else is taken."""
+    model_config = ConfigDict(extra="forbid")
+
+    digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    git_dirty: bool | None = None
+
+
 class PluginTimestampSchema(Schema):
     field: str  # "started_at" or "finished_at"
+    #: with "started_at", for a local plugin: the code the test runs
+    code: CodeIdentity | None = None
 
 
 @router.patch("/evaluations/{evaluation_pid}/plugins/{evaluation_plugin_pid}/timestamp", response=str)
@@ -368,6 +380,10 @@ async def update_plugin_timestamp(
         raise HttpError(409, ALREADY_STARTED)
 
     setattr(eval_plugin, data.field, datetime.datetime.now(tz=datetime.timezone.utc))
+    if data.field == "started_at" and data.code is not None:
+        eval_plugin.code_digest = data.code.digest
+        eval_plugin.code_commit = data.code.git_commit
+        eval_plugin.code_dirty = data.code.git_dirty
     # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later,
     # also when the Stop or the failure commits after the read above: the write is skipped under the row's lock
     if eval_plugin.status != "Failed":

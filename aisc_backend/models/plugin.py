@@ -170,6 +170,14 @@ class EvaluationPlugin(Base):
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
+    #: the code this run ran: the wheel's sha256, copied from its plugin at launch (none for a local plugin),
+    #: and for a local plugin its folder's digest, git commit and whether the folder differed from that commit,
+    #: as the worker reported them when the test started
+    wheel_sha256 = models.CharField(max_length=64, null=True, blank=True)
+    code_digest = models.CharField(max_length=64, null=True, blank=True)
+    code_commit = models.CharField(max_length=40, null=True, blank=True)
+    code_dirty = models.BooleanField(null=True, blank=True)
+
     @property
     def duration_seconds(self) -> float | None:
         if self.started_at and self.finished_at:

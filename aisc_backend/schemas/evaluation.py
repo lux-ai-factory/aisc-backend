@@ -4,7 +4,8 @@ from ninja import ModelSchema, Field
 
 from aisc_backend.models import Evaluation
 
-from aisc_backend.schemas.plugin import EvaluationPluginOutSchema, ShownEvaluationPluginOutSchema
+from aisc_backend.schemas.plugin import (EvaluationPluginOutSchema, ShownEvaluationPluginOutSchema,
+                                         WorkerEvaluationPluginOutSchema)
 from aisc_backend.schemas.project import ProjectOutSchema
 
 
@@ -23,6 +24,12 @@ class EvaluationDetailOutSchema(ModelSchema):
         model = Evaluation
         exclude = ["launch_key"]
         fields_optional = "__all__"
+
+
+class WorkerEvaluationDetailOutSchema(EvaluationDetailOutSchema):
+    """An evaluation as the worker's internal route answers it: each plugin with what it is installed from."""
+    evaluation_plugins: list[WorkerEvaluationPluginOutSchema] | None = Field(
+        default=None, alias="get_evaluation_plugins")
 
 
 class ShownEvaluationDetailOutSchema(EvaluationDetailOutSchema):

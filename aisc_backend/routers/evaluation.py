@@ -372,8 +372,10 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
         evaluation = await evaluation_repository.create(evaluation)
 
         for plugin_config, plugin_obj, helpers, inputs in resolved:
+            # the wheel this run installs, as its plugin recorded it now (a local plugin has none)
             run_plugin = EvaluationPlugin(
-                plugin_config=plugin_config, evaluation=evaluation, name=run_name
+                plugin_config=plugin_config, evaluation=evaluation, name=run_name,
+                wheel_sha256=plugin_obj.row.wheel_sha256,
             )
             run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
