@@ -183,6 +183,7 @@ Read in `config/settings.py` (and, for the platform calls, where named). The sta
 |---|---|---|---|
 | `AISC_DEPLOYMENT` | `standalone` or `configurator` | `standalone` | `configurator` |
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | the database; in configurator mode `DB_NAME` is the membership database and the template of the per-project connections | sqlite file `db.db` | PostgreSQL, `platform`, `engine_rw` |
+| `DB_MIGRATE_USER`, `DB_MIGRATE_PASSWORD` | configurator mode: who migrates a project database (`manage.py migrate_projects`, and a project's first open), as the owner of the engine's tables; `DB_USER` only reads and writes their rows. A project database is migrated only once its `engine` schema is `engine_owner`'s | none (required to migrate a project database) | `engine_migrator`, acting as `engine_owner` |
 | `DB_SCHEMA` | schema of the engine's tables in each project database | empty | `engine` |
 | `DJANGO_SECRET_KEY` | Django's key; also decrypts stored plugin settings, so the worker holds it too | random per start | from the secrets |
 | `RUN_TICKET_KEY`, `RUN_TICKET_TTL_SECONDS` | key and lifetime of the run tickets the worker's internal calls carry | none (required in configurator mode), 86400 | from the secrets |

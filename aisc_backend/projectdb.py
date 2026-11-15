@@ -14,6 +14,10 @@ same definitions as before. This module is the only way the ORM reaches one:
   dummy backend) or to `platform` (membership and names only);
 - `open_alias(alias)` connects, migrates the database the first time this
   process opens it, and turns a missing database into NoSuchProjectDatabase;
+- `migrate_alias(alias)` is the same database as the migrator (DB_MIGRATE_USER,
+  whose sessions act as engine_owner, the owner of the engine's tables): the
+  migrations run there and nowhere else, so the alias every query uses, as
+  engine_rw, only reads and writes rows;
 - `forget(alias)` drops an alias whose database is gone.
 
 Who may be admitted, and when, is the door's decision (aisc_backend.project_door);
@@ -61,6 +65,26 @@ class SchemaNotProvisioned(Exception):
 
 class MigrationFailed(Exception):
     """Migrating a project database failed; the next open tries again."""
+
+
+#: The role that owns the engine schema of a project database and every table in it; the migrator's
+#: sessions act as it.
+SCHEMA_OWNER = "engine_owner"
+#: Who holds the schema before the platform hands it to its owner: the platform, which makes it.
+NOT_HANDED_OVER_YET = ("platform_rw", "platform_owner")
+#: The suffix of the migration alias of a project database's alias.
+MIGRATE_SUFFIX = "__migrate"
+
+
+class SchemaNotOwned(Exception):
+    """The engine schema of a project database is not engine_owner's, so nothing is migrated there. `wait`
+    is True while it is still the platform's (the hand-over is to come); False for anyone else's."""
+
+    def __init__(self, alias: str, owner: str | None):
+        self.owner = owner
+        self.wait = owner in NOT_HANDED_OVER_YET
+        super().__init__(f"{alias}: schema engine belongs to {owner or 'nobody'}, not {SCHEMA_OWNER}: run"
+                         " postgres-setup (init/owner-roles.sql) and start the platform, which hands it over")
 
 
 def configurator_databases(env) -> tuple[dict, list[str], dict]:
@@ -204,14 +228,30 @@ def alias_for(platform_pid) -> str:
     return alias
 
 
-def forget(alias: str) -> None:
-    """Drop an alias (its database was dropped): settings, connection, migrated mark."""
+def migrate_alias(alias: str) -> str:
+    """The migration alias of a project database's alias, registered on first use (no I/O): the same
+    database as the migrator, DB_MIGRATE_USER and DB_MIGRATE_PASSWORD. Refused without them: the engine's
+    own role reads and writes rows, it never migrates."""
     if not DATABASE.match(alias or ""):
-        return
+        raise NotAPid("not a project database alias")
+    name = alias + MIGRATE_SUFFIX
+    if name in connections.settings:
+        return name
+    user = getattr(settings, "PROJECT_MIGRATE_USER", "")
+    if not user:
+        raise ImproperlyConfigured("DB_MIGRATE_USER is not set: the engine migrates its project databases as"
+                                   " engine_migrator (init/owner-roles.sql), never as the role it serves as")
     with _settings_lock:
         current = connections.settings
-        if alias in current:
-            _replace_settings({k: v for k, v in current.items() if k != alias})
+        if name not in current:
+            template = copy.deepcopy(settings.PROJECT_DATABASE_TEMPLATE)
+            template.update(NAME=alias, USER=user, PASSWORD=getattr(settings, "PROJECT_MIGRATE_PASSWORD", ""))
+            configured = connections.configure_settings({DEFAULT_DB_ALIAS: {}, name: template})[name]
+            _replace_settings({**current, name: configured})
+    return name
+
+
+def _close(alias: str) -> None:
     try:
         conn = getattr(connections._connections, alias)
     except AttributeError:
@@ -225,6 +265,19 @@ def forget(alias: str) -> None:
             del connections[alias]
         except AttributeError:
             pass
+
+
+def forget(alias: str) -> None:
+    """Drop an alias (its database was dropped): settings, connections, migrated mark, its migration alias."""
+    if not DATABASE.match(alias or ""):
+        return
+    both = (alias, alias + MIGRATE_SUFFIX)
+    with _settings_lock:
+        current = connections.settings
+        if any(a in current for a in both):
+            _replace_settings({k: v for k, v in current.items() if k not in both})
+    for a in both:
+        _close(a)
     _migrated.discard(alias)
 
 
@@ -265,7 +318,7 @@ def open_alias(alias: str) -> str:
 
         try:
             migrate_database(alias)
-        except (NoSuchProjectDatabase, SchemaNotProvisioned):
+        except (NoSuchProjectDatabase, SchemaNotProvisioned, SchemaNotOwned):
             raise
         except Exception as exc:
             raise MigrationFailed(f"{alias}: {type(exc).__name__}") from exc
@@ -292,4 +345,7 @@ class ProjectDatabaseRouter:
         return obj1._state.db == obj2._state.db
 
     def allow_migrate(self, db, app_label, **hints):
-        return bool(DATABASE.match(db or ""))
+        db = db or ""
+        if db.endswith(MIGRATE_SUFFIX):
+            db = db[:-len(MIGRATE_SUFFIX)]
+        return bool(DATABASE.match(db))

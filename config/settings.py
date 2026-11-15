@@ -156,6 +156,10 @@ if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
     if PROJECT_DATABASES:
         from aisc_backend.projectdb import configurator_databases
         DATABASES, DATABASE_ROUTERS, PROJECT_DATABASE_TEMPLATE = configurator_databases(env)
+    # Who migrates a project database (projectdb.migrate_alias): engine_migrator, whose sessions act as
+    # engine_owner, the owner of the engine's tables. DB_USER only reads and writes their rows.
+    PROJECT_MIGRATE_USER = env("DB_MIGRATE_USER", "")
+    PROJECT_MIGRATE_PASSWORD = env("DB_MIGRATE_PASSWORD", "")
 
 
 # Password validation

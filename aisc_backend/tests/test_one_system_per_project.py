@@ -83,14 +83,14 @@ class TheChainAfterUpstream0014(TestCase):
         self.assertNotIn("0022_parts_belong_to_a_version_of_the_one_system", names)
         self.assertIn("0014_ai_system_and_project_config_squashed", names)
 
-    def test_0027_is_the_leaf(self):
+    def test_0028_is_the_leaf(self):
         # On this branch: 0019 is no_login_of_its_own, 0020 is the_database_is_the_project,
         # 0021_engine_deployment_marker, 0022_one_system_target_per_system, 0023_ledger_outbox,
         # 0024_drop_stored_langbite_judge_keys, 0025_evaluation_input_helper_ref,
-        # 0026_observation_evaluation_plugin, and 0027_component_retired_at is the leaf.
+        # 0026_observation_evaluation_plugin, 0027_component_retired_at, and 0028_owner_role is the leaf.
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"),
-                         [("aisc_backend", "0027_component_retired_at")])
+                         [("aisc_backend", "0028_owner_role")])
         parents = loader.graph.node_map[("aisc_backend", "0019_no_login_of_its_own")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
                          {("aisc_backend", "0018_alter_project_platform_project_id")})
