@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 READ_MANIFEST_TASK = "aisc_eval.celery_tasks.read_manifest"
 PLUGIN_HOOK_TASK = "aisc_eval.celery_tasks.plugin_hook"
+#: the worker's queue for both (aisc_eval.celery_app.PLUGIN_DECLARATIONS_QUEUE): a worker process of its own serves
+#: it, so a configure page never waits behind the runs
+DECLARATIONS_QUEUE = "plugin-declarations"
 #: seconds the engine waits for the worker: a first read installs the plugin
 WAIT_SETTING = "PLUGIN_MANIFEST_TIMEOUT_S"
 WAIT_DEFAULT_S = 900
@@ -52,7 +55,8 @@ def _wait_s() -> int:
 def _ask_worker(task: str, args: list):
     from aisc_backend.services.celery_service import celery  # the celery app reads the broker settings
 
-    return celery.send_task(task, args=args).get(timeout=_wait_s(), propagate=True, disable_sync_subtasks=False)
+    sent = celery.send_task(task, args=args, queue=DECLARATIONS_QUEUE)
+    return sent.get(timeout=_wait_s(), propagate=True, disable_sync_subtasks=False)
 
 
 def fetch_manifest(package_name: str, version: str, wheel_sha256: str | None) -> dict:
