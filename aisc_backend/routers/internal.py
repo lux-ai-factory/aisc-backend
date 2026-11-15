@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from asgiref.sync import sync_to_async
-from django.core.exceptions import ObjectDoesNotExist
+from django.db import IntegrityError
 from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
 from pydantic import BaseModel, ConfigDict, Field
@@ -45,6 +45,7 @@ NO_EVALUATION = "No evaluation found"
 NO_EVALUATION_PLUGIN = "No evaluation plugin of this evaluation found"
 ALREADY_STARTED = "This test was already started or has ended, so it is not started again."
 NO_REASON = "Failed, no reason recorded."
+ALREADY_RECORDED = "The measures of this test are already recorded."
 
 
 async def _evaluation_or_404(evaluation_pid: uuid.UUID, with_related: bool = False) -> Evaluation:
@@ -449,6 +450,9 @@ async def create_evaluation_measures(
         evaluation_plugin_uuid: await _run_of_evaluation_or_404(evaluation_plugin_uuid, evaluation_pid, True)
         for evaluation_plugin_uuid in data
     }
+    # a test's measures are recorded once: a redelivered task or a retried call adds nothing
+    if await Observation.objects.filter(evaluation_plugin__in=list(runs.values())).aexists():
+        raise HttpError(409, ALREADY_RECORDED)
 
     async def record():
         # the measures and their ledger event commit together; the event carries the measures themselves
@@ -475,13 +479,8 @@ async def create_evaluation_measures(
                     else measure_in_schema.description
                 )
 
-                # Get or create Metric
-                try:
-                    metric = await metric_repository.get_one(name=measure_in_schema.name)
-                except ObjectDoesNotExist:
-                    metric = await metric_repository.save(
-                        Metric(name=measure_in_schema.name)
-                    )
+                # one metric per name, also when two tests record the same name at once
+                metric, _ = await Metric.objects.aget_or_create(name=measure_in_schema.name)
 
                 # Save Measure associated with the Observation
                 measure_in_schema.observation = observation
@@ -501,7 +500,11 @@ async def create_evaluation_measures(
                 "engine.measures.recorded", evaluation.pid, item_type="evaluation", item_id=evaluation.pid,
                 details={"count": len(part), "part": number, "parts": len(parts)}, content=part)
 
-    await ledger.atomically(record)
+    try:
+        await ledger.atomically(record)
+    except IntegrityError:
+        # a concurrent post of the same test's measures committed first
+        raise HttpError(409, ALREADY_RECORDED) from None
 
     await sync_to_async(log_action)(
         request, action="record_measures", resource_type="evaluation",

@@ -15,6 +15,13 @@ class Observation(Base):
     evaluation_plugin = models.ForeignKey(
         'EvaluationPlugin', related_name='observations', null=True, blank=True, on_delete=models.SET_NULL)
 
+    class Meta:
+        constraints = [
+            # a test's measures are recorded once: a redelivered task or a retried call cannot add a second set
+            models.UniqueConstraint(fields=["evaluation_plugin"], condition=models.Q(evaluation_plugin__isnull=False),
+                                    name="one_observation_per_test"),
+        ]
+
     def get_measurements(self) -> list[Measurement]:
         return self.measurements.all()
 
