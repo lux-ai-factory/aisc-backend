@@ -484,10 +484,12 @@ async def create_evaluation_measures(
             for measurement in measurement_objs:
                 measurement.evaluation_plugin = evaluation_plugin
             recorded.extend(measurement_objs)
-        for part in _parts_of(measures_content(recorded)):
+        # each event says which part of the recording it is, of how many: the ledger alone shows none is missing
+        parts = _parts_of(measures_content(recorded))
+        for number, part in enumerate(parts, start=1):
             await sync_to_async(ledger.emit_for_run)(
                 "engine.measures.recorded", evaluation.pid, item_type="evaluation", item_id=evaluation.pid,
-                details={"count": len(part)}, content=part)
+                details={"count": len(part), "part": number, "parts": len(parts)}, content=part)
 
     await ledger.atomically(record)
 

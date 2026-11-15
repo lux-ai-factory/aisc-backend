@@ -355,7 +355,7 @@ class Runs(Recording):
         res = await self._as_the_worker("post", f"/evaluations/{self.evaluation.pid}/measures", json=body)
         self.assertEqual(res.status_code, 201, res.text)
         _, recorded = await events()
-        self.assertRunEvent(recorded, "engine.measures.recorded", "evaluation", self.evaluation.pid, {"count": 2})
+        self.assertRunEvent(recorded, "engine.measures.recorded", "evaluation", self.evaluation.pid, {"count": 2, "part": 1, "parts": 1})
 
     async def test_uploading_an_artifact(self):
         from aisc_backend.models.artifact import Artifact

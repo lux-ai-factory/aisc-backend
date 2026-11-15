@@ -30,6 +30,18 @@ class HelpersUnavailable(Exception):
         self.message = message
 
 
+class EndpointsRefused(HelpersUnavailable):
+    """The platform refused a reference of the run (an unknown target or connection, a deleted connection, a
+    reference that is not the project's): the message is the platform's own reason, which names the reference
+    and nothing else."""
+
+
+#: The platform's answers that name a reference it refused, with its reason in `detail`.
+REFUSED_REFERENCE = (404, 410, 422)
+#: The longest platform reason passed on (the platform's reasons are one short sentence).
+LONGEST_REASON = 300
+
+
 def _get(url: str, headers: dict, timeout: float = TIMEOUT) -> tuple[int, object]:
     req = urlrequest.Request(url, method="GET", headers=headers)
     try:
@@ -84,7 +96,8 @@ def list_helper_models(project_pid: str, name: str) -> dict:
 def connection_fingerprints(project_pid: str, refs: list[str]) -> list[dict]:
     """Which endpoint each of a run's target and connection references would reach now, as the platform
     fingerprints it: [{"ref", "connection", "kind", "endpoint_sha256"}], never a key or the endpoint itself.
-    HelpersUnavailable when the platform is not configured, cannot be reached, or does not answer them."""
+    EndpointsRefused, with the platform's reason, when it refused a reference; HelpersUnavailable when the
+    platform is not configured, cannot be reached, or does not answer them."""
     base = (os.environ.get("PLATFORM_URL") or "").rstrip("/")
     token = os.environ.get("PLATFORM_ENGINE_TOKEN") or ""
     if not base or not token:
@@ -105,8 +118,10 @@ def connection_fingerprints(project_pid: str, refs: list[str]) -> list[dict]:
         logger.warning("the platform can't be reached (%s): the run's endpoints cannot be named", type(exc).__name__)
         raise HelpersUnavailable("the platform can't be reached: the run's endpoints cannot be named") from exc
     connections = body.get("connections") if status == 200 and isinstance(body, dict) else None
-    if not isinstance(connections, list):
-        detail = body.get("detail") if isinstance(body, dict) else None
-        raise HelpersUnavailable(f"the platform answered {status}" + (f" ({detail})" if detail else "")
-                                 + ": the run's endpoints cannot be named")
-    return connections
+    if isinstance(connections, list):
+        return connections
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if status in REFUSED_REFERENCE and isinstance(detail, str) and detail.strip():
+        raise EndpointsRefused(detail.strip()[:LONGEST_REASON])
+    logger.warning("the platform answered %s on the endpoints of a run of project %s", status, project_pid)
+    raise HelpersUnavailable(f"the platform answered {status}: the run's endpoints cannot be named")

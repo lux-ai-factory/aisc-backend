@@ -50,10 +50,42 @@ def _local_models(evaluation_uuid: uuid.UUID, using: str) -> list[dict]:
             if isinstance(value, dict) and isinstance(value.get("local_model"), dict)]
 
 
-#: Said when a run names a target or connection and the platform cannot say which endpoint it would reach.
-ENDPOINTS_UNKNOWN = "the platform could not say which endpoint this run would reach; nothing was started"
+#: Said when a run names a target or connection and the platform cannot be asked which endpoint it would reach.
+ENDPOINTS_UNKNOWN = ("the platform could not be reached to say which endpoint this run would reach; nothing was"
+                     " started, try again in a moment")
 #: The values of a resource input that name a target or a connection of the platform (as the worker reads them).
 REF_PREFIXES = ("target:", "connection:")
+
+
+def references_of(components) -> list[str]:
+    """The target and connection references a run's input components name, each once, in input order."""
+    return list(dict.fromkeys(
+        value for component in components if component is not None and component.component_type == "resource"
+        and isinstance(value := (component.json_value or {}).get("value"), str) and value.startswith(REF_PREFIXES)))
+
+
+def endpoints_of(platform_pid: str, refs: list[str]) -> list[dict]:
+    """The platform's fingerprints of a run's references. HttpError(422) with the platform's reason when it
+    refused one (a deleted connection, an unknown target), HttpError(503) when it cannot be asked: nothing is
+    started either way."""
+    from aisc_backend import platform_helpers
+
+    try:
+        return platform_helpers.connection_fingerprints(platform_pid, refs)
+    except platform_helpers.EndpointsRefused as exc:
+        raise HttpError(422, f"{exc.message}: this run cannot reach it, so nothing was started") from exc
+    except platform_helpers.HelpersUnavailable as exc:
+        raise HttpError(503, ENDPOINTS_UNKNOWN) from exc
+
+
+def endpoints_before_launch(components) -> list[dict] | None:
+    """Asked by the launch before it stores the run: the fingerprints its start will record, or None when the
+    start is not recorded or names no reference. A refusal (endpoints_of) leaves nothing stored."""
+    admitted = projectdb.admitted_pid.get()
+    refs = references_of(components)
+    if not (ledger.on() and admitted and refs):
+        return None
+    return endpoints_of(admitted, refs)
 
 
 def _plugin_of(plugin_config, using: str) -> dict:
@@ -86,12 +118,12 @@ def _plugin_of(plugin_config, using: str) -> dict:
     return entry
 
 
-def _contents_of(evaluation_uuid: uuid.UUID, using: str, platform_pid: str) -> tuple[str | None, dict]:
+def _contents_of(evaluation_uuid: uuid.UUID, using: str, platform_pid: str,
+                 connections: list[dict] | None = None) -> tuple[str | None, dict]:
     """What a run is made of, for its start in the ledger: (the card version it assesses, the details). The
     details name each plugin (_plugin_of), the stored file and hash of each file input, the local model files,
-    and the endpoint each target or connection it names would reach now. HttpError(503) when it names one and
-    the platform cannot say which: nothing is started."""
-    from aisc_backend import platform_helpers
+    and the endpoint each target or connection it names would reach now: `connections` when the launch already
+    asked the platform, else asked here (endpoints_of refuses, and nothing is started)."""
     from aisc_backend.models import Evaluation, EvaluationInput, EvaluationPlugin
 
     evaluation = Evaluation.objects.using(using).get(pid=evaluation_uuid)
@@ -108,30 +140,26 @@ def _contents_of(evaluation_uuid: uuid.UUID, using: str, platform_pid: str) -> t
     local_models = _local_models(evaluation_uuid, using)
     if local_models:
         details["local_models"] = local_models
-    refs = list(dict.fromkeys(
-        value for put in inputs if put.component is not None and put.component.component_type == "resource"
-        and isinstance(value := (put.component.json_value or {}).get("value"), str) and value.startswith(REF_PREFIXES)))
-    if refs:
-        try:
-            details["connections"] = platform_helpers.connection_fingerprints(platform_pid, refs)
-        except platform_helpers.HelpersUnavailable as exc:
-            raise HttpError(503, ENDPOINTS_UNKNOWN) from exc
+    if connections is not None:
+        details["connections"] = connections
+    elif refs := references_of(put.component for put in inputs):
+        details["connections"] = endpoints_of(platform_pid, refs)
     return (None if evaluation.system_id is None else str(evaluation.system_id)), details
 
 
 @sync_to_async
-def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
+def _recorded_and_sent(evaluation_uuid: uuid.UUID, send, connections: list[dict] | None = None):
     """Send the run to the worker with its start in the project's ledger, in one transaction: the
     worker's events cite the start, so it is written before the worker can call back, and it is
     rolled back when the message cannot be sent. The evaluation is the run. `send` takes the request and the
     run the start cites ({"request_id", "run_id"}, or {} when no start was recorded), for the worker's own
-    events to cite."""
+    events to cite. `connections` are the endpoints the launch already had the platform name."""
     from aisc_backend.models import Evaluation, LedgerOutbox
 
     using = router.db_for_write(Evaluation)
     admitted = projectdb.admitted_pid.get()
     # read before the transaction: naming the endpoints asks the platform, and a refusal starts nothing
-    contents = _contents_of(evaluation_uuid, using, admitted) if ledger.on() and admitted else None
+    contents = _contents_of(evaluation_uuid, using, admitted, connections) if ledger.on() and admitted else None
     start = {}
     with transaction.atomic(using=using):
         if contents is not None:
@@ -144,7 +172,7 @@ def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
         return send(start)
 
 
-async def run_evaluation(evaluation_uuid: uuid.UUID):
+async def run_evaluation(evaluation_uuid: uuid.UUID, connections: list[dict] | None = None):
     """Dispatch a run: run_evaluation(evaluation_pid), as the upstream worker takes it, in both modes.
 
     Configurator: the run also travels in the
@@ -154,10 +182,13 @@ async def run_evaluation(evaluation_uuid: uuid.UUID):
     is sent: the door opens the project's database from the platform pid. When the run's start is in the
     ledger, aisc_run also carries the request and the run id the start cites (request_id, run_id): the worker
     sends them to the platform when it ends the run's pass, whose seal of the run's calls cites them.
+    `connections`: the endpoints the launch had the platform name before it stored the run
+    (endpoints_before_launch), recorded as they are; None has them asked here.
     """
     if not deployment.is_configurator():
         return await _recorded_and_sent(evaluation_uuid,
-                                        lambda _start: celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid]))
+                                        lambda _start: celery.send_task(RUN_EVAL_TASK, args=[evaluation_uuid]),
+                                        connections)
     platform_pid = await _platform_pid_of(evaluation_uuid)
     evaluation_pid = projectdb.normalise(evaluation_uuid)
     ticket = projectdb.run_ticket(platform_pid, evaluation_pid)
@@ -165,7 +196,7 @@ async def run_evaluation(evaluation_uuid: uuid.UUID):
         RUN_EVAL_TASK,
         args=[evaluation_uuid],
         headers={"aisc_run": {"project": platform_pid, "evaluation": evaluation_pid, "ticket": ticket, **start}},
-    ))
+    ), connections)
 
 
 @sync_to_async

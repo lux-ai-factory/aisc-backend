@@ -1,7 +1,8 @@
 """The ledger event of recorded measures carries the measures themselves, frozen: one canonical row per
 measure (its test, name, score, uncertainty, unit, direction and error, and the hash of its dimensions or
 None, never the dimensions, which may hold the system's answers). A score that is not a finite number is written as a
-string, since canonical JSON has no NaN or infinity."""
+string, since canonical JSON has no NaN or infinity. Each event says which part of the recording it is and how
+many parts there are, so the ledger alone shows that none is missing."""
 import json
 import math
 
@@ -27,7 +28,7 @@ class MeasuresRecordedContent(RunRecording):
              "time": TIME, "dimensions": {"concern": "gender"}},
             {"name": "Refusals", "score": 3, "error": "two answers unreadable", "time": TIME}])
         test = str(self.evaluation_plugin.pid)
-        self.assertEqual(recorded["details"], {"count": 3})
+        self.assertEqual(recorded["details"], {"count": 3, "part": 1, "parts": 1})
         self.assertEqual(recorded.get("content"), [
             {"evaluation_plugin": test, "name": "Accuracy", "score": 0.9, "uncertainty": 0.05, "unit": "ratio",
              "direction": "higher", "error": "N/A", "dimensions_sha256": canonical_sha256({"concern": "gender"})},
@@ -72,3 +73,14 @@ class MeasuresRecordedContent(RunRecording):
                          sorted(m["name"] for m in measures))
         for event in recorded:
             self.assertLess(len(json.dumps(event).encode()), 32 * 1024)
+        self.assertEqual([(event["details"].get("part"), event["details"].get("parts")) for event in recorded],
+                         [(n, len(recorded)) for n in range(1, len(recorded) + 1)])
+
+    async def test_a_recording_of_no_measures_is_part_one_of_one(self):
+        await self.start()
+        res = await self.as_the_worker("post", f"/evaluations/{self.evaluation.pid}/measures",
+                                       json={str(self.evaluation_plugin.pid): []})
+        self.assertEqual(res.status_code, 201, res.text)
+        [recorded] = await events_of("engine.measures.recorded")
+        self.assertEqual(recorded["details"], {"count": 0, "part": 1, "parts": 1})
+        self.assertEqual(recorded["content"], [])
