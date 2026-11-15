@@ -377,7 +377,16 @@ async def rename_evaluation(request, evaluation_pid: uuid.UUID, data: RunNameReq
     evaluation = await Evaluation.objects.filter(pid=evaluation_pid).afirst()
     if evaluation is None:
         raise HttpError(404, "Evaluation not found")
-    await EvaluationPlugin.objects.filter(evaluation=evaluation).aupdate(name=name)
+
+    async def rename():
+        # the new name and its event, citing this request, commit together or not at all
+        tests = EvaluationPlugin.objects.filter(evaluation=evaluation)
+        before = await tests.order_by("id").values_list("name", flat=True).afirst()
+        await tests.aupdate(name=name)
+        await sync_to_async(ledger.emit)("engine.evaluation.renamed", item_type="evaluation", item_id=evaluation.pid,
+                                         details={"name_before": before or "", "name_after": name})
+
+    await ledger.atomically(rename)
     # AUDIT: who renamed which run, and to what
     await sync_to_async(log_action)(
         request, action="rename", resource_type="evaluation", resource_id=str(evaluation.pid),
