@@ -1,5 +1,5 @@
-"""The secret rules (aisc_backend.config_secrets): the broad one for ledger copies, the narrow one for stored
-configurations, and the text scrubber for failure messages.
+"""The secret rules (aisc_backend.config_secrets): the one for ledger copies (form marks, name and value together,
+key shapes), the narrow one for stored configurations, and the text scrubber for failure messages.
 
 The module is imported in each test, so a missing function fails its own cases only.
 """
@@ -37,35 +37,36 @@ class LedgerCopies(SimpleTestCase):
     VALUE = {"api_key": "abc123", "max_tokens": 512,
              "nested": {"auth_token": "", "items": [{"password": None}]},
              "prompt": "use sk-abcdefghijklmnopqrst1234 ok", "note": "x"}
-    MASKED = {"api_key": "set", "max_tokens": "set", "nested": {"auth_token": None, "items": [{"password": None}]},
+    MASKED = {"api_key": "set", "max_tokens": 512, "nested": {"auth_token": "", "items": [{"password": None}]},
               "prompt": "set", "note": "x"}
 
-    def test_secret_named_keys_are_set_or_none_and_a_secret_shaped_string_is_set(self):
+    def test_secret_keys_are_set_empty_ones_kept_and_a_secret_shaped_string_is_set(self):
         self.assertEqual(rules().masked_for_ledger(self.VALUE), self.MASKED)
 
     def test_masking_twice_changes_nothing(self):
         once = rules().masked_for_ledger(self.VALUE)
         self.assertEqual(rules().masked_for_ledger(once), once)
 
-    def test_without_shapes_it_is_what_the_router_writes_for_a_plugin_it_cannot_load(self):
+    def test_a_plugin_it_cannot_load_is_shown_masked_by_the_shared_rule(self):
         from aisc_backend.routers import plugin
 
         value = {"judge_api_key": "k", "languages": ["en"], "x": {"secret": "s"}}
         expected = {"judge_api_key": "set", "languages": ["en"], "x": {"secret": "set"}}
         self.assertEqual(rules().masked_for_ledger(value), expected)
-        self.assertEqual(plugin._masked(value, {}, {}, {}), expected)
+        self.assertEqual(plugin._masked(value, {}, {}, {}), value, "without a form, the router marks nothing itself")
+        self.assertEqual(plugin._shown_config(value, {}, {}), expected)
 
     def test_the_router_uses_the_shared_rule(self):
         from aisc_backend.routers import plugin
 
         self.assertIs(plugin.SECRET_SET, rules().SECRET_SET)
-        self.assertEqual(plugin._SECRET_NAME.pattern, rules().LEDGER_SECRET_NAME.pattern)
-        self.assertEqual(plugin._SECRET_NAME.flags, rules().LEDGER_SECRET_NAME.flags)
+        self.assertIs(plugin.masked_for_ledger, rules().masked_for_ledger)
 
     def test_the_paths_holding_a_plaintext_secret(self):
         value = {"api_key": "set", "judge_api_key": KEY, "max_tokens": 512, "list": [{"token": "abcdef"}],
                  "keys": ["a"], "note": "Bearer abcDEF0123456789ghi"}
-        self.assertEqual(rules().plaintext_secret_paths(value), ["judge_api_key", "list[0].token", "keys", "note"])
+        # a short word under `token` or `keys` reads like a setting, not a key
+        self.assertEqual(rules().plaintext_secret_paths(value), ["judge_api_key", "note"])
         self.assertTrue(rules().holds_plaintext_secret(value))
         self.assertFalse(rules().holds_plaintext_secret({"api_key": "set", "max_tokens": 512, "password": None}))
 

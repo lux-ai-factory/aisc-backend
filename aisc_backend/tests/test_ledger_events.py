@@ -561,7 +561,7 @@ class Plugins(Recording):
             await self.plugins.post(f"/{pid}/config", json={"config": {"threshold": 0.9}})
             await self.plugins.post(f"/{pid}/configs/{config_id}/restore")
         masked = {"threshold": 0.5, "passphrase": "set", "sealed": "set", "auth_header": "set",
-                  "judge": {"model": "gpt-4o", "phrase": "set"}, "judge_api_key": "set", "access_token": None}
+                  "judge": {"model": "gpt-4o", "phrase": "set"}, "judge_api_key": "set", "access_token": ""}
         # the keys the save kept as project secrets are recorded first, each as its own secret event
         configured, *_, restored = [e for e in await events() if e["action"] == "engine.plugin.configured"]
         self.assertEqual(configured["content"]["config"], masked)
