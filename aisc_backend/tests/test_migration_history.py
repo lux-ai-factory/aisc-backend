@@ -8,7 +8,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
 
 UPSTREAM_LAST = ("aisc_backend", "0014_ai_system_and_project_config_squashed")
-OUR_LAST = ("aisc_backend", "0028_owner_role")
+OUR_LAST = ("aisc_backend", "0029_append_only_results")
 
 
 class OneHistory(TransactionTestCase):

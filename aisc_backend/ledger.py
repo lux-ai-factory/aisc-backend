@@ -32,7 +32,6 @@ import os
 import threading
 import uuid
 from contextvars import ContextVar
-from datetime import datetime, timezone
 from urllib import error, request as urlrequest
 
 from aisc_identity.switches import ledger_mode
@@ -226,14 +225,14 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
     for row in list(queued.order_by("id")[:limit]):
         status = send(str(row.project_pid), _as_sent(row.event))
         if status is not None and 200 <= status < 300:
-            LedgerOutbox.objects.using(using).filter(pk=row.pk).update(delivered_at=datetime.now(timezone.utc))
+            LedgerOutbox.mark(using, row.pk, delivered=True)
             sent += 1
             continue
         failed += 1
         if status in REFUSALS:
             logger.error("ledger: the platform refused engine event %s (%s, status %s); kept, not sent again",
                          row.event.get("event_id"), row.event.get("action"), status)
-            LedgerOutbox.objects.using(using).filter(pk=row.pk).update(refused=status)
+            LedgerOutbox.mark(using, row.pk, delivered=False, refused=status)
             continue
         logger.warning("ledger: engine event %s not sent (%s); it and the later ones stay queued",
                        row.event.get("event_id"), "no answer" if status is None else f"status {status}")

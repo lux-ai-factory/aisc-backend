@@ -65,6 +65,8 @@ OBSERVATION_RUN = ("aisc_backend", "0026_observation_evaluation_plugin")
 RETIRED = ("aisc_backend", "0027_component_retired_at")
 #: the tables belong to engine_owner and a run's card version is fixed
 OWNER_ROLE = ("aisc_backend", "0028_owner_role")
+#: measures, observations, the outbox and saved configurations are append-only
+APPEND_ONLY = ("aisc_backend", "0029_append_only_results")
 
 #: These stay byte for byte as they are (their core blocks are already
 #: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (an
@@ -121,10 +123,11 @@ class TheNewMigration(SimpleTestCase):
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_the_leaf_is_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
-        """The same leaf as test_one_system_per_project.py (test_0028_is_the_leaf)."""
+    def test_the_leaf_is_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_0029_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
-        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [OWNER_ROLE])
+        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [APPEND_ONLY])
+        self.assertEqual({p.key for p in loader.graph.node_map[APPEND_ONLY].parents}, {OWNER_ROLE})
         self.assertEqual({p.key for p in loader.graph.node_map[OWNER_ROLE].parents}, {RETIRED})
         self.assertEqual({p.key for p in loader.graph.node_map[RETIRED].parents}, {OBSERVATION_RUN})
         self.assertEqual({p.key for p in loader.graph.node_map[OBSERVATION_RUN].parents}, {HELPER_REF})
