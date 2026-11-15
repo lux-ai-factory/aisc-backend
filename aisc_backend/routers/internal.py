@@ -44,6 +44,7 @@ router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 NO_EVALUATION = "No evaluation found"
 NO_EVALUATION_PLUGIN = "No evaluation plugin of this evaluation found"
 ALREADY_STARTED = "This test was already started or has ended, so it is not started again."
+NO_REASON = "Failed, no reason recorded."
 
 
 async def _evaluation_or_404(evaluation_pid: uuid.UUID, with_related: bool = False) -> Evaluation:
@@ -308,6 +309,9 @@ async def update_evaluation_status(
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
+    # Processing only moves a Pending run on: a run already ended, or already Processing, is left as it is
+    if status == EvaluationStatus.Processing and evaluation.status != EvaluationStatus.Pending:
+        return evaluation.status
     # a run already failed (stopped by a person, or one of its tests failed) is never turned Done afterwards
     if status == EvaluationStatus.Done and evaluation.status == EvaluationStatus.Failed:
         return evaluation.status
@@ -347,8 +351,9 @@ async def update_plugin_timestamp(
             400, f"Invalid field: {data.field}. Must be 'started_at' or 'finished_at'"
         )
 
-    # a test that has ended is never reopened by a second delivery of its task
-    if data.field == "started_at" and (eval_plugin.finished_at is not None or eval_plugin.status == "Done"):
+    # a test starts once: a second start, or a second delivery of a test that has ended, is refused
+    if data.field == "started_at" and (eval_plugin.started_at is not None or eval_plugin.finished_at is not None
+                                       or eval_plugin.status in ("Failed", "Done")):
         raise HttpError(409, ALREADY_STARTED)
 
     setattr(eval_plugin, data.field, datetime.datetime.now(tz=datetime.timezone.utc))
@@ -361,7 +366,7 @@ async def update_plugin_timestamp(
 
 
 class PluginFailureSchema(Schema):
-    error_message: str = ""
+    error_message: str
 
 
 @router.patch("/evaluations/{evaluation_pid}/plugins/{evaluation_plugin_pid}/fail", response=str)
@@ -376,7 +381,7 @@ async def mark_plugin_failed(
         # a test already failed (stopped by a person, or by another test's failure) keeps its first reason
         if eval_plugin.status != "Failed":
             eval_plugin.status = "Failed"
-            eval_plugin.error_message = scrub_text(data.error_message)
+            eval_plugin.error_message = scrub_text(data.error_message).strip() or NO_REASON
             eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
             await evaluation_plugin_repository.save(eval_plugin)
         evaluation.status = EvaluationStatus.Failed

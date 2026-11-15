@@ -193,8 +193,8 @@ async def sync(fn, *args):
 
 
 class AStopTheWorkerMissedStaysStopped(TestCase):
-    """When Stop cannot reach the worker, a test still setting up goes on to report its start and its end. The test
-    stays failed as stopped, and the run is not turned Done."""
+    """When Stop cannot reach the worker, a test still setting up goes on to report its start and its end. Its start
+    is refused, the test stays failed as stopped, and the run is not turned Done."""
 
     async def as_the_worker(self, method, path, **kw):
         with patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}):
@@ -209,9 +209,9 @@ class AStopTheWorkerMissedStaysStopped(TestCase):
         test = await EvaluationPlugin.objects.acreate(plugin_config=config, evaluation=evaluation, status="Failed",
                                                       error_message=evaluation_routes.STOPPED_BY_A_PERSON)
         base = f"/evaluations/{evaluation.pid}/plugins/{test.pid}/timestamp"
-        for field in ("started_at", "finished_at"):
+        for field, answer in (("started_at", 409), ("finished_at", 200)):
             response = await self.as_the_worker("patch", base, json={"field": field})
-            self.assertEqual(response.status_code, 200, response.content)
+            self.assertEqual(response.status_code, answer, response.content)
             await test.arefresh_from_db()
             self.assertEqual(test.status, "Failed", field)
         response = await self.as_the_worker("put", f"/evaluations/{evaluation.pid}?status=Done")
