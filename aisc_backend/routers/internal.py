@@ -45,6 +45,12 @@ NO_EVALUATION = "No evaluation found"
 NO_EVALUATION_PLUGIN = "No evaluation plugin of this evaluation found"
 ALREADY_STARTED = "This test was already started or has ended, so it is not started again."
 NO_REASON = "Failed, no reason recorded."
+#: the run states a worker's status report does not overwrite: Done never turns a failed run back, and Processing
+#: moves on only a run that has not ended
+_ENDED_BEFORE = {
+    EvaluationStatus.Done: (EvaluationStatus.Failed,),
+    EvaluationStatus.Processing: (EvaluationStatus.Failed, EvaluationStatus.Done),
+}
 ALREADY_RECORDED = "The measures of this test are already recorded."
 
 
@@ -327,8 +333,12 @@ async def update_evaluation_status(
                 resource_id=str(evaluation_pid), metadata={"status": str(evaluation.status)})
             return evaluation.status
 
+    # the checks above read the run before this write: a Stop or a failure that commits in between is kept, so
+    # the write applies only to a run still in a state it may move on from
     evaluation.status = status
-    await evaluation_repository.save(evaluation)
+    await evaluation_repository.save(evaluation, unless_status_in=_ENDED_BEFORE.get(status, ()))
+    if evaluation.status != status:
+        return evaluation.status
 
     await sync_to_async(log_action)(
         request, action="status_change", resource_type="evaluation",
@@ -358,10 +368,14 @@ async def update_plugin_timestamp(
         raise HttpError(409, ALREADY_STARTED)
 
     setattr(eval_plugin, data.field, datetime.datetime.now(tz=datetime.timezone.utc))
-    # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later
+    # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later,
+    # also when the Stop or the failure commits after the read above: the write is skipped under the row's lock
     if eval_plugin.status != "Failed":
         eval_plugin.status = "Running" if data.field == "started_at" else "Done"
-    await evaluation_plugin_repository.save(eval_plugin)
+    await evaluation_plugin_repository.save(eval_plugin, unless_status_in=("Failed",))
+    if data.field == "started_at" and eval_plugin.started_at is None:
+        # it failed before it could start: the worker's copy ends without running the plugin
+        raise HttpError(409, ALREADY_STARTED)
 
     return "ok"
 
@@ -384,7 +398,7 @@ async def mark_plugin_failed(
             eval_plugin.status = "Failed"
             eval_plugin.error_message = scrub_text(data.error_message).strip() or NO_REASON
             eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
-            await evaluation_plugin_repository.save(eval_plugin)
+            await evaluation_plugin_repository.save(eval_plugin, unless_status_in=("Failed",))
         evaluation.status = EvaluationStatus.Failed
         await evaluation_repository.save(evaluation)
 

@@ -16,10 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 @sync_to_async
-def _save_in_one_transaction(instance: models.Model) -> None:
+def _save_in_one_transaction(instance: models.Model, unless_status_in: tuple[str, ...] = ()) -> None:
     """Save the row in a transaction of its own, so the ledger event its signal queues
-    (aisc_backend.signals.ledger) commits with it, or neither does."""
-    with transaction.atomic(using=router.db_for_write(type(instance), instance=instance)):
+    (aisc_backend.signals.ledger) commits with it, or neither does.
+
+    With `unless_status_in`, the row is locked and its status read again first: when another writer has put it in
+    one of those states since the caller read it (a person's Stop, a sibling's failure), nothing is written and
+    `instance` is refreshed to what the row now holds."""
+    using = router.db_for_write(type(instance), instance=instance)
+    with transaction.atomic(using=using):
+        if unless_status_in:
+            current = (type(instance).objects.using(using).select_for_update()
+                       .filter(pk=instance.pk).values_list("status", flat=True).first())
+            if current in unless_status_in:
+                instance.refresh_from_db(using=using)
+                return
         instance.save()
 
 class BaseRepository[T: models.Model]:
@@ -35,9 +46,11 @@ class BaseRepository[T: models.Model]:
         return await self.model.objects.aget(pid=pid)
 
 
-    async def save(self, instance: T) -> T:
+    async def save(self, instance: T, unless_status_in: tuple[str, ...] = ()) -> T:
+        """Save `instance` whole; with `unless_status_in`, only while the row is not in one of those states (see
+        _save_in_one_transaction): the caller reads the outcome from the returned instance."""
         if isinstance(instance, self.model):
-            await _save_in_one_transaction(instance)
+            await _save_in_one_transaction(instance, unless_status_in)
         return instance
 
 
