@@ -11,7 +11,8 @@ from aisc_backend.schemas.project import ProjectOutSchema
 class EvaluationOutSchema(ModelSchema):
     class Meta:
         model = Evaluation
-        fields = "__all__"
+        # the launch's own key is the engine's to match a launch sent again, not part of the run
+        exclude = ["launch_key"]
 
 
 class EvaluationDetailOutSchema(ModelSchema):
@@ -20,7 +21,7 @@ class EvaluationDetailOutSchema(ModelSchema):
 
     class Meta:
         model = Evaluation
-        fields = "__all__"
+        exclude = ["launch_key"]
         fields_optional = "__all__"
 
 
