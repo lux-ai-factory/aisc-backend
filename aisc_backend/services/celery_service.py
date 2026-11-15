@@ -50,6 +50,69 @@ def _local_models(evaluation_uuid: uuid.UUID, using: str) -> list[dict]:
             if isinstance(value, dict) and isinstance(value.get("local_model"), dict)]
 
 
+#: Said when a run names a target or connection and the platform cannot say which endpoint it would reach.
+ENDPOINTS_UNKNOWN = "the platform could not say which endpoint this run would reach; nothing was started"
+#: The values of a resource input that name a target or a connection of the platform (as the worker reads them).
+REF_PREFIXES = ("target:", "connection:")
+
+
+def _plugin_of(plugin_config, using: str) -> dict:
+    """One plugin of a run as its start records it: the package, its version, the saved configuration and the
+    hash of that configuration as the ledger holds it (its engine.plugin.configured copy), and which settings
+    the configuration gives the run, by key: a variable with the hash of its value, a secret by its key only."""
+    from aisc_identity.canonical import sha256_of
+
+    from aisc_backend.config_secrets import masked_for_ledger
+    from aisc_backend.models import ProjectConfigCategory
+    from aisc_backend.routers import plugin as plugin_routes
+
+    plugin = plugin_config.plugin
+    mappings = list(plugin_config.setting_mappings.using(using).select_related("project_config")
+                    .order_by("plugin_config_key"))
+    schema, ui = plugin_routes._plugin_form(plugin)
+    held = masked_for_ledger(plugin_routes._ledger_config(plugin_config.config, schema, ui,
+                                                          plugin_routes._kept_paths(mappings)))
+    entry = {"name": plugin.name, "package": plugin.package_name, "version": plugin.version,
+             "plugin_config_id": plugin_config.id, "config_sha256": sha256_of(held)}
+    settings = []
+    for mapping in mappings:
+        setting = mapping.project_config
+        given = {"key": mapping.plugin_config_key, "setting": setting.key, "category": setting.category}
+        if setting.category != ProjectConfigCategory.SECRETS:
+            given["value_sha256"] = sha256_of(setting.json_value)
+        settings.append(given)
+    if settings:
+        entry["settings"] = settings
+    return entry
+
+
+def _contents_of(evaluation_uuid: uuid.UUID, using: str, platform_pid: str) -> tuple[str | None, dict]:
+    """What a run is made of, for its start in the ledger: (the card version it assesses, the details). The
+    details name each plugin (_plugin_of), the local model files, and the endpoint each target or connection it names would reach now. HttpError(503) when it names one and
+    the platform cannot say which: nothing is started."""
+    from aisc_backend import platform_helpers
+    from aisc_backend.models import Evaluation, EvaluationInput, EvaluationPlugin
+
+    evaluation = Evaluation.objects.using(using).get(pid=evaluation_uuid)
+    tests = (EvaluationPlugin.objects.using(using).filter(evaluation=evaluation)
+             .select_related("plugin_config__plugin").order_by("id"))
+    details = {"plugins": [_plugin_of(test.plugin_config, using) for test in tests]}
+    inputs = list(EvaluationInput.objects.using(using).filter(evaluation_plugin__evaluation=evaluation)
+                  .select_related("component", "evaluation_plugin__plugin_config__plugin").order_by("id"))
+    local_models = _local_models(evaluation_uuid, using)
+    if local_models:
+        details["local_models"] = local_models
+    refs = list(dict.fromkeys(
+        value for put in inputs if put.component is not None and put.component.component_type == "resource"
+        and isinstance(value := (put.component.json_value or {}).get("value"), str) and value.startswith(REF_PREFIXES)))
+    if refs:
+        try:
+            details["connections"] = platform_helpers.connection_fingerprints(platform_pid, refs)
+        except platform_helpers.HelpersUnavailable as exc:
+            raise HttpError(503, ENDPOINTS_UNKNOWN) from exc
+    return (None if evaluation.system_id is None else str(evaluation.system_id)), details
+
+
 @sync_to_async
 def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
     """Send the run to the worker with its start in the project's ledger, in one transaction: the
@@ -57,20 +120,18 @@ def _recorded_and_sent(evaluation_uuid: uuid.UUID, send):
     rolled back when the message cannot be sent. The evaluation is the run. `send` takes the request and the
     run the start cites ({"request_id", "run_id"}, or {} when no start was recorded), for the worker's own
     events to cite."""
-    from aisc_backend.models import Evaluation, EvaluationPlugin, LedgerOutbox
+    from aisc_backend.models import Evaluation, LedgerOutbox
 
     using = router.db_for_write(Evaluation)
+    admitted = projectdb.admitted_pid.get()
+    # read before the transaction: naming the endpoints asks the platform, and a refusal starts nothing
+    contents = _contents_of(evaluation_uuid, using, admitted) if ledger.on() and admitted else None
     start = {}
     with transaction.atomic(using=using):
-        if ledger.on():
-            plugins = list(EvaluationPlugin.objects.using(using).filter(evaluation__pid=evaluation_uuid)
-                           .order_by("id").values_list("plugin_config__plugin__name", flat=True))
-            details = {"plugins": plugins}
-            local_models = _local_models(evaluation_uuid, using)
-            if local_models:
-                details["local_models"] = local_models
+        if contents is not None:
+            card_version, details = contents
             row = ledger.emit(ledger.RUN_REQUESTED, item_type="evaluation", item_id=evaluation_uuid,
-                              run_id=evaluation_uuid, details=details, using=using)
+                              run_id=evaluation_uuid, details=details, card_version=card_version, using=using)
             event = LedgerOutbox.objects.using(using).get(pk=row).event if row is not None else {}
             if event.get("request_id") and event.get("run_id"):
                 start = {"request_id": event["request_id"], "run_id": event["run_id"]}

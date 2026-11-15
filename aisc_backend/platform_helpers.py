@@ -79,3 +79,34 @@ def list_helper_models(project_pid: str, name: str) -> dict:
     if status != 200 or not isinstance(body, dict) or not isinstance(body.get("models"), list):
         raise HelpersUnavailable(f"the platform answered {status}: the models cannot be listed")
     return {"models": [m for m in body["models"] if isinstance(m, str)], "error": body.get("error")}
+
+
+def connection_fingerprints(project_pid: str, refs: list[str]) -> list[dict]:
+    """Which endpoint each of a run's target and connection references would reach now, as the platform
+    fingerprints it: [{"ref", "connection", "kind", "endpoint_sha256"}], never a key or the endpoint itself.
+    HelpersUnavailable when the platform is not configured, cannot be reached, or does not answer them."""
+    base = (os.environ.get("PLATFORM_URL") or "").rstrip("/")
+    token = os.environ.get("PLATFORM_ENGINE_TOKEN") or ""
+    if not base or not token:
+        raise HelpersUnavailable("PLATFORM_URL or PLATFORM_ENGINE_TOKEN is not set: the run's endpoints cannot be named")
+    url = f"{base}/internal/projects/{quote(str(project_pid), safe='')}/connections/fingerprints"
+    req = urlrequest.Request(url, method="POST", data=json.dumps({"refs": list(refs)}).encode(),
+                             headers={"X-AISC-Service-Token": token, "Content-Type": "application/json"})
+    try:
+        with urlrequest.urlopen(req, timeout=TIMEOUT) as res:
+            status, body = res.status, json.loads(res.read() or b"null")
+    except error.HTTPError as exc:
+        status, body = exc.code, None
+        try:
+            body = json.loads(exc.read() or b"null")
+        except ValueError:
+            pass
+    except Exception as exc:  # noqa: BLE001 - the platform is down, or the URL is wrong
+        logger.warning("the platform can't be reached (%s): the run's endpoints cannot be named", type(exc).__name__)
+        raise HelpersUnavailable("the platform can't be reached: the run's endpoints cannot be named") from exc
+    connections = body.get("connections") if status == 200 and isinstance(body, dict) else None
+    if not isinstance(connections, list):
+        detail = body.get("detail") if isinstance(body, dict) else None
+        raise HelpersUnavailable(f"the platform answered {status}" + (f" ({detail})" if detail else "")
+                                 + ": the run's endpoints cannot be named")
+    return connections

@@ -126,9 +126,10 @@ def _database() -> str:
 
 
 def emit(action: str, *, item_type: str, item_id, details: dict | None = None, using: str | None = None,
-         request_id: str | None = None, run_id=None, **states) -> int | None:
+         request_id: str | None = None, run_id=None, card_version=None, **states) -> int | None:
     """Queue one event on `using` (the admitted project's database), inside the caller's transaction.
 
+    `card_version` is the pid of the AI card version the event is about (a run's), left out when None.
     `states` takes content, before and after. Returns the outbox row's id, or None while the ledger is
     off or no project is admitted."""
     from aisc_backend.models import LedgerOutbox
@@ -145,6 +146,8 @@ def emit(action: str, *, item_type: str, item_id, details: dict | None = None, u
              "details": details or {}}
     if run_id is not None:
         event["run_id"] = str(run_id)
+    if card_version is not None:
+        event["card_version"] = str(card_version)
     event.update({key: value for key, value in states.items() if value is not None})
     row = LedgerOutbox.objects.using(using).create(project_pid=pid, event=event)
     if can_send():
@@ -154,9 +157,9 @@ def emit(action: str, *, item_type: str, item_id, details: dict | None = None, u
 
 def emit_for_run(action: str, evaluation_pid, *, item_type: str, item_id, details: dict | None = None,
                  using: str | None = None, **states) -> int | None:
-    """Queue a worker's event: it cites the request and the run of its evaluation's start. None when the
-    start was not recorded (the ledger was off then), since the platform would have no run to bind it to.
-    `states` as for emit."""
+    """Queue a worker's event: it cites the request and the run of its evaluation's start, and the card version
+    the start names. None when the start was not recorded (the ledger was off then), since the platform would
+    have no run to bind it to. `states` as for emit."""
     from aisc_backend.models import LedgerOutbox
 
     if not on() or projectdb.admitted_pid.get() is None:
@@ -168,7 +171,8 @@ def emit_for_run(action: str, evaluation_pid, *, item_type: str, item_id, detail
         logger.info("ledger: %s of evaluation %s not recorded: its run's start is not", action, evaluation_pid)
         return None
     return emit(action, item_type=item_type, item_id=item_id, details=details, using=using,
-                request_id=start.event["request_id"], run_id=start.event.get("run_id"), **states)
+                request_id=start.event["request_id"], run_id=start.event.get("run_id"),
+                card_version=start.event.get("card_version"), **states)
 
 
 async def atomically(work):
