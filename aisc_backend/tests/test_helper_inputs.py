@@ -27,10 +27,10 @@ from aisc_backend.models import (
 )
 from aisc_backend.routers import evaluation as evaluation_routes
 from aisc_backend.routers import helper_models, target_input
-from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.internal import router as internal_router
 from aisc_backend.routers.project import router as project_router
 from aisc_backend.schemas.plugin import EvaluationInputOutSchema
+from aisc_backend.tests.stored_manifest import as_declared, declared_of
 from aisc_plugin_interface import (
     BaseEvaluationPlugin, InputType, assesses, helper_model, system_under_test_access,
 )
@@ -102,7 +102,7 @@ class RunsWithHelpers(TestCase):
 
     async def run_with(self, inputs, helpers=()):
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=UsesAJudge), \
+        with as_declared(UsesAJudge), \
              mock.patch.object(evaluation_routes, "validate_plugin_settings",
                                new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(platform_helpers, "list_helpers", return_value=list(helpers)) as listing, \
@@ -176,7 +176,7 @@ class InTheConfigurator(RunsWithHelpers):
 
     async def test_helpers_that_cannot_be_listed_refuse_the_run(self):
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=UsesAJudge), \
+        with as_declared(UsesAJudge), \
              mock.patch.object(evaluation_routes, "validate_plugin_settings",
                                new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(platform_helpers, "list_helpers",
@@ -194,7 +194,7 @@ class TheHelperDefinition(TestCase):
     def test_helper_definition_type_is_helper(self):
         with mock.patch.object(target_input, "upstream_input_definitions",
                                mock.AsyncMock(return_value=list(JudgesTheCardTarget._input_definitions))), \
-             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=JudgesTheCardTarget)), \
+             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=declared_of(JudgesTheCardTarget))), \
              mock.patch.object(target_input, "ensure_system_target", mock.AsyncMock()):
             out = async_to_sync(target_input.input_definitions_with_target)(mock.Mock(), uuid.uuid4())
         [helper] = [d for d in out if d.name == "helper:judge"]
@@ -223,7 +223,7 @@ class StoredHelperInputs(TestCase):
 
     async def test_worker_inputs_carry_helper_ref(self):
         with mock.patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}), \
-             mock.patch.object(plugin_routes.plugin_loader, "load_plugin", return_value=UsesAJudge):
+             as_declared(UsesAJudge):
             response = await internal.get(f"/evaluations/{self.evaluation.pid}/inputs",
                                           headers={"X-Internal-Secret": INTERNAL_SECRET})
         self.assertEqual(response.status_code, 200, response.content)

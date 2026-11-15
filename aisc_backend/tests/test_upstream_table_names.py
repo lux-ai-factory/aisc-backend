@@ -78,6 +78,7 @@ class UpstreamTableNames(TestCase):
             "0031_component_file_hash",
             "0032_measures_recorded_once",
             "0033_evaluation_launch_key",
+            "0034_plugin_manifest_and_pins",
         ])
 
 

@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aisc_identity.canonical import sha256_of
 
-from aisc_backend import ledger
+from aisc_backend import ledger, plugin_declarations
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_backend.config_secrets import scrub_text
@@ -30,7 +30,6 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
-from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.component import upload_cap_bytes
 from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
@@ -237,16 +236,17 @@ def _local_model_flags(input_name: str, component_type: str, local_model_input) 
 
 
 async def _local_model_input(evaluation_plugin_pid: uuid.UUID):
-    """The name of the plugin's local model input, read from its class (the worker may not load
-    plugin classes); None when it declares none, UNKNOWN when it cannot be loaded here."""
+    """The name of the plugin's local model input, read from its stored manifest; None when it declares
+    none, UNKNOWN when its manifest cannot be read."""
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
     plugin = evaluation_plugin.plugin_config.plugin
     try:
-        plugin_class = plugin_routes.plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+        declared = await plugin_declarations.declared(plugin)
     except Exception:
-        logger.warning("plugin %s could not be loaded to find its local model input", plugin, exc_info=True)
+        logger.warning("plugin %s: its manifest could not be read to find its local model input", plugin,
+                       exc_info=True)
         return UNKNOWN
-    return getattr(plugin_class, "local_model_input", None)
+    return declared.local_model_input
 
 
 class LocalModelFile(BaseModel):

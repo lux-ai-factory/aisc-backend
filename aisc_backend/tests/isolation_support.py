@@ -49,6 +49,10 @@ COLUMNS_NEWER_THAN_LIVE_SHAPE: dict[tuple[str, str], str] = {
     ("aisc_backend_projectconfig", "deleted_at"): "0030_settings_are_kept",
     ("aisc_backend_aicomponent", "data_sha256"): "0031_component_file_hash",
     ("aisc_backend_evaluation", "launch_key"): "0033_evaluation_launch_key",
+    ("aisc_backend_plugin", "manifest"): "0034_plugin_manifest_and_pins",
+    ("aisc_backend_plugin", "wheel_sha256"): "0034_plugin_manifest_and_pins",
+    ("aisc_backend_plugin", "dependency_lock"): "0034_plugin_manifest_and_pins",
+    ("aisc_backend_plugin", "code_identity"): "0034_plugin_manifest_and_pins",
 }
 #: Constraints on tables the live shape has, made by a later migration, by name.
 CONSTRAINTS_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {

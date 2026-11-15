@@ -8,7 +8,6 @@ configuration (the form's GET /plugins/{pid}/config/state, the history GET /plug
 kept as project secrets.
 """
 import uuid
-from unittest import mock
 
 from ninja.testing import TestAsyncClient
 
@@ -16,9 +15,9 @@ from aisc_backend.models import (Plugin, PluginConfig, PluginConfigProjectConfig
                                  ProjectConfigCategory)
 from aisc_backend.tests.test_ledger_events import Recording, events, unrecorded
 from aisc_backend.utils.encryption import encrypt_value
+from aisc_backend.tests.stored_manifest import as_declared
 
 CRED = "cred-0123456789abcdef"
-LOAD_PLUGIN = "aisc_backend.routers.plugin.plugin_loader.load_plugin"
 
 
 class _Form:
@@ -86,7 +85,7 @@ class _Base(Recording):
         return plugin
 
     async def _get(self, name="DemoA", form=None, pid=None):
-        with mock.patch(LOAD_PLUGIN, return_value=form or _Form()):
+        with as_declared(form or _Form()):
             return await self.projects.get(f"/{pid or self.project.pid}/plugins/{name}/config")
 
 
@@ -118,7 +117,7 @@ class ProjectPluginConfigRoute(_Base):
     async def test_a_plugin_that_cannot_be_loaded_is_masked_by_name_and_value(self):
         plugin = await self._plugin()
         await self._config(plugin, {"n": 1, "judge_api_key": CRED})
-        with mock.patch(LOAD_PLUGIN, side_effect=RuntimeError("cannot load")):
+        with as_declared(side_effect=RuntimeError("cannot load")):
             res = await self.projects.get(f"/{self.project.pid}/plugins/DemoA/config")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json(), {"n": 1, "judge_api_key": "set"})
@@ -199,7 +198,7 @@ class FormState(_Base):
     an empty password input that keeps the key; an old row's key in clear is not handed to the form."""
 
     async def _state(self, plugin):
-        with mock.patch(LOAD_PLUGIN, return_value=_Form()):
+        with as_declared(_Form()):
             return await self.plugins.get(f"/{plugin.pid}/config/state")
 
     async def test_a_kept_key_stays_out_of_the_forms_configuration(self):
@@ -237,7 +236,7 @@ class ConfigHistory(_Base):
         secret = await self._secret()
         old = await self._config(plugin, {"threshold": 0.1, "model_credential": CRED}, current=False)
         new = await self._config(plugin, {"threshold": 0.5}, [("config.model_credential", secret)])
-        with mock.patch(LOAD_PLUGIN, return_value=_Form()):
+        with as_declared(_Form()):
             res = await self.plugins.get(f"/{plugin.pid}/configs")
         self.assertEqual(res.status_code, 200, res.text)
         by_id = {row["id"]: row["config"] for row in res.json()}
@@ -250,7 +249,7 @@ class ConfigHistory(_Base):
         plugin = await self._plugin()
         await self._config(plugin, {"n": 1, "judge_api_key": CRED,
                                     "endpoint": "https://user:pa55word@example.invalid/v1"})
-        with mock.patch(LOAD_PLUGIN, side_effect=RuntimeError("cannot load")):
+        with as_declared(side_effect=RuntimeError("cannot load")):
             res = await self.plugins.get(f"/{plugin.pid}/configs")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual([row["config"] for row in res.json()],
@@ -262,7 +261,7 @@ class SerialisedPlugin(_Base):
     plugin a toggle answers): masked as the ledger copy is, and still null for a plugin with no configuration."""
 
     async def _listed(self):
-        with mock.patch(LOAD_PLUGIN, return_value=_Form()):
+        with as_declared(_Form()):
             res = await self.projects.get(f"/{self.project.pid}")
         self.assertEqual(res.status_code, 200, res.text)
         [plugin] = res.json()["plugins"]
@@ -287,7 +286,7 @@ class SerialisedPlugin(_Base):
 
     async def test_the_toggle_answer_holds_no_key_in_clear(self):
         plugin = await self._old_clear_row()
-        with mock.patch(LOAD_PLUGIN, return_value=_Form()):
+        with as_declared(_Form()):
             res = await self.plugins.patch(f"/{plugin.pid}/enabled", json={"enabled": True})
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["config"], {"threshold": 0.5, "model_credential": "set"})

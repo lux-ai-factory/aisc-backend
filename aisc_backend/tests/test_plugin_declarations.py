@@ -23,6 +23,8 @@ from aisc_backend.tests.test_target_input import CardOnly, CardOrLocal, LocalOnl
     TwoHelpers, Unadopted
 from aisc_plugin_interface import BaseEvaluationPlugin, InputType, assesses, evaluation_input, inputs_access, \
     system_under_test_access
+from aisc_backend import plugin_declarations
+from aisc_backend.tests.stored_manifest import declared_of
 
 
 class Endpoint(BaseModel):
@@ -129,10 +131,12 @@ def row(name, display_name=None):
 class TheDeclarations(SimpleTestCase):
     def declarations(self, classes):
         rows = [row(name) for name in classes]
-        # the loader gives an instance of each plugin class, as the engine's plugin loader does
-        load = mock.Mock(side_effect=lambda package, name, version: instance_of(classes[name]))
+
+        # each row as its stored manifest declares it: the manifest the worker reads from its plugin class
+        async def declared(plugin_row):
+            return declared_of(instance_of(classes[plugin_row.name]), plugin_row)
         with mock.patch.object(target_input, "_enabled_plugins", mock.AsyncMock(return_value=rows)), \
-             mock.patch.object(target_input.plugin_routes.plugin_loader, "load_plugin", load):
+             mock.patch.object(plugin_declarations, "declared", side_effect=declared):
             out = async_to_sync(target_input.plugin_declarations)(mock.Mock())
         return {d["name"]: d for d in out}, rows
 
@@ -197,15 +201,15 @@ class TheDeclarations(SimpleTestCase):
         self.assertEqual(out["none"]["hidden_config_fields"], {"target.base_url": True, "target.model": True})
         self.assertEqual(out["none"]["config_fields"], ["rounds"])
 
-    def test_a_plugin_that_does_not_load_is_left_out_not_the_whole_list(self):
+    def test_a_plugin_whose_manifest_cannot_be_read_is_left_out_not_the_whole_list(self):
         rows = [row("chat"), row("broken")]
 
-        def load(package, name, version):
-            if name == "broken":
-                raise RuntimeError("no such package")
-            return instance_of(CardOnly)
+        async def declared(plugin_row):
+            if plugin_row.name == "broken":
+                raise plugin_declarations.HttpError(503, "the plugin's declarations could not be read: no such package")
+            return declared_of(instance_of(CardOnly), plugin_row)
         with mock.patch.object(target_input, "_enabled_plugins", mock.AsyncMock(return_value=rows)), \
-             mock.patch.object(target_input.plugin_routes.plugin_loader, "load_plugin", mock.Mock(side_effect=load)):
+             mock.patch.object(plugin_declarations, "declared", side_effect=declared):
             out = async_to_sync(target_input.plugin_declarations)(mock.Mock())
         self.assertEqual([d["name"] for d in out], ["chat"])
 

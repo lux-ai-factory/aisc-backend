@@ -33,11 +33,11 @@ from django.conf import settings
 from ninja import Router
 
 from aisc_backend import deployment
+from aisc_backend import plugin_declarations as stored_declarations
 from aisc_backend.repositories.system_version_repository import latest_system_pid_sync
 from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.plugin import get_plugin_input_definitions as upstream_input_definitions
-from aisc_plugin_interface import InputDefinition, InputType, helper_roles_of, target_kinds_of
-from aisc_plugin_interface.assesses import card_needs_connection, card_protocols_of
+from aisc_plugin_interface import InputDefinition, InputType
 from aisc_plugin_interface.helpers import HELPER_INPUT_PREFIX, helper_input_name
 
 logger = logging.getLogger(__name__)
@@ -113,9 +113,14 @@ async def ensure_system_target() -> None:
     await _ensure_system_target()
 
 
-async def loaded_plugin(plugin_pid: uuid.UUID):
+async def loaded_plugin(plugin_pid: uuid.UUID) -> stored_declarations.Declared:
+    """The plugin as its stored manifest declares it (the engine never imports plugin code)."""
     plugin = await plugin_routes.plugin_repository.get(plugin_pid)
-    return plugin_routes.plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    return await stored_declarations.declared(plugin)
+
+
+def _kinds(plugin) -> tuple[str, ...]:
+    return tuple(plugin.declaration.get("target_kinds") or ())
 
 
 def _helper_label(role: str) -> str:
@@ -124,7 +129,7 @@ def _helper_label(role: str) -> str:
 
 def form_inputs(definitions: list[InputDefinition], plugin) -> list[InputDefinition]:
     """What is assessed (only the kinds the plugin declares), the plugin's other inputs, its helper models."""
-    kinds = target_kinds_of(plugin)
+    kinds = _kinds(plugin)
     card_label, local_label = ASSESSED_LABELS[kinds]
     required = len(kinds) == 1  # with both kinds a run assesses one or the other
     by_name = {d.name: d for d in definitions}
@@ -136,7 +141,7 @@ def form_inputs(definitions: list[InputDefinition], plugin) -> list[InputDefinit
     if local_label:
         assessed.append(by_name[plugin.local_model_input].model_copy(update={"label": local_label,
                                                                             "required": required}))
-    helper_names = {helper_input_name(role): role for role in helper_roles_of(plugin)}
+    helper_names = {helper_input_name(role): role for role in plugin.declaration.get("helper_roles") or ()}
     helpers = [by_name[name].model_copy(update={"label": _helper_label(role)})
                for name, role in helper_names.items() if name in by_name]
     taken = {d.name for d in assessed} | helper_names.keys()
@@ -168,7 +173,7 @@ async def input_definitions_with_target(request, plugin_pid: uuid.UUID):
 async def _arranged(definitions: list[InputDefinition], plugin_pid: uuid.UUID) -> list[InputDefinition]:
     """The plugin's inputs in the configurator's order: what is assessed first, its helper models last."""
     plugin = await loaded_plugin(plugin_pid)
-    kinds = target_kinds_of(plugin)
+    kinds = _kinds(plugin)
     if kinds:
         if CARD in kinds:
             await _ensure_system_target_quietly()
@@ -197,8 +202,8 @@ def _enabled_plugins() -> list:
 
 def _helper_roles(plugin) -> list[str]:
     """The roles of @helper_model, then of any helper:<role> input declared by hand."""
-    roles = list(helper_roles_of(plugin))
-    for d in getattr(plugin, "_input_definitions", []):
+    roles = list(plugin.declaration.get("helper_roles") or ())
+    for d in plugin.input_definitions:
         role = d.name[len(HELPER_INPUT_PREFIX):] if d.name.startswith(HELPER_INPUT_PREFIX) else None
         if role and role not in roles:
             roles.append(role)
@@ -256,10 +261,10 @@ def _walk_fields(node: dict, ui: dict, defs: dict, prefix: str, seen: frozenset,
 
 
 def config_fields(plugin) -> tuple[list[str], dict[str, bool]]:
-    """The config fields of the form the engine shows (on_config_change with no data, as the config
-    routes of routers/plugin.py), dotted when nested: the names a person is asked for, and for each
+    """The config fields of the form the engine shows first (the manifest's form, which is the plugin's
+    on_config_change with no data), dotted when nested: the names a person is asked for, and for each
     hidden one only whether its default is empty (a hidden default of its own would be a fallback)."""
-    _, schema, ui = plugin.on_config_change(None)
+    schema, ui = plugin.get_full_schema()
     asked, hidden = [], {}
     _walk_fields(schema, ui or {}, schema.get("$defs") or {}, "", frozenset(), None, False, asked, hidden)
     return sorted(asked), dict(sorted(hidden.items()))
@@ -270,18 +275,18 @@ def _readable_config_fields(plugin) -> tuple[list[str], dict[str, bool], bool]:
     try:
         return (*config_fields(plugin), False)
     except Exception:
-        logger.exception("the config form of %s could not be built for its declarations", type(plugin).__name__)
+        logger.exception("the config form of %s could not be built for its declarations", plugin.row)
         return [], {}, True
 
 
 def declaration(row, plugin) -> dict:
-    kinds = target_kinds_of(plugin)
+    kinds = _kinds(plugin)
     fields, hidden, unreadable = _readable_config_fields(plugin)
     return {"pid": str(row.pid), "name": row.name, "display_name": row.display_name,
             "package_name": row.package_name, "version": row.version,
-            "target_kinds": list(kinds), "card_protocols": list(card_protocols_of(plugin)),
-            "card_needs_connection": CARD in kinds and card_needs_connection(plugin),
-            "adopted": getattr(plugin, "target_kinds", None) is not None,
+            "target_kinds": list(kinds), "card_protocols": list(plugin.declaration.get("card_protocols") or ()),
+            "card_needs_connection": CARD in kinds and bool(plugin.declaration.get("card_needs_connection")),
+            "adopted": plugin.adopted,
             "helper_roles": _helper_roles(plugin), "config_fields": fields,
             "hidden_config_fields": hidden, "config_fields_unreadable": unreadable}
 
@@ -291,8 +296,7 @@ async def plugin_declarations(request):
     out = []
     for row in await _enabled_plugins():
         try:
-            plugin = plugin_routes.plugin_loader.load_plugin(row.package_name, row.name, row.version)
-            out.append(declaration(row, plugin))
+            out.append(declaration(row, await stored_declarations.declared(row)))
         except Exception:  # one test that does not load, or whose declaration is odd, must not hide the others
             logger.exception("plugin %s %s: its declarations could not be read", row.package_name, row.name)
     return out

@@ -5,7 +5,7 @@ from asgiref.sync import sync_to_async
 from ninja import Field, Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend import ledger
+from aisc_backend import ledger, plugin_declarations
 from aisc_backend.config_secret_fields import (CONFIG_SECRET_PREFIX, RESTORE_REFUSED, SECRET_DESCRIPTION,
                                                SecretFieldRefused, check_split, resolved, secret_hints,
                                                split_secret_fields, value_at, with_set_at)
@@ -106,13 +106,15 @@ def _masked(value, schema: dict, ui, defs: dict):
 
 
 def _plugin_form(plugin: Plugin, plugin_obj=None) -> tuple[dict, dict]:
-    """(schema, ui schema) of the plugin's configuration form, ({}, {}) when it cannot be read: its secret
-    fields are then found by name and value alone."""
+    """(schema, ui schema) of the plugin's configuration form, from its stored manifest; ({}, {}) when it has
+    none yet: its secret fields are then found by name and value alone."""
+    plugin_obj = plugin_obj or plugin_declarations.stored(plugin)
+    if plugin_obj is None:
+        logger.warning("plugin %s has no stored manifest to read its secret config fields from", plugin.name)
+        return {}, {}
     try:
-        plugin_obj = plugin_obj or plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
         schema, ui = plugin_obj.get_full_schema()
-    except Exception:  # noqa: BLE001 - its secrets are then found by name alone
-        logger.warning("plugin %s could not be loaded to read its secret config fields", plugin.name)
+    except plugin_declarations.FormNotBuilt:
         return {}, {}
     return (schema if isinstance(schema, dict) else {}), (ui if isinstance(ui, dict) else {})
 
@@ -259,7 +261,7 @@ async def get_plugins(request):
 @router.get("/{plugin_pid}/feature_flags", response=dict)
 async def get_plugin_feature_flags(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    plugin_obj = await plugin_declarations.declared(plugin)
 
     return plugin_obj.feature_flags.model_dump()
 
@@ -267,7 +269,7 @@ async def get_plugin_feature_flags(request, plugin_pid: uuid.UUID):
 @router.get("/{plugin_pid}/display_icon", response=str)
 async def get_plugin_display_icon(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    plugin_obj = await plugin_declarations.declared(plugin)
 
     return plugin_obj.display_icon
 
@@ -275,7 +277,7 @@ async def get_plugin_display_icon(request, plugin_pid: uuid.UUID):
 @router.get("/{plugin_pid}/input_definitions", response=list[InputDefinition])
 async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    plugin_obj = await plugin_declarations.declared(plugin)
     input_definitions: list[InputDefinition] = plugin_obj.input_definitions
 
     return input_definitions
@@ -284,7 +286,7 @@ async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
 @router.get("/{plugin_pid}/project_config_definitions", response=list[dict])
 async def get_plugin_project_config_definitions(request, plugin_pid: uuid.UUID):
     plugin = await plugin_repository.get(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    plugin_obj = await plugin_declarations.declared(plugin)
     return [definition.model_dump(mode="json") for definition in plugin_obj.project_config_definitions]
 
 
@@ -308,19 +310,27 @@ class CreatePluginsRequest(Schema):
     # Set when the install came from the catalogue (both modes). Optional so a deep link or a
     # direct API call still works; it is then recorded as no origin at all.
     catalogue_slug: str | None = None
+    # The sha256 of the wheel the catalogue published; the worker refuses a wheel with another. Without it
+    # the index's own is recorded (a local plugin has none).
+    wheel_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 @router.post("", response=list[PluginOutSchema])
 async def create_plugins(request, data: CreatePluginsRequest):
     project = await project_repository.get(data.project_uuid, True)
 
-    plugins_package_dict = plugin_loader.load_package(data.package_name, data.version)
+    # what the package holds, read by the worker in its sandbox: one row per plugin class
+    read = await plugin_declarations.read_manifest(data.package_name, data.version, data.wheel_sha256)
+    plugins_package_dict = {name: plugin_declarations.manifest_fields(read, name)
+                            for name in sorted((read.get("manifest") or {}).get("plugins") or {})}
+    if not plugins_package_dict:
+        raise HttpError(503, plugin_declarations.NOT_READ.format(reason="the package holds no plugin class"))
 
     async def install():
         # the rows and the install's one ledger event commit together
         created_plugins = []
         reused = True
-        for plugin_name, plugin_obj in plugins_package_dict.items():
+        for plugin_name, fields in plugins_package_dict.items():
             # Look up ANY Plugin row for this (package, version, name, project) —
             # including soft-disabled ones — so the toggle re-uses the existing
             # row and the historical eval data stays attached.
@@ -335,17 +345,22 @@ async def create_plugins(request, data: CreatePluginsRequest):
                 # origin already recorded.
                 if data.catalogue_slug and not project_plugin.catalogue_slug:
                     project_plugin.catalogue_slug = data.catalogue_slug
-                    await plugin_repository.save(project_plugin)
+                # an older row without a manifest gets the one just read
+                if project_plugin.manifest is None:
+                    for name, value in fields.items():
+                        setattr(project_plugin, name, value)
+                await plugin_repository.save(project_plugin)
             else:
                 reused = False
                 project_plugin = Plugin(
                     name=plugin_name,
-                    display_name=plugin_obj.display_name,
+                    display_name=fields["manifest"].get("display_name") or plugin_name,
                     package_name=data.package_name,
                     version=data.version,
                     catalogue_slug=data.catalogue_slug,
                     project=project,
                     enabled=True,
+                    **fields,
                 )
                 project_plugin = await plugin_repository.create(project_plugin)
 
@@ -380,8 +395,6 @@ class RefreshPluginRequest(Schema):
 
 @router.post("/refresh", response=list[PluginOutSchema])
 async def refresh_plugins(request, data: RefreshPluginRequest):
-    plugins_package_dict = plugin_loader.refresh_package(data.package_name, data.version)
-
     project = await project_repository.get(data.project_uuid, True)
 
     existing = await plugin_repository.list_by_package(
@@ -389,21 +402,34 @@ async def refresh_plugins(request, data: RefreshPluginRequest):
     )
     existing_by_name = {p.name: p for p in existing}
 
+    # read again, against the index's wheel: a catalogue version whose wheel changed since it was recorded is
+    # not the code that was installed, and is refused
+    read = await plugin_declarations.read_manifest(data.package_name, data.version, None)
+    recorded = {p.wheel_sha256 for p in existing if p.wheel_sha256}
+    if recorded and read.get("wheel_sha256") not in recorded:
+        raise HttpError(409, f"{data.package_name} {data.version} changed on the index: refused")
+    plugins_package_dict = {name: plugin_declarations.manifest_fields(read, name)
+                            for name in sorted((read.get("manifest") or {}).get("plugins") or {})}
+
     async def refresh():
         result = []
-        for plugin_name, plugin_obj in plugins_package_dict.items():
+        for plugin_name, fields in plugins_package_dict.items():
+            display_name = fields["manifest"].get("display_name") or plugin_name
             if plugin_name in existing_by_name:
                 project_plugin = existing_by_name[plugin_name]
-                project_plugin.display_name = plugin_obj.display_name
+                project_plugin.display_name = display_name
+                for name, value in fields.items():
+                    setattr(project_plugin, name, value)
                 await plugin_repository.save(project_plugin)
             else:
                 project_plugin = Plugin(
                     name=plugin_name,
-                    display_name=plugin_obj.display_name,
+                    display_name=display_name,
                     package_name=data.package_name,
                     version=data.version,
                     project=project,
                     enabled=True,
+                    **fields,
                 )
                 project_plugin = await plugin_repository.create(project_plugin)
 
@@ -542,7 +568,7 @@ async def update_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
     project_plugin = await plugin_repository.get_with_related(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
+    plugin_obj = await plugin_declarations.declared(project_plugin)
 
     if not data.config:
         raise HttpError(400, "Config is required")
@@ -552,7 +578,7 @@ async def update_plugin_config_state(
     form_schema, form_ui = _plugin_form(project_plugin, plugin_obj)
     split = split_secret_fields(data.config, form_schema, form_ui)
     try:
-        check_split(split, adopted=getattr(plugin_obj, "target_kinds", None) is not None)
+        check_split(split, adopted=plugin_obj.adopted)
     except SecretFieldRefused as refused:
         raise HttpError(422, str(refused))
     # the backend alone writes the `config.*` mappings
@@ -573,7 +599,7 @@ async def update_plugin_config_state(
         # lost (a plugin that adopted @assesses takes no key field). The old row is left to the cleanup.
         current = project_plugin.current_config
         if (current is not None and isinstance(current.config, dict)
-                and getattr(plugin_obj, "target_kinds", None) is None):
+                and not plugin_obj.adopted):
             old = split_secret_fields(current.config, form_schema, form_ui).moved
             for path, value in sorted(old.items()):
                 if path not in kept and value_at(split.kept, path, "") == "":
@@ -598,7 +624,7 @@ async def update_plugin_config_state(
 
     plugin_config, kept = await ledger.atomically(configure)
 
-    config, schema, ui_schema = plugin_obj.on_config_change(plugin_config.config)
+    config, schema, ui_schema = await plugin_obj.on_config_change(plugin_config.config)
 
     response = PluginConfigStateResponse(
         plugin_config_id=plugin_config.id,
@@ -626,9 +652,9 @@ async def preview_plugin_config_state(
         request, plugin_pid: uuid.UUID, data: UpdatePluginConfigRequest
 ):
     project_plugin = await plugin_repository.get_with_related(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
+    plugin_obj = await plugin_declarations.declared(project_plugin)
 
-    config, schema, ui_schema = plugin_obj.on_config_change(data.config)
+    config, schema, ui_schema = await plugin_obj.on_config_change(data.config)
     kept = await _kept_secrets(project_plugin.current_config_id)
 
     response = PluginConfigStateResponse(
@@ -659,7 +685,7 @@ async def get_plugin_evaluation_results(
 ):
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
     plugin = evaluation_plugin.plugin_config.plugin
-    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    plugin_obj = await plugin_declarations.declared(plugin)
     metrics = plugin_obj.get_metrics()
 
     evaluation = await evaluation_repository.get(evaluation_uuid)
@@ -667,7 +693,7 @@ async def get_plugin_evaluation_results(
 
     measurements = await measurement_repository.filter(name__in=metrics, observation=observation)
 
-    metric_visualizations = plugin_obj.get_metric_visualizations(
+    metric_visualizations = await plugin_obj.get_metric_visualizations(
         evaluation_plugin.plugin_config.config
     )
 
@@ -689,7 +715,7 @@ async def get_project_plugin_config_state(
             404, f"Plugin {plugin_pid} not found"
         )
 
-    plugin_obj = plugin_loader.load_plugin(project_plugin.package_name, project_plugin.name, project_plugin.version)
+    plugin_obj = await plugin_declarations.declared(project_plugin)
 
     plugin_config = None
     plugin_config_id = None
@@ -697,7 +723,7 @@ async def get_project_plugin_config_state(
         plugin_config = project_plugin.current_config.config
         plugin_config_id = project_plugin.current_config.id
 
-    config, schema, ui_schema = plugin_obj.on_config_change(plugin_config)
+    config, schema, ui_schema = await plugin_obj.on_config_change(plugin_config)
     # a row saved before keys were kept as project secrets may still hold one: the form gets the field empty
     form_schema, form_ui = _plugin_form(project_plugin, plugin_obj)
     config = _form_config(config, _shown_config(config, form_schema, form_ui))
@@ -750,11 +776,11 @@ async def parse_plugin_config_state_from_dataset(
     file_content = response["Body"].read()
 
     plugin = await plugin_repository.get(plugin_pid)
-    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    plugin_obj = await plugin_declarations.declared(plugin)
 
-    config = plugin_obj.parse_config_from_dataset(file_content)
+    config = await plugin_obj.parse_config_from_dataset(file_content)
 
-    config, schema, ui_schema = plugin_obj.on_config_change(config)
+    config, schema, ui_schema = await plugin_obj.on_config_change(config)
     kept = await _kept_secrets(plugin.current_config_id)
 
     response = PluginConfigStateResponse(

@@ -13,7 +13,7 @@ from django.db import IntegrityError
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend import ledger, platform_helpers
+from aisc_backend import ledger, platform_helpers, plugin_declarations
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -39,10 +39,8 @@ from aisc_backend.schemas.measure import MeasurementAggregationResponse, \
 from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import PREVIEW_BYTES, preview_of
 from aisc_backend.audit.log import log_action
-from aisc_backend.routers.plugin import plugin_loader
 from aisc_backend.routers.target_input import CARD, LOCAL_MODEL, TARGET, _configurator
 from aisc_backend.services.project_config_matching import validate_plugin_settings
-from aisc_plugin_interface import card_needs_connection, target_kinds_of
 from aisc_plugin_interface.helpers import HELPER_INPUT_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -148,17 +146,17 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
     declaring one kind or both is given one of them. An older declaration alone (@system_under_test,
     @dataset_through_target, @assesses_inputs) is a card target, and may still be given a connection
     bound directly (`connection:<pid>/<name>`); a plugin declaring nothing is not checked."""
-    kinds = target_kinds_of(plugin)
+    kinds = tuple(plugin.declaration.get("target_kinds") or ())
     if not kinds:
         return None
-    adopted = getattr(plugin, "target_kinds", None) is not None  # what @assesses sets
+    adopted = plugin.adopted  # what @assesses sets
     for _, component in inputs:
         if adopted and _reference(component).startswith("connection:"):
             return f"{component.name} is a connection: what is assessed is a target of the AI card"
     card = next((component for name, component in inputs if name == TARGET), None)
     if card is not None and _reference(card).startswith("connection:"):
         return None  # a connection bound directly, as an older declaration may take it
-    local_input = getattr(plugin, "local_model_input", None)
+    local_input = plugin.local_model_input
     local = next((component for name, component in inputs if local_input and name == local_input), None)
     if card is not None:
         if CARD not in kinds:
@@ -169,7 +167,7 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
         reference = _reference(card)
         if project.platform_project_id is None or not reference.startswith(own):
             return f"{card.name} is not a target of this project's AI card"
-        if card_needs_connection(plugin) and card_target_connected(project.platform_project_id,
+        if plugin.declaration.get("card_needs_connection") and card_target_connected(project.platform_project_id,
                                                                    reference[len(own):]) is False:
             return f"{card.name} has no connection: set one under Manage, Components and connections"
     if kinds == (CARD, LOCAL_MODEL):
@@ -255,7 +253,7 @@ def _local_marker(plugin, input_name: str, component) -> dict | None:
     ({"local_model": {"file"}}) before the worker replaces it with the full marker, with the file's
     hash, so a pending, running or failed local run is never taken for an AI card run. Only a model
     file is marked, as the worker does."""
-    if input_name != getattr(plugin, "local_model_input", None) or component.component_type != "model":
+    if input_name != plugin.local_model_input or component.component_type != "model":
         return None
     return {"local_model": {"file": component.name}}
 
@@ -333,7 +331,7 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
         if plugin:
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
-            plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+            plugin_obj = await plugin_declarations.declared(plugin)
             _refuse_a_sent_local_marker(plugin, plugin_to_run.inputs)
             helpers = await _bound_helpers(plugin, plugin_to_run.inputs, project)
             if _configurator():

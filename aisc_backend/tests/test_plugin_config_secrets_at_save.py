@@ -18,9 +18,9 @@ from aisc_backend.models import (Evaluation, EvaluationPlugin, EvaluationStatus,
                                  PluginConfigProjectConfig, ProjectConfig, ProjectConfigCategory)
 from aisc_backend.tests.test_ledger_events import INTERNAL_SECRET, Recording, events, settings_client, unrecorded
 from aisc_backend.utils.encryption import decrypt_value
+from aisc_backend.tests.stored_manifest import as_declared, reads
 
 CRED = "cred-0123456789abcdef"
-LOAD_PLUGIN = "aisc_backend.routers.plugin.plugin_loader.load_plugin"
 
 
 def rule():
@@ -82,14 +82,13 @@ class SecretsAtSave(Recording):
         self.plugins = TestAsyncClient(router)
 
     async def _install(self, plugin_class=_OldPlugin):
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_package",
-                        return_value={"DemoA": plugin_class(), "DemoB": plugin_class()}):
+        with reads(package={"DemoA": plugin_class(), "DemoB": plugin_class()}):
             res = await self.plugins.post("", json={**self.PACKAGE, "project_uuid": str(self.project.pid)})
         self.assertEqual(res.status_code, 200, res.text)
         return {row["name"]: row["pid"] for row in res.json()}
 
     async def _save(self, pid, config, plugin_class=_OldPlugin, **body):
-        with mock.patch(LOAD_PLUGIN, return_value=plugin_class()):
+        with as_declared(plugin_class()):
             return await self.plugins.post(f"/{pid}/config", json={"config": config, **body})
 
     async def _saved(self, pid, config, plugin_class=_OldPlugin, **body):
@@ -225,14 +224,14 @@ class SecretsAtSave(Recording):
 
     async def test_reading_the_form_and_previewing_name_the_kept_fields(self):
         await self._first_save()
-        with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with as_declared(_OldPlugin()):
             res = await self.plugins.get(f"/{self.pid}/config/state")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["config"], {"threshold": 0.5})
         self.assertEqual(res.json()["uiSchema"]["model_credential"], hint("demoa_model_credential"))
 
         rows, before = await PluginConfig.objects.acount(), await events()
-        with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with as_declared(_OldPlugin()):
             res = await self.plugins.post(f"/{self.pid}/config/state", json={"config": {"threshold": 0.6}})
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["uiSchema"]["model_credential"], hint("demoa_model_credential"))
@@ -303,7 +302,7 @@ class SecretsAtSave(Recording):
             old = await PluginConfig.objects.acreate(plugin=plugin, config={"threshold": 0.5,
                                                                             "model_credential": "cred-old-0123456789"})
         before = await events()
-        with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with as_declared(_OldPlugin()):
             res = await self.plugins.post(f"/{self.pid}/configs/{old.id}/restore")
         self.assertEqual(res.status_code, 409, res.text)
         self.assertEqual(res.json()["detail"], rule().RESTORE_REFUSED.format(config_id=old.id, fields="model_credential"))
@@ -311,7 +310,7 @@ class SecretsAtSave(Recording):
         self.assertEqual(await events(), before)
 
         config_id = kept.json()["plugin_config_id"]
-        with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with as_declared(_OldPlugin()):
             res = await self.plugins.post(f"/{self.pid}/configs/{config_id}/restore")
         self.assertEqual(res.status_code, 200, res.text)
         [restored] = await self._new_events(before)
@@ -327,7 +326,7 @@ class SecretsAtSave(Recording):
         self.assertEqual(res.status_code, 204, res.text)
         self.assertEvent((await events())[-1], "engine.secret.deleted", "secret", secret.pid,
                          {"key": "demoa_model_credential"})
-        with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with as_declared(_OldPlugin()):
             res = await self.plugins.get(f"/{self.pid}/config/state")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertNotIn("ui:help", res.json()["uiSchema"].get("model_credential", {}))

@@ -27,6 +27,7 @@ from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers.plugin import router as plugin_router
 from aisc_backend.tests.isolation_support import configurator_only
 from aisc_backend.tests.test_isolation_engine import A_PID, DoorCase
+from aisc_backend.tests.stored_manifest import reads
 
 ISSUER = "http://keycloak:8080/realms/aisc"
 
@@ -159,9 +160,7 @@ class AuthDisabledIsStillADevelopmentBypassTestCase(TestCase):
         cls.project = Project.objects.create(name="bypass", status=ProjectStatus.Created)
 
     async def test_any_token_is_enough_when_auth_is_off(self):
-        with mock.patch.object(keycloak, "AUTH_ENABLED", False), mock.patch(
-            "aisc_backend.routers.plugin.plugin_loader.load_package", return_value={}
-        ):
+        with mock.patch.object(keycloak, "AUTH_ENABLED", False), reads(package={}):
             response = await client.post(
                 "",
                 json={"package_name": "x", "version": "1", "project_uuid": str(self.project.pid)},

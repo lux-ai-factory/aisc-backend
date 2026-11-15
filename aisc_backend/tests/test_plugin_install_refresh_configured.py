@@ -5,7 +5,6 @@ POST /api/v1/plugins and POST /api/v1/plugins/refresh answer the rows they insta
 with their current configuration and its mappings after the transaction (PluginRepository.list_with_related).
 Run as test_plugin_config_secrets_at_save.py runs the routes.
 """
-from unittest import mock
 
 from asgiref.sync import async_to_sync
 from django.db import connection
@@ -14,7 +13,8 @@ from django.test.utils import CaptureQueriesContext
 from aisc_backend.models import Plugin, PluginConfig
 from aisc_backend.tests.test_ledger_events import Recording, unrecorded
 from aisc_backend.tests import test_plugin_config_secrets_at_save as at_save
-from aisc_backend.tests.test_plugin_config_secrets_at_save import CRED, LOAD_PLUGIN, _OldPlugin
+from aisc_backend.tests.test_plugin_config_secrets_at_save import CRED, _OldPlugin
+from aisc_backend.tests.stored_manifest import as_declared, reads
 
 PACKAGE = {"package_name": "demo-pkg", "version": "0.1.0"}
 SHOWN = {"threshold": 0.5, "model_credential": "set"}
@@ -45,13 +45,13 @@ class InstallRefreshConfigured(Recording):
         return {**PACKAGE, "project_uuid": str(self.project.pid)}
 
     async def _install_again(self):
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_package", return_value=_package()), \
-                mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with reads(package=_package()), \
+                as_declared(_OldPlugin()):
             return await self.plugins.post("", json=self._body())
 
     async def _refresh(self):
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.refresh_package", return_value=_package()), \
-                mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with reads(package=_package()), \
+                as_declared(_OldPlugin()):
             return await self.plugins.post("/refresh", json=self._body())
 
     async def _remove(self):

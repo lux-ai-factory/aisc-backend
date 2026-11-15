@@ -25,6 +25,7 @@ from aisc_backend.routers.component import router as component_router
 from aisc_backend.routers.platform_project import router as platform_project_router
 from aisc_backend.routers.project import router as project_router
 from aisc_backend.routers.project_config import router as project_config_router
+from aisc_backend.tests.stored_manifest import as_declared, reads
 
 PID = "0f0e0d0c-0b0a-4908-8706-050403020100"
 REQUEST = "11111111-2222-4333-8444-555555555555"
@@ -504,8 +505,7 @@ class Plugins(Recording):
         self.body = {**self.PACKAGE, "project_uuid": str(self.project.pid)}
 
     async def _install(self):
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_package",
-                        return_value={"DemoA": _FakePlugin(), "DemoB": _FakePlugin()}):
+        with reads(package={"DemoA": _FakePlugin(), "DemoB": _FakePlugin()}):
             return await self.plugins.post("", json=self.body)
 
     async def test_installing_a_package_is_one_event_whatever_it_holds(self):
@@ -519,8 +519,7 @@ class Plugins(Recording):
 
     async def test_refreshing_a_package(self):
         await self._install()
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.refresh_package",
-                        return_value={"DemoA": _FakePlugin()}):
+        with reads(package={"DemoA": _FakePlugin()}):
             res = await self.plugins.post("/refresh", json=self.body)
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEvent((await events())[-1], "plugin.refreshed", "plugin", "demo-pkg",
@@ -541,7 +540,7 @@ class Plugins(Recording):
 
     async def test_configuring_a_plugin_and_restoring_an_earlier_configuration(self):
         pid = (await self._install()).json()[0]["pid"]
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", return_value=_FakePlugin()):
+        with as_declared(_FakePlugin()):
             first = await self.plugins.post(f"/{pid}/config", json={"config": {"threshold": 0.5}})
             self.assertEqual(first.status_code, 200, first.text)
             await self.plugins.post(f"/{pid}/config", json={"config": {"threshold": 0.9}})
@@ -560,7 +559,7 @@ class Plugins(Recording):
         config = {"threshold": 0.5, "passphrase": "pass-value-1", "sealed": "sealed-value-2",
                   "auth_header": "header-value-3", "judge": {"model": "gpt-4o", "phrase": "phrase-value-4"},
                   "judge_api_key": "sk-judge-0123456789abcdefghij", "access_token": ""}
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", return_value=_PluginWithSecrets()):
+        with as_declared(_PluginWithSecrets()):
             res = await self.plugins.post(f"/{pid}/config", json={"config": config})
             self.assertEqual(res.status_code, 200, res.text)
             config_id = res.json()["plugin_config_id"]
@@ -577,11 +576,11 @@ class Plugins(Recording):
 
     async def test_a_plugin_that_cannot_be_loaded_still_has_its_secret_named_keys_masked(self):
         pid = (await self._install()).json()[0]["pid"]
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", return_value=_FakePlugin()):
+        with as_declared(_FakePlugin()):
             res = await self.plugins.post(f"/{pid}/config", json={"config": {"judge_api_key": "kept-out", "n": 1}})
         self.assertEqual(res.status_code, 200, res.text)
         config_id = res.json()["plugin_config_id"]
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", side_effect=ImportError("gone")):
+        with as_declared(side_effect=ImportError("gone")):
             await self.plugins.post(f"/{pid}/configs/{config_id}/restore")
         restored = (await events())[-1]
         self.assertEqual(restored["content"]["config"], {"judge_api_key": "set", "n": 1})

@@ -16,6 +16,7 @@ from asgiref.sync import async_to_sync
 from django.test import SimpleTestCase, override_settings
 from pydantic import BaseModel
 
+from aisc_backend.tests.stored_manifest import declared_of
 from aisc_backend.routers import target_input
 from aisc_plugin_interface import (
     BaseEvaluationPlugin, CsvInputProvider, InputDefinition, InputType, OnnxInputProvider, assesses,
@@ -106,7 +107,7 @@ class HelperButNothingAssessed(BaseEvaluationPlugin[NoConfig]):
 class TheTargetInput(SimpleTestCase):
     def definitions(self, *defs):
         with mock.patch.object(target_input, "upstream_input_definitions", plugin_with(*defs)), \
-             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=Unadopted)), \
+             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=declared_of(Unadopted))), \
              mock.patch.object(target_input, "ensure_system_target", mock.AsyncMock()) as ensured:
             out = async_to_sync(target_input.input_definitions_with_target)(mock.Mock(), uuid.uuid4())
         return out, ensured
@@ -137,7 +138,7 @@ class TheTargetInput(SimpleTestCase):
 
     def test_the_system_target_failing_never_hides_the_definitions(self):
         with mock.patch.object(target_input, "upstream_input_definitions", plugin_with(DATASET)), \
-             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=Unadopted)), \
+             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=declared_of(Unadopted))), \
              mock.patch.object(target_input, "ensure_system_target", mock.AsyncMock(side_effect=RuntimeError("db"))):
             out = async_to_sync(target_input.input_definitions_with_target)(mock.Mock(), uuid.uuid4())
         self.assertEqual([d.name for d in out], ["dataset", "target"])
@@ -151,7 +152,7 @@ class WhatIsAssessedComesFirst(SimpleTestCase):
 
     def form(self, plugin):
         with mock.patch.object(target_input, "upstream_input_definitions", plugin_with(*plugin._input_definitions)), \
-             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=plugin)), \
+             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=declared_of(plugin))), \
              mock.patch.object(target_input, "ensure_system_target", mock.AsyncMock()) as ensured:
             out = async_to_sync(target_input.input_definitions_with_target)(mock.Mock(), uuid.uuid4())
         return out, ensured
@@ -227,7 +228,7 @@ class WhatIsAssessedComesFirst(SimpleTestCase):
 class StandaloneIsUnchanged(SimpleTestCase):
     def test_an_adopted_plugins_inputs_are_as_it_declares_them(self):
         with mock.patch.object(target_input, "upstream_input_definitions", plugin_with(*TwoHelpers._input_definitions)), \
-             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=TwoHelpers)) as loaded:
+             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=declared_of(TwoHelpers))) as loaded:
             out = async_to_sync(target_input.input_definitions_with_target)(mock.Mock(), uuid.uuid4())
         self.assertEqual(out, list(TwoHelpers._input_definitions))
         loaded.assert_not_awaited()
@@ -312,7 +313,7 @@ class NoSystemTargetBeforeTheAICard(TestCase):
     def test_a_card_only_plugins_target_options_have_no_system_without_a_card_version(self):
         from aisc_backend.models import AIComponent
         with mock.patch.object(target_input, "upstream_input_definitions", plugin_with(*CardOnly._input_definitions)), \
-             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=CardOnly)), \
+             mock.patch.object(target_input, "loaded_plugin", mock.AsyncMock(return_value=declared_of(CardOnly))), \
              mock.patch.object(target_input, "latest_system_pid_sync", return_value=None):
             out = async_to_sync(target_input.input_definitions_with_target)(mock.Mock(), uuid.uuid4())
         self.assertEqual(out[0].name, "target")

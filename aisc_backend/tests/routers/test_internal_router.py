@@ -24,7 +24,7 @@ from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers import internal
 from aisc_backend.routers.internal import router as internal_router
-from aisc_backend.routers import plugin as plugin_routes
+from aisc_backend.tests.stored_manifest import as_declared
 from aisc_plugin_interface import (
     BaseEvaluationPlugin, InputType, OnnxInputProvider, assesses, evaluation_input, onnx,
 )
@@ -186,7 +186,7 @@ class LocalModelInputTestCase(TestCase):
     async def _inputs(self, plugin_class):
         with (
             patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}),
-            patch.object(plugin_routes.plugin_loader, "load_plugin", return_value=plugin_class),
+            as_declared(plugin_class),
         ):
             response = await client.get(
                 f"/evaluations/{self.evaluation.pid}/inputs", headers={"X-Internal-Secret": INTERNAL_SECRET},
@@ -208,7 +208,7 @@ class LocalModelInputTestCase(TestCase):
     async def _inputs_unloadable(self):
         with (
             patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}),
-            patch.object(plugin_routes.plugin_loader, "load_plugin", side_effect=KeyError("not installed")),
+            as_declared(side_effect=KeyError("not installed")),
             self.assertLogs(internal.logger, "WARNING") as logs,
         ):
             response = await client.get(
