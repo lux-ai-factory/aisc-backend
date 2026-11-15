@@ -76,6 +76,8 @@ class UpstreamTableNames(TestCase):
             "0029_append_only_results",
             "0030_settings_are_kept",
             "0031_component_file_hash",
+            "0032_measures_recorded_once",
+            "0033_evaluation_launch_key",
         ])
 
 
