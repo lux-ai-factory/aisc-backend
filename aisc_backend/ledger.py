@@ -153,9 +153,10 @@ def emit(action: str, *, item_type: str, item_id, details: dict | None = None, u
 
 
 def emit_for_run(action: str, evaluation_pid, *, item_type: str, item_id, details: dict | None = None,
-                 using: str | None = None) -> int | None:
+                 using: str | None = None, **states) -> int | None:
     """Queue a worker's event: it cites the request and the run of its evaluation's start. None when the
-    start was not recorded (the ledger was off then), since the platform would have no run to bind it to."""
+    start was not recorded (the ledger was off then), since the platform would have no run to bind it to.
+    `states` as for emit."""
     from aisc_backend.models import LedgerOutbox
 
     if not on() or projectdb.admitted_pid.get() is None:
@@ -167,7 +168,7 @@ def emit_for_run(action: str, evaluation_pid, *, item_type: str, item_id, detail
         logger.info("ledger: %s of evaluation %s not recorded: its run's start is not", action, evaluation_pid)
         return None
     return emit(action, item_type=item_type, item_id=item_id, details=details, using=using,
-                request_id=start.event["request_id"], run_id=start.event.get("run_id"))
+                request_id=start.event["request_id"], run_id=start.event.get("run_id"), **states)
 
 
 async def atomically(work):
