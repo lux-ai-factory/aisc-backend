@@ -43,6 +43,7 @@ router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
 NO_EVALUATION = "No evaluation found"
 NO_EVALUATION_PLUGIN = "No evaluation plugin of this evaluation found"
+ALREADY_STARTED = "This test was already started or has ended, so it is not started again."
 
 
 async def _evaluation_or_404(evaluation_pid: uuid.UUID, with_related: bool = False) -> Evaluation:
@@ -345,6 +346,10 @@ async def update_plugin_timestamp(
         raise HttpError(
             400, f"Invalid field: {data.field}. Must be 'started_at' or 'finished_at'"
         )
+
+    # a test that has ended is never reopened by a second delivery of its task
+    if data.field == "started_at" and (eval_plugin.finished_at is not None or eval_plugin.status == "Done"):
+        raise HttpError(409, ALREADY_STARTED)
 
     setattr(eval_plugin, data.field, datetime.datetime.now(tz=datetime.timezone.utc))
     # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later
