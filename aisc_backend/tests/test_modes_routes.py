@@ -22,6 +22,7 @@ from aisc_backend.auth import keycloak
 from aisc_backend.routers.project import router as projects_router
 from aisc_backend.tests.isolation_support import configurator_only
 from aisc_backend.tests.test_isolation_engine import A_PID as DOOR_PID, DoorCase
+from aisc_backend.tests.stored_manifest import reads
 
 CONFIGURATOR = settings.AISC_DEPLOYMENT == "configurator"
 standalone_run = unittest.skipIf(CONFIGURATOR, "standalone run")
@@ -162,7 +163,7 @@ class InstallingAPlugin(SignedIn):
         from aisc_backend.routers.plugin import router as plugin_router
 
         project = await Project.objects.acreate(name="p", status=ProjectStatus.Created)
-        with mock.patch("aisc_backend.routers.plugin.plugin_loader.load_package", return_value={}):
+        with reads(package={}):
             return await TestAsyncClient(plugin_router).post(
                 "", json={"package_name": "x", "version": "1", "project_uuid": str(project.pid)},
                 headers={"Authorization": f"Bearer {self.token()}"})

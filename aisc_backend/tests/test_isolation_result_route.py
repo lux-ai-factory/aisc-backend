@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import os
 import unittest
-import unittest.mock as mock
 
 from aisc_backend.tests.isolation_support import configurator_only, SUPERUSER_URL_VAR, ApiCaller, Cluster, database_name, superuser_url
 from aisc_backend.tests.test_isolation_engine_db import SKIP_REASON, _migrate_projects, _seed
+from aisc_backend.tests.stored_manifest import as_declared
 
 _WORLD: dict | None = None
 _WORLD_ERROR: str | None = None
@@ -75,7 +75,7 @@ class TheResultRouteNoLongerLeaks(unittest.TestCase):
         self.w = _WORLD
         self.api = ApiCaller()
         self.addCleanup(self.api.stop)
-        loader = mock.patch("aisc_backend.routers.plugin.plugin_loader.load_plugin", return_value=_FakePlugin())
+        loader = as_declared(_FakePlugin())
         loader.start()
         self.addCleanup(loader.stop)
         a = self.w["A"]

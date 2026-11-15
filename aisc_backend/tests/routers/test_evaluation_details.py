@@ -46,6 +46,7 @@ EVALUATION_PLUGIN_KEYS = {
     "id", "pid", "created_at", "description", "display_name", "error_message", "evaluation",
     "evaluation_inputs", "finished_at", "name", "package_name", "plugin_config", "plugin_pid",
     "run_name", "started_at", "status", "version",
+    "wheel_sha256", "code_digest", "code_commit", "code_dirty",
 }
 EVALUATION_INPUT_KEYS = {"name", "input_type", "input_file", "helper_ref", "value"}
 
@@ -62,6 +63,12 @@ def _without_configs(body):
     for entry in body["evaluation_plugins"]:
         removed.append(entry["plugin_config"].pop("config"))
     return removed
+
+
+def _without_pins(body):
+    """`body` without each plugin entry's `pins`, which only the worker's route gives (removed in place)."""
+    for entry in body["evaluation_plugins"]:
+        assert set(entry.pop("pins")) == {"wheel_sha256", "dependency_lock"}, entry
 
 
 def internal_env():
@@ -222,6 +229,7 @@ class EvaluationDetailsTestCase(TestCase):
             self.assertEqual(reference, body, query)
         public_configs = _without_configs(public_reference)
         _without_configs(reference)
+        _without_pins(reference)
         self.assertEqual(public_reference, reference)
         # the module's rows hold config={}: masked, that is {}
         self.assertEqual([{}, {}], public_configs)
@@ -242,6 +250,7 @@ class EvaluationDetailsTestCase(TestCase):
         self.assertEqual({"api_key": CRED}, internal_b["plugin_config"]["config"])
         _without_configs(public)
         _without_configs(internal)
+        _without_pins(internal)
         self.assertEqual(public, internal)
 
     # Unknown, malformed, unauthenticated

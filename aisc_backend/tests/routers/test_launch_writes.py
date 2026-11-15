@@ -26,6 +26,7 @@ from aisc_backend.models import (
     ProjectStatus,
 )
 from aisc_backend.routers import evaluation as evaluation_routes
+from aisc_backend.tests.stored_manifest import as_declared
 
 SIGNED_IN = {"Authorization": "Bearer development"}
 TASK = "00000000-0000-4000-8000-000000000007"
@@ -68,7 +69,7 @@ class LaunchWrites(TestCase):
                 await worker(evaluation_pid)
             return mock.Mock(task_id=TASK)
 
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=DeclaresNothing), \
+        with as_declared(DeclaresNothing), \
              mock.patch.object(evaluation_routes, "validate_plugin_settings",
                                new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(evaluation_routes.celery_service, "run_evaluation", new=send):

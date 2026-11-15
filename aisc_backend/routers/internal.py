@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from asgiref.sync import sync_to_async
-from django.core.exceptions import ObjectDoesNotExist
+from django.db import IntegrityError
 from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
 from pydantic import BaseModel, ConfigDict, Field
 
 from aisc_identity.canonical import sha256_of
 
-from aisc_backend import ledger
+from aisc_backend import ledger, plugin_declarations
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_backend.config_secrets import scrub_text
@@ -30,9 +30,8 @@ from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
-from aisc_backend.routers import plugin as plugin_routes
 from aisc_backend.routers.component import upload_cap_bytes
-from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
+from aisc_backend.schemas.evaluation import WorkerEvaluationDetailOutSchema
 from aisc_backend.schemas.measure import MeasureInSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 from aisc_plugin_interface import LLMConfig
@@ -43,6 +42,15 @@ router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
 NO_EVALUATION = "No evaluation found"
 NO_EVALUATION_PLUGIN = "No evaluation plugin of this evaluation found"
+ALREADY_STARTED = "This test was already started or has ended, so it is not started again."
+NO_REASON = "Failed, no reason recorded."
+#: the run states a worker's status report does not overwrite: Done never turns a failed run back, and Processing
+#: moves on only a run that has not ended
+_ENDED_BEFORE = {
+    EvaluationStatus.Done: (EvaluationStatus.Failed,),
+    EvaluationStatus.Processing: (EvaluationStatus.Failed, EvaluationStatus.Done),
+}
+ALREADY_RECORDED = "The measures of this test are already recorded."
 
 
 async def _evaluation_or_404(evaluation_pid: uuid.UUID, with_related: bool = False) -> Evaluation:
@@ -155,7 +163,7 @@ async def get_project_configs_by_pid(
     ]
 
 
-@router.get("/evaluations/{evaluation_pid}", response=EvaluationDetailOutSchema)
+@router.get("/evaluations/{evaluation_pid}", response=WorkerEvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
     try:
         return await evaluation_repository.get_including(evaluation_pid, include)
@@ -228,16 +236,17 @@ def _local_model_flags(input_name: str, component_type: str, local_model_input) 
 
 
 async def _local_model_input(evaluation_plugin_pid: uuid.UUID):
-    """The name of the plugin's local model input, read from its class (the worker may not load
-    plugin classes); None when it declares none, UNKNOWN when it cannot be loaded here."""
+    """The name of the plugin's local model input, read from its stored manifest; None when it declares
+    none, UNKNOWN when its manifest cannot be read."""
     evaluation_plugin = await evaluation_plugin_repository.get_with_related(evaluation_plugin_pid)
     plugin = evaluation_plugin.plugin_config.plugin
     try:
-        plugin_class = plugin_routes.plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+        declared = await plugin_declarations.declared(plugin)
     except Exception:
-        logger.warning("plugin %s could not be loaded to find its local model input", plugin, exc_info=True)
+        logger.warning("plugin %s: its manifest could not be read to find its local model input", plugin,
+                       exc_info=True)
         return UNKNOWN
-    return getattr(plugin_class, "local_model_input", None)
+    return declared.local_model_input
 
 
 class LocalModelFile(BaseModel):
@@ -307,6 +316,9 @@ async def update_evaluation_status(
 ):
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
+    # Processing only moves a Pending run on: a run already ended, or already Processing, is left as it is
+    if status == EvaluationStatus.Processing and evaluation.status != EvaluationStatus.Pending:
+        return evaluation.status
     # a run already failed (stopped by a person, or one of its tests failed) is never turned Done afterwards
     if status == EvaluationStatus.Done and evaluation.status == EvaluationStatus.Failed:
         return evaluation.status
@@ -321,8 +333,12 @@ async def update_evaluation_status(
                 resource_id=str(evaluation_pid), metadata={"status": str(evaluation.status)})
             return evaluation.status
 
+    # the checks above read the run before this write: a Stop or a failure that commits in between is kept, so
+    # the write applies only to a run still in a state it may move on from
     evaluation.status = status
-    await evaluation_repository.save(evaluation)
+    await evaluation_repository.save(evaluation, unless_status_in=_ENDED_BEFORE.get(status, ()))
+    if evaluation.status != status:
+        return evaluation.status
 
     await sync_to_async(log_action)(
         request, action="status_change", resource_type="evaluation",
@@ -330,8 +346,20 @@ async def update_evaluation_status(
     return evaluation.status
 
 
+class CodeIdentity(BaseModel):
+    """The code a local plugin's test runs, as the worker read its folder: the folder's sha256, its git commit
+    and whether the folder differed from that commit. Each may be unknown (None); nothing else is taken."""
+    model_config = ConfigDict(extra="forbid")
+
+    digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    git_dirty: bool | None = None
+
+
 class PluginTimestampSchema(Schema):
     field: str  # "started_at" or "finished_at"
+    #: with "started_at", for a local plugin: the code the test runs
+    code: CodeIdentity | None = None
 
 
 @router.patch("/evaluations/{evaluation_pid}/plugins/{evaluation_plugin_pid}/timestamp", response=str)
@@ -346,17 +374,30 @@ async def update_plugin_timestamp(
             400, f"Invalid field: {data.field}. Must be 'started_at' or 'finished_at'"
         )
 
+    # a test starts once: a second start, or a second delivery of a test that has ended, is refused
+    if data.field == "started_at" and (eval_plugin.started_at is not None or eval_plugin.finished_at is not None
+                                       or eval_plugin.status in ("Failed", "Done")):
+        raise HttpError(409, ALREADY_STARTED)
+
     setattr(eval_plugin, data.field, datetime.datetime.now(tz=datetime.timezone.utc))
-    # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later
+    if data.field == "started_at" and data.code is not None:
+        eval_plugin.code_digest = data.code.digest
+        eval_plugin.code_commit = data.code.git_commit
+        eval_plugin.code_dirty = data.code.git_dirty
+    # a test already failed (stopped by a person, or by a sibling's failure) stays failed when it reports later,
+    # also when the Stop or the failure commits after the read above: the write is skipped under the row's lock
     if eval_plugin.status != "Failed":
         eval_plugin.status = "Running" if data.field == "started_at" else "Done"
-    await evaluation_plugin_repository.save(eval_plugin)
+    await evaluation_plugin_repository.save(eval_plugin, unless_status_in=("Failed",))
+    if data.field == "started_at" and eval_plugin.started_at is None:
+        # it failed before it could start: the worker's copy ends without running the plugin
+        raise HttpError(409, ALREADY_STARTED)
 
     return "ok"
 
 
 class PluginFailureSchema(Schema):
-    error_message: str = ""
+    error_message: str
 
 
 @router.patch("/evaluations/{evaluation_pid}/plugins/{evaluation_plugin_pid}/fail", response=str)
@@ -371,9 +412,9 @@ async def mark_plugin_failed(
         # a test already failed (stopped by a person, or by another test's failure) keeps its first reason
         if eval_plugin.status != "Failed":
             eval_plugin.status = "Failed"
-            eval_plugin.error_message = scrub_text(data.error_message)
+            eval_plugin.error_message = scrub_text(data.error_message).strip() or NO_REASON
             eval_plugin.finished_at = datetime.datetime.now(tz=datetime.timezone.utc)
-            await evaluation_plugin_repository.save(eval_plugin)
+            await evaluation_plugin_repository.save(eval_plugin, unless_status_in=("Failed",))
         evaluation.status = EvaluationStatus.Failed
         await evaluation_repository.save(evaluation)
 
@@ -439,6 +480,9 @@ async def create_evaluation_measures(
         evaluation_plugin_uuid: await _run_of_evaluation_or_404(evaluation_plugin_uuid, evaluation_pid, True)
         for evaluation_plugin_uuid in data
     }
+    # a test's measures are recorded once: a redelivered task or a retried call adds nothing
+    if await Observation.objects.filter(evaluation_plugin__in=list(runs.values())).aexists():
+        raise HttpError(409, ALREADY_RECORDED)
 
     async def record():
         # the measures and their ledger event commit together; the event carries the measures themselves
@@ -465,13 +509,8 @@ async def create_evaluation_measures(
                     else measure_in_schema.description
                 )
 
-                # Get or create Metric
-                try:
-                    metric = await metric_repository.get_one(name=measure_in_schema.name)
-                except ObjectDoesNotExist:
-                    metric = await metric_repository.save(
-                        Metric(name=measure_in_schema.name)
-                    )
+                # one metric per name, also when two tests record the same name at once
+                metric, _ = await Metric.objects.aget_or_create(name=measure_in_schema.name)
 
                 # Save Measure associated with the Observation
                 measure_in_schema.observation = observation
@@ -491,7 +530,11 @@ async def create_evaluation_measures(
                 "engine.measures.recorded", evaluation.pid, item_type="evaluation", item_id=evaluation.pid,
                 details={"count": len(part), "part": number, "parts": len(parts)}, content=part)
 
-    await ledger.atomically(record)
+    try:
+        await ledger.atomically(record)
+    except IntegrityError:
+        # a concurrent post of the same test's measures committed first
+        raise HttpError(409, ALREADY_RECORDED) from None
 
     await sync_to_async(log_action)(
         request, action="record_measures", resource_type="evaluation",

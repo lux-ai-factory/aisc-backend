@@ -30,6 +30,7 @@ from aisc_backend.models import (
     ProjectStatus,
 )
 from aisc_backend.routers import evaluation as evaluation_routes
+from aisc_backend.tests.stored_manifest import as_declared
 
 PID = "0f0e0d0c-0b0a-4908-8706-050403020188"
 REQUEST = "11111111-2222-4333-8444-555555555588"
@@ -100,7 +101,7 @@ class ARefusedLaunch(TestCase):
     async def launch(self, urlopen):
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
         send = mock.Mock(return_value=mock.Mock(task_id=TASK))
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=DeclaresNothing), \
+        with as_declared(DeclaresNothing), \
              mock.patch.object(evaluation_routes, "validate_plugin_settings",
                                new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(evaluation_routes, "_refuse_what_was_not_declared", new=mock.AsyncMock()), \

@@ -4,6 +4,7 @@ history lists it, and the form's state names the current configuration so the ne
 Run as test_plugin_config_secrets_at_save.py runs the routes."""
 from aisc_backend.models import PluginConfig
 from aisc_backend.tests import test_plugin_config_secrets_at_save as at_save
+from aisc_backend.tests.stored_manifest import as_declared
 
 
 class ConfigNames(at_save.SecretsAtSave):
@@ -40,11 +41,9 @@ class ConfigNames(at_save.SecretsAtSave):
         self.assertEqual(sorted(row["name"] for row in res.json()), ["first", "second"])
 
     async def test_the_forms_state_names_the_current_configuration(self):
-        from unittest import mock
-
         pid = await self._pid()
         await self._saved(pid, {"threshold": 0.5}, name="kept on the next save")
-        with mock.patch(at_save.LOAD_PLUGIN, return_value=at_save._OldPlugin()):
+        with as_declared(at_save._OldPlugin()):
             res = await self.plugins.get(f"/{pid}/config/state")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["name"], "kept on the next save")

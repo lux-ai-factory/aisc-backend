@@ -7,14 +7,14 @@ project secret mapped from the new row; a key typed in the field wins. A plugin 
 key, so nothing is carried for it. The old row is left as it is. Run as test_plugin_config_secrets_at_save.py
 runs the routes.
 """
-from unittest import mock
 
 from aisc_backend.models import Plugin, PluginConfig
 from aisc_backend.tests import test_plugin_config_secrets_at_save as at_save
 from aisc_backend.tests.test_ledger_events import Recording, events, unrecorded
-from aisc_backend.tests.test_plugin_config_secrets_at_save import (CRED, LOAD_PLUGIN, _AdoptedPlugin, _OldPlugin,
+from aisc_backend.tests.test_plugin_config_secrets_at_save import (CRED, _AdoptedPlugin, _OldPlugin,
                                                                    hint, mappings, secrets)
 from aisc_backend.utils.encryption import decrypt_value
+from aisc_backend.tests.stored_manifest import as_declared
 
 URL = "https://user:pa55word@example.invalid/v1"
 
@@ -88,7 +88,7 @@ class OldKeyKeptOnSave(Recording):
         await self._saved(self.pid, {"threshold": 0.7})
         old = await PluginConfig.objects.aget(pk=old.pk)
         self.assertEqual(old.config, {"threshold": 0.5, "model_credential": CRED})
-        with mock.patch(LOAD_PLUGIN, return_value=_OldPlugin()):
+        with as_declared(_OldPlugin()):
             res = await self.plugins.post(f"/{self.pid}/configs/{old.id}/restore")
         self.assertEqual(res.status_code, 409, res.text)
 

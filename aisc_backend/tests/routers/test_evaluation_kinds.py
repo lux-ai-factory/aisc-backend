@@ -23,6 +23,7 @@ from aisc_plugin_interface import (
     inputs_access, model_session, onnx, system_under_test_access,
 )
 from aisc_plugin_interface.system_under_test import system_under_test
+from aisc_backend.tests.stored_manifest import as_declared
 
 SIGNED_IN = {"Authorization": "Bearer development"}
 evaluations = TestAsyncClient(evaluation_routes.router)
@@ -126,7 +127,7 @@ class EvaluationKinds(TestCase):
         plugin.current_config = config
         await plugin.asave()
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=plugin_class), \
+        with as_declared(plugin_class), \
              mock.patch.object(evaluation_routes, "validate_plugin_settings",
                                new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(evaluation_routes, "card_target_connected", return_value=connected), \

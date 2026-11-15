@@ -12,7 +12,8 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend.models import Evaluation, EvaluationPlugin, EvaluationStatus
 from aisc_backend.tests.test_ledger_events import INTERNAL_SECRET, unrecorded
-from aisc_backend.tests.test_project_plugin_config_route import CRED, LOAD_PLUGIN, _Base, _Form
+from aisc_backend.tests.test_project_plugin_config_route import CRED, _Base, _Form
+from aisc_backend.tests.stored_manifest import as_declared
 
 STORED = {"threshold": 0.5, "model_credential": CRED, "endpoint": "https://user:pa55word@example.invalid/v1"}
 SHOWN = {"threshold": 0.5, "model_credential": "set", "endpoint": "set"}
@@ -36,11 +37,11 @@ class EvaluationConfigMasked(_Base):
         return evaluation
 
     async def _public(self, evaluation, query="", form=None):
-        with mock.patch(LOAD_PLUGIN, return_value=form or _Form()):
+        with as_declared(form or _Form()):
             return await self.evaluations.get(f"/{evaluation.pid}{query}")
 
     async def _listed(self, evaluation, form=None):
-        with mock.patch(LOAD_PLUGIN, return_value=form or _Form()):
+        with as_declared(form or _Form()):
             res = await self.projects.get(f"/{self.project.pid}/evaluations")
         self.assertEqual(res.status_code, 200, res.text)
         [entry] = [e for e in res.json() if e["pid"] == str(evaluation.pid)]
@@ -48,7 +49,7 @@ class EvaluationConfigMasked(_Base):
 
     async def _internal(self, evaluation):
         with mock.patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}), \
-                mock.patch(LOAD_PLUGIN, return_value=_Form()):
+                as_declared(_Form()):
             return await self.internal.get(f"/evaluations/{evaluation.pid}",
                                            headers={"X-Internal-Secret": INTERNAL_SECRET})
 
@@ -106,7 +107,7 @@ class EvaluationConfigMasked(_Base):
 
     async def test_a_plugin_that_cannot_be_loaded_is_masked_by_name_and_value(self):
         evaluation = await self._evaluation({"n": 1, "judge_api_key": CRED})
-        with mock.patch(LOAD_PLUGIN, side_effect=RuntimeError("cannot load")):
+        with as_declared(side_effect=RuntimeError("cannot load")):
             res = await self.evaluations.get(f"/{evaluation.pid}")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(self._config_of(res.json())["config"], {"n": 1, "judge_api_key": "set"})

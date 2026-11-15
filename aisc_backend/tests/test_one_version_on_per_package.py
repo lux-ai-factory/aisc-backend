@@ -2,7 +2,6 @@
 it, or switching it on) turns the package's other versions off in that project. Nothing is deleted, so their
 settings and evaluations stay. Another package is left alone.
 Run as test_plugin_config_secrets_at_save.py runs the routes."""
-from unittest import mock
 
 from asgiref.sync import async_to_sync
 from ninja.testing import TestAsyncClient
@@ -10,8 +9,8 @@ from ninja.testing import TestAsyncClient
 from aisc_backend.models import Plugin
 from aisc_backend.tests.test_ledger_events import Recording
 from aisc_backend.tests.test_plugin_config_secrets_at_save import _OldPlugin
+from aisc_backend.tests.stored_manifest import reads
 
-LOAD = "aisc_backend.routers.plugin.plugin_loader.load_package"
 
 
 class OneVersionOn(Recording):
@@ -22,7 +21,7 @@ class OneVersionOn(Recording):
         self.plugins = TestAsyncClient(router)
 
     async def _install(self, version, package="demo-pkg", project=None):
-        with mock.patch(LOAD, return_value={"DemoA": _OldPlugin()}):
+        with reads(package={"DemoA": _OldPlugin()}):
             res = await self.plugins.post("", json={"package_name": package, "version": version,
                                                     "project_uuid": str((project or self.project).pid)})
         self.assertEqual(res.status_code, 200, res.text)
@@ -30,7 +29,7 @@ class OneVersionOn(Recording):
 
     async def _install_two(self, version):
         """Installs a version of a package of two plugins, DemoA and DemoB; their pids by name."""
-        with mock.patch(LOAD, return_value={"DemoA": _OldPlugin(), "DemoB": _OldPlugin()}):
+        with reads(package={"DemoA": _OldPlugin(), "DemoB": _OldPlugin()}):
             res = await self.plugins.post("", json={"package_name": "demo-pkg", "version": version,
                                                     "project_uuid": str(self.project.pid)})
         self.assertEqual(res.status_code, 200, res.text)

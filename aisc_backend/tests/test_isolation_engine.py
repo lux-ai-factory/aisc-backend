@@ -46,6 +46,7 @@ from django.db.migrations.loader import MigrationLoader
 from django.test import AsyncClient, SimpleTestCase, TestCase
 
 from aisc_backend.tests.isolation_support import configurator_only, BACKEND, EXAMPLE_DB, EXAMPLE_PID, settings_probe
+from aisc_backend.tests.stored_manifest import as_declared
 
 MIGRATIONS = BACKEND / "aisc_backend" / "migrations"
 # Renumbered on feat/deployment-modes: the FK migration is 0020
@@ -70,6 +71,10 @@ APPEND_ONLY = ("aisc_backend", "0029_append_only_results")
 #: a deleted setting is marked deleted, not removed
 SETTINGS_KEPT = ("aisc_backend", "0030_settings_are_kept")
 FILE_HASH = ("aisc_backend", "0031_component_file_hash")
+MEASURES_ONCE = ("aisc_backend", "0032_measures_recorded_once")
+LAUNCH_KEY = ("aisc_backend", "0033_evaluation_launch_key")
+PLUGIN_MANIFEST = ("aisc_backend", "0034_plugin_manifest_and_pins")
+RUN_CODE = ("aisc_backend", "0035_run_code_identity")
 
 #: These stay byte for byte as they are (their core blocks are already
 #: guarded by to_regclass). Hash taken on feat/deployment-modes at 7c47c57 (an
@@ -126,10 +131,14 @@ class TheNewMigration(SimpleTestCase):
             with self.subTest(migration=name):
                 self.assertEqual(hashlib.sha256((MIGRATIONS / name).read_bytes()).hexdigest(), digest)
 
-    def test_the_leaf_is_0031_on_0030_on_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
-        """The same leaf as test_one_system_per_project.py (test_0031_is_the_leaf)."""
+    def test_the_leaf_is_0035_on_0034_on_0033_on_0032_on_0031_on_0030_on_0029_on_0028_on_0027_on_0026_on_0025_on_0024_on_0023_on_0022_on_0021(self):
+        """The same leaf as test_one_system_per_project.py (test_0035_is_the_leaf)."""
         loader = MigrationLoader(None, ignore_no_migrations=True)
-        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [FILE_HASH])
+        self.assertEqual(loader.graph.leaf_nodes("aisc_backend"), [RUN_CODE])
+        self.assertEqual({p.key for p in loader.graph.node_map[RUN_CODE].parents}, {PLUGIN_MANIFEST})
+        self.assertEqual({p.key for p in loader.graph.node_map[PLUGIN_MANIFEST].parents}, {LAUNCH_KEY})
+        self.assertEqual({p.key for p in loader.graph.node_map[LAUNCH_KEY].parents}, {MEASURES_ONCE})
+        self.assertEqual({p.key for p in loader.graph.node_map[MEASURES_ONCE].parents}, {FILE_HASH})
         self.assertEqual({p.key for p in loader.graph.node_map[FILE_HASH].parents}, {SETTINGS_KEPT})
         self.assertEqual({p.key for p in loader.graph.node_map[SETTINGS_KEPT].parents}, {APPEND_ONLY})
         self.assertEqual({p.key for p in loader.graph.node_map[APPEND_ONLY].parents}, {OWNER_ROLE})
@@ -633,8 +642,7 @@ class TheStartRouteMintsTheTicket(TestCase):
 
         send = mock.Mock(return_value=mock.Mock(task_id=str(uuid.uuid4())))
         with mock.patch.object(keycloak, "AUTH_ENABLED", False), \
-             mock.patch("aisc_backend.routers.evaluation.plugin_loader.load_plugin",
-                        return_value=mock.Mock(project_config_definitions=[], target_kinds=())), \
+             as_declared(mock.Mock(project_config_definitions=[], target_kinds=())), \
              mock.patch("aisc_backend.routers.evaluation.validate_plugin_settings",
                         new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(celery_service.celery, "send_task", new=send):

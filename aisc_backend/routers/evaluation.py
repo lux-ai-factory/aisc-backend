@@ -2,16 +2,18 @@ import datetime
 import json
 import logging
 import os
+import re
 import uuid
 
 from pathlib import Path
 from urllib import error, request as urlrequest
 from urllib.parse import quote
 from asgiref.sync import sync_to_async
+from django.db import IntegrityError
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend import ledger, platform_helpers
+from aisc_backend import ledger, platform_helpers, plugin_declarations
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -37,10 +39,8 @@ from aisc_backend.schemas.measure import MeasurementAggregationResponse, \
 from aisc_backend.services import celery_service
 from aisc_backend.utils.file_utils import PREVIEW_BYTES, preview_of
 from aisc_backend.audit.log import log_action
-from aisc_backend.routers.plugin import plugin_loader
 from aisc_backend.routers.target_input import CARD, LOCAL_MODEL, TARGET, _configurator
 from aisc_backend.services.project_config_matching import validate_plugin_settings
-from aisc_plugin_interface import card_needs_connection, target_kinds_of
 from aisc_plugin_interface.helpers import HELPER_INPUT_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -146,17 +146,17 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
     declaring one kind or both is given one of them. An older declaration alone (@system_under_test,
     @dataset_through_target, @assesses_inputs) is a card target, and may still be given a connection
     bound directly (`connection:<pid>/<name>`); a plugin declaring nothing is not checked."""
-    kinds = target_kinds_of(plugin)
+    kinds = tuple(plugin.declaration.get("target_kinds") or ())
     if not kinds:
         return None
-    adopted = getattr(plugin, "target_kinds", None) is not None  # what @assesses sets
+    adopted = plugin.adopted  # what @assesses sets
     for _, component in inputs:
         if adopted and _reference(component).startswith("connection:"):
             return f"{component.name} is a connection: what is assessed is a target of the AI card"
     card = next((component for name, component in inputs if name == TARGET), None)
     if card is not None and _reference(card).startswith("connection:"):
         return None  # a connection bound directly, as an older declaration may take it
-    local_input = getattr(plugin, "local_model_input", None)
+    local_input = plugin.local_model_input
     local = next((component for name, component in inputs if local_input and name == local_input), None)
     if card is not None:
         if CARD not in kinds:
@@ -167,7 +167,7 @@ def check_assessed(plugin, inputs: list[tuple[str, AIComponent]], project) -> st
         reference = _reference(card)
         if project.platform_project_id is None or not reference.startswith(own):
             return f"{card.name} is not a target of this project's AI card"
-        if card_needs_connection(plugin) and card_target_connected(project.platform_project_id,
+        if plugin.declaration.get("card_needs_connection") and card_target_connected(project.platform_project_id,
                                                                    reference[len(own):]) is False:
             return f"{card.name} has no connection: set one under Manage, Components and connections"
     if kinds == (CARD, LOCAL_MODEL):
@@ -253,7 +253,7 @@ def _local_marker(plugin, input_name: str, component) -> dict | None:
     ({"local_model": {"file"}}) before the worker replaces it with the full marker, with the file's
     hash, so a pending, running or failed local run is never taken for an AI card run. Only a model
     file is marked, as the worker does."""
-    if input_name != getattr(plugin, "local_model_input", None) or component.component_type != "model":
+    if input_name != plugin.local_model_input or component.component_type != "model":
         return None
     return {"local_model": {"file": component.name}}
 
@@ -275,6 +275,35 @@ def _plugin_to_run(project, wanted: EvaluationPluginInSchema):
     return same_name[0]
 
 
+#: the header that carries a launch's own key: the same key again answers with the run already made
+IDEMPOTENCY_HEADER = "Idempotency-Key"
+LAUNCH_KEY = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+BAD_LAUNCH_KEY = "The launch key must be 1 to 128 letters, digits, '-' or '_'."
+KEY_OF_ANOTHER_PROJECT = "This launch key was already used for another project's run."
+#: why a run whose tests could not be handed to the worker ended
+NOT_SENT = "The run could not be sent to the worker, so nothing ran. Launch it again."
+
+
+def _launch_key(request) -> str | None:
+    """The launch's own key, or None when the page sent none; a key the engine cannot store is refused."""
+    key = request.headers.get(IDEMPOTENCY_HEADER)
+    if key is None:
+        return None
+    if not LAUNCH_KEY.match(key):
+        raise HttpError(400, BAD_LAUNCH_KEY)
+    return key
+
+
+async def _run_of_launch(key: str | None, project) -> Evaluation | None:
+    """The run an earlier sending of this launch already made, or None."""
+    if key is None:
+        return None
+    run = await Evaluation.objects.filter(launch_key=key).afirst()
+    if run is not None and run.project_id != project.id:
+        raise HttpError(409, KEY_OF_ANOTHER_PROJECT)
+    return run
+
+
 @router.post("/task", response=EvaluationOutSchema)
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     try:
@@ -287,7 +316,12 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
 async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     run_name = _run_name(data.name)
+    launch_key = _launch_key(request)
     project = await project_repository.get(data.project_pid, True)
+    # the same launch sent again (a double click, a retried request) answers with the run it made
+    earlier = await _run_of_launch(launch_key, project)
+    if earlier is not None:
+        return earlier
 
     # Resolve and validate plugins before writing anything to DB
     resolved: list[tuple[object, object, dict, list]] = []
@@ -297,7 +331,7 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
         if plugin:
             if plugin.current_config is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
-            plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+            plugin_obj = await plugin_declarations.declared(plugin)
             _refuse_a_sent_local_marker(plugin, plugin_to_run.inputs)
             helpers = await _bound_helpers(plugin, plugin_to_run.inputs, project)
             if _configurator():
@@ -332,38 +366,55 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     connections = await sync_to_async(celery_service.endpoints_before_launch, thread_sensitive=False)(
         [component for _config, _plugin, _helpers, inputs in resolved for _input, component in inputs])
 
-    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
-    evaluation = await evaluation_repository.create(evaluation)
+    async def store():
+        # the run, its tests and their inputs are stored together: a failure on the way leaves none of them
+        evaluation = Evaluation(status=EvaluationStatus.Pending, project=project, launch_key=launch_key)
+        evaluation = await evaluation_repository.create(evaluation)
 
-    evaluation_plugins = []
-    for plugin_config, plugin_obj, helpers, inputs in resolved:
-        run_plugin = EvaluationPlugin(
-            plugin_config=plugin_config, evaluation=evaluation, name=run_name
-        )
-        run_plugin = await evaluation_plugin_repository.create(run_plugin)
-
-        # Link the input components
-        for input_data, component in inputs:
-            if input_data.name in helpers:
-                helper_ref, value = helpers[input_data.name]
-                await EvaluationInput(evaluation_plugin=run_plugin, name=input_data.name, component=None,
-                                      helper_ref=helper_ref, value=value).asave()
-                continue
-
-            evaluation_input = EvaluationInput(
-                evaluation_plugin=run_plugin,
-                name=input_data.name,
-                component=component,
-                value=_local_marker(plugin_obj, input_data.name, component) or input_data.value or {},
+        for plugin_config, plugin_obj, helpers, inputs in resolved:
+            # the wheel this run installs, as its plugin recorded it now (a local plugin has none)
+            run_plugin = EvaluationPlugin(
+                plugin_config=plugin_config, evaluation=evaluation, name=run_name,
+                wheel_sha256=plugin_obj.row.wheel_sha256,
             )
-            await evaluation_input.asave()
+            run_plugin = await evaluation_plugin_repository.create(run_plugin)
 
-        evaluation_plugins.append(run_plugin)
+            # Link the input components
+            for input_data, component in inputs:
+                if input_data.name in helpers:
+                    helper_ref, value = helpers[input_data.name]
+                    await EvaluationInput(evaluation_plugin=run_plugin, name=input_data.name, component=None,
+                                          helper_ref=helper_ref, value=value).asave()
+                    continue
 
-    if connections is None:
-        evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
-    else:
-        evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid, connections=connections)
+                evaluation_input = EvaluationInput(
+                    evaluation_plugin=run_plugin,
+                    name=input_data.name,
+                    component=component,
+                    value=_local_marker(plugin_obj, input_data.name, component) or input_data.value or {},
+                )
+                await evaluation_input.asave()
+        return evaluation
+
+    try:
+        evaluation = await ledger.atomically(store)
+    except IntegrityError:
+        # the same launch, sent again at the same moment, stored its run first: that run is the answer
+        earlier = await _run_of_launch(launch_key, project)
+        if earlier is None:
+            raise
+        return earlier
+
+    try:
+        if connections is None:
+            evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
+        else:
+            evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid, connections=connections)
+    except Exception as exc:
+        # a run the worker never received would stay Pending for ever: it ends Failed, saying why
+        logger.warning("Run %s could not be sent to the worker: %s", evaluation.pid, type(exc).__name__)
+        await _fail_unsent(evaluation)
+        raise HttpError(503, NOT_SENT) from None
 
     # only the task id: the worker may already have moved the evaluation on from the Pending this copy holds
     evaluation.task = evaluation_plugins_task.task_id
@@ -375,6 +426,21 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
         metadata={"projectPid": str(data.project_pid),
                   "plugins": [p.name for p in data.plugins_to_run]})
     return evaluation
+
+
+async def _fail_unsent(evaluation: Evaluation) -> None:
+    """Fails a run that could not be sent, and each of its tests, with NOT_SENT."""
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+
+    async def fail():
+        # each row saved on its own, so each gets its status event, all committed together
+        async for test in EvaluationPlugin.objects.filter(evaluation=evaluation).order_by("id"):
+            test.status, test.error_message, test.finished_at = "Failed", NOT_SENT, now
+            await test.asave(update_fields=["status", "error_message", "finished_at"])
+        evaluation.status = EvaluationStatus.Failed
+        await evaluation.asave(update_fields=["status"])
+
+    await ledger.atomically(fail)
 
 
 @router.patch("/{evaluation_pid}/name", response=dict)

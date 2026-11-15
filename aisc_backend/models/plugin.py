@@ -34,6 +34,17 @@ class Plugin(Base):
     # to True (re-using the same Plugin row).
     enabled = models.BooleanField(default=True)
 
+    # What the engine shows of the plugin, read once by the worker in its sandbox (aisc_plugin_interface's
+    # manifest): the engine never imports plugin code. None on a row installed before manifests: the first page
+    # that needs it reads it then (plugin_declarations.declared) and keeps it.
+    manifest = models.JSONField(null=True, blank=True)
+    # The sha256 of the catalogue wheel the manifest was read from; None for a local plugin.
+    wheel_sha256 = models.CharField(max_length=64, null=True, blank=True)
+    # The hashed lock of everything the plugin was installed with.
+    dependency_lock = models.TextField(blank=True, default="")
+    # A local plugin's folder digest and git state when the manifest was read; None for a catalogue one.
+    code_identity = models.JSONField(null=True, blank=True)
+
     def config_set(self) -> bool:
         return self.current_config is not None
 
@@ -158,6 +169,14 @@ class EvaluationPlugin(Base):
 
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+
+    #: the code this run ran: the wheel's sha256, copied from its plugin at launch (none for a local plugin),
+    #: and for a local plugin its folder's digest, git commit and whether the folder differed from that commit,
+    #: as the worker reported them when the test started
+    wheel_sha256 = models.CharField(max_length=64, null=True, blank=True)
+    code_digest = models.CharField(max_length=64, null=True, blank=True)
+    code_commit = models.CharField(max_length=40, null=True, blank=True)
+    code_dirty = models.BooleanField(null=True, blank=True)
 
     @property
     def duration_seconds(self) -> float | None:

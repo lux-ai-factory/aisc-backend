@@ -23,6 +23,7 @@ from aisc_backend.auth import keycloak
 from aisc_backend.models import AIComponent, Project, ProjectStatus
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.project import router as project_router
+from aisc_backend.tests.stored_manifest import as_declared
 
 SIGNED_IN = {"Authorization": "Bearer development"}
 
@@ -83,15 +84,17 @@ class TheChainAfterUpstream0014(TestCase):
         self.assertNotIn("0022_parts_belong_to_a_version_of_the_one_system", names)
         self.assertIn("0014_ai_system_and_project_config_squashed", names)
 
-    def test_0031_is_the_leaf(self):
+    def test_0035_is_the_leaf(self):
         # On this branch: 0019 is no_login_of_its_own, 0020 is the_database_is_the_project,
         # 0021_engine_deployment_marker, 0022_one_system_target_per_system, 0023_ledger_outbox,
         # 0024_drop_stored_langbite_judge_keys, 0025_evaluation_input_helper_ref,
         # 0026_observation_evaluation_plugin, 0027_component_retired_at, 0028_owner_role,
-        # 0029_append_only_results, 0030_settings_are_kept, and 0031_component_file_hash is the leaf.
+        # 0029_append_only_results, 0030_settings_are_kept, 0031_component_file_hash,
+        # 0032_measures_recorded_once, 0033_evaluation_launch_key, 0034_plugin_manifest_and_pins, and
+        # 0035_run_code_identity is the leaf.
         loader = MigrationLoader(connection, ignore_no_migrations=True)
         self.assertEqual(loader.graph.leaf_nodes("aisc_backend"),
-                         [("aisc_backend", "0031_component_file_hash")])
+                         [("aisc_backend", "0035_run_code_identity")])
         parents = loader.graph.node_map[("aisc_backend", "0019_no_login_of_its_own")].parents
         self.assertEqual({p.key for p in parents if p.key[0] == "aisc_backend"},
                          {("aisc_backend", "0018_alter_project_platform_project_id")})
@@ -195,8 +198,7 @@ class EvaluationOfAPluginThatDeclaresNoTarget(TestCase):
         plugin.current_config = config
         await plugin.asave()
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
-        with mock.patch("aisc_backend.routers.evaluation.plugin_loader.load_plugin",
-                        return_value=mock.Mock(project_config_definitions=[], target_kinds=())), \
+        with as_declared(mock.Mock(project_config_definitions=[], target_kinds=())), \
              mock.patch("aisc_backend.routers.evaluation.validate_plugin_settings",
                         new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch("aisc_backend.routers.evaluation.celery_service.run_evaluation",

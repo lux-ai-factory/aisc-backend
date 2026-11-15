@@ -72,6 +72,9 @@ class LangbiteJudgeFields(TransactionTestCase):
         self.other.refresh_from_db()
         self.assertEqual(self.saved.config, STORED)
         self.assertEqual(self.other.config, OTHER)
+        # back to the leaf: a later migration's columns are the model's, which the other tests write
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes("aisc_backend"))
 
     # The cleanup
 

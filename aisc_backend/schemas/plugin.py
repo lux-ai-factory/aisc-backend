@@ -92,6 +92,18 @@ class EvaluationPluginOutSchema(ModelSchema):
         fields_optional = "__all__"
 
 
+class WorkerEvaluationPluginOutSchema(EvaluationPluginOutSchema):
+    """An evaluation plugin as the worker reads it: also what it installs the plugin from, the wheel's sha256
+    (the run's own copy, else its plugin's) and its plugin's hashed lock."""
+    pins: dict
+
+    @staticmethod
+    def resolve_pins(obj) -> dict:
+        plugin = obj.plugin_config.plugin if obj.plugin_config else None
+        return {"wheel_sha256": obj.wheel_sha256 or getattr(plugin, "wheel_sha256", None),
+                "dependency_lock": getattr(plugin, "dependency_lock", "") or ""}
+
+
 class ShownEvaluationPluginOutSchema(EvaluationPluginOutSchema):
     """An evaluation plugin as a public route answers it: its configuration masked."""
     plugin_config: ShownPluginConfigOutSchema | None = Field(default=None, alias="plugin_config")

@@ -13,6 +13,7 @@ from aisc_backend.auth import keycloak
 from aisc_backend.models import Evaluation, EvaluationPlugin, Plugin, PluginConfig, Project, ProjectStatus
 from aisc_backend.routers import evaluation as evaluation_routes
 from aisc_plugin_interface import BaseEvaluationPlugin
+from aisc_backend.tests.stored_manifest import as_declared
 
 SIGNED_IN = {"Authorization": "Bearer development"}
 evaluations = TestAsyncClient(evaluation_routes.router)
@@ -50,7 +51,7 @@ class RunNames(TestCase):
     async def launch(self, **extra):
         await self.plugin()
         no_errors = {"missing": [], "invalid": [], "ambiguous": []}
-        with mock.patch.object(evaluation_routes.plugin_loader, "load_plugin", return_value=DeclaresNothing), \
+        with as_declared(DeclaresNothing), \
              mock.patch.object(evaluation_routes, "validate_plugin_settings",
                                new=mock.AsyncMock(return_value=no_errors)), \
              mock.patch.object(evaluation_routes.celery_service, "run_evaluation",

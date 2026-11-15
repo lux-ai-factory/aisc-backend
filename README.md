@@ -115,7 +115,7 @@ cd apps/backend
 uv sync
 ```
 
-The lock takes `aisc-plugin-interface` 0.4.0, `aisc-plugin-manager` 0.3.0+aisc.1 and `aisc-identity` 0.1.0
+The lock takes `aisc-plugin-interface` 0.5.0, `aisc-plugin-manager` 0.3.0+aisc.1 and `aisc-identity` 0.1.0
 from the wheels under `vendor/`. They are built from the aisc checkout by the root's
 `scripts/vendor-plugin-interface.sh`, which refreshes them when one of those libraries changes. To work on the
 interface or the plugin manager themselves, install them from the aisc repo in editable mode:

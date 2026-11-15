@@ -11,6 +11,10 @@ class MetricCategory(Base):
 class Metric(Base):
     type_spec = models.CharField(max_length=255)
 
+    class Meta:
+        # a metric name is one metric, so two tests that measure "score" share it
+        constraints = [models.UniqueConstraint(fields=["name"], name="one_metric_per_name")]
+
     def get_measurements(self) -> list[Measurement]:
         return self.measurements.all()
 

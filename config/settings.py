@@ -218,9 +218,11 @@ if ENABLE_SSL_PROXY:
 CORS_ALLOW_CREDENTIALS = True
 DEFAULT_ALLOWED_ORIGINS = ["http://127.0.0.1:5500", "http://localhost:5173"]
 CORS_ALLOWED_ORIGINS = env.list('BACKEND_CORS_ALLOWED_ORIGINS',DEFAULT_ALLOWED_ORIGINS)
+# The page sends each launch with its own Idempotency-Key, so a launch sent twice makes one run.
+CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
 if AISC_DEPLOYMENT == deployment.CONFIGURATOR:
     # The SPA names its project in this header on every call.
-    CORS_ALLOW_HEADERS = (*default_headers, "x-aisc-project")
+    CORS_ALLOW_HEADERS = (*CORS_ALLOW_HEADERS, "x-aisc-project")
 
 
 
