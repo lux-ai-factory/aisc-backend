@@ -78,7 +78,7 @@ class AuditClerkUnitTest(SimpleTestCase):
         self.assertEqual(json.loads(params["metadata"]), {})   # metadata defaults to empty
         self.assertEqual(params["outcome"], "ok")              # outcome defaults to ok
         self.assertEqual(params["source_app"], "backend")      # source_app defaults to backend
-        self.assertIsNone(params["resource_id"])               # optional
+        self.assertEqual(params["resource_id"], "")            # optional: sent as empty, immudb takes no null
 
     def test_write_event_includes_readable_summary(self):
         c, m = self._make_clerk_with_mock(existing_dbs=[b"auditdb"])
