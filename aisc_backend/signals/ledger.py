@@ -5,7 +5,9 @@ Receivers rather than calls in the routes, so that the upstream project, compone
 as they are (as system_stamp.py does for the evaluation). Each receiver runs inside the write it
 reports: the repositories save in a transaction (repositories/base_repository.py) and Django deletes
 in one, so the row and its event commit together. The pre_save receiver keeps what the row was, to
-name the fields a save changed; an event names fields and keys, never a setting's or a secret's value.
+name the fields a save changed; an event names fields and keys, never a secret's value. A setting that is not a
+secret is the exception: its update says the value it had and the value it takes (`before`, `after`), and its
+deletion the value it had, so a run can be told which value it got.
 An evaluation's status is changed by the worker, so its events cite the run (ledger.emit_for_run).
 """
 from django.db.models.signals import post_delete, post_save, pre_save
@@ -20,7 +22,7 @@ _FIELDS = {
     Project: {"name": "name", "description": "description"},
     AIComponent: {"name": "name", "description": "description", "json_value": "json_value",
                   "source_dataset_id": "source_dataset", "data": "data", "retired_at": "retired"},
-    ProjectConfig: {"name": "name", "encrypted_value": "value", "json_value": "json_value"},
+    ProjectConfig: {"name": "name", "encrypted_value": "value", "json_value": "json_value", "deleted_at": "deleted"},
     Evaluation: {"status": "status"},
     EvaluationPlugin: {"status": "status"},
 }
@@ -51,7 +53,7 @@ def keep_what_the_row_was(sender, instance, raw=False, using=None, update_fields
         return
     # a save of named fields changes only those: the others' stale values on the instance are not a change
     fields = [field for field in _FIELDS[sender] if update_fields is None or field in update_fields]
-    instance._ledger_before = (sender.objects.using(using).filter(pk=instance.pk).values(*fields).first()
+    instance._ledger_before = (sender._base_manager.using(using).filter(pk=instance.pk).values(*fields).first()
                                if fields else None)
 
 
@@ -95,6 +97,13 @@ def component_deleted(sender, instance, using=None, **kwargs):
                 details={"component_type": instance.component_type}, using=using)
 
 
+def _setting_values(config, values: dict) -> dict | None:
+    """The value fields of a setting that is not a secret, from `values`; None for a secret or when none."""
+    if _kind(config) != "setting":
+        return None
+    return {field: values[field] for field in ("json_value",) if field in values} or None
+
+
 @receiver(post_save, sender=ProjectConfig, dispatch_uid="aisc_ledger_project_config")
 def project_config_saved(sender, instance, created, raw=False, using=None, **kwargs):
     if not _recording(raw):
@@ -103,9 +112,19 @@ def project_config_saved(sender, instance, created, raw=False, using=None, **kwa
     if created:
         ledger.emit(f"engine.{kind}.created", item_type=kind, item_id=instance.pid,
                     details={"key": instance.key}, using=using)
-    else:
-        ledger.emit(f"engine.{kind}.updated", item_type=kind, item_id=instance.pid,
-                    details={"key": instance.key, "changed": _changed(instance)}, using=using)
+        return
+    changed = _changed(instance)
+    before = getattr(instance, "_ledger_before", None) or {}
+    if "deleted" in changed and instance.deleted_at is not None:     # DELETE marks it deleted
+        ledger.emit(f"engine.{kind}.deleted", item_type=kind, item_id=instance.pid,
+                    details={"key": instance.key}, before=_setting_values(instance, before), using=using)
+        return
+    value_changed = "json_value" in changed
+    ledger.emit(f"engine.{kind}.updated", item_type=kind, item_id=instance.pid,
+                details={"key": instance.key, "changed": [name for name in changed if name != "deleted"]},
+                before=_setting_values(instance, before) if value_changed else None,
+                after=_setting_values(instance, {"json_value": instance.json_value}) if value_changed else None,
+                using=using)
 
 
 @receiver(post_delete, sender=ProjectConfig, dispatch_uid="aisc_ledger_project_config_deleted")

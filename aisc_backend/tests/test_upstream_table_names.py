@@ -74,6 +74,7 @@ class UpstreamTableNames(TestCase):
             "0027_component_retired_at",
             "0028_owner_role",
             "0029_append_only_results",
+            "0030_settings_are_kept",
         ])
 
 

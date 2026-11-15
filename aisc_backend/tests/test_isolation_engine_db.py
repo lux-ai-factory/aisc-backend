@@ -46,7 +46,8 @@ from aisc_backend.tests.isolation_support import (
     configurator_only,
     BACKEND, COLUMNS_CHANGED_SINCE_LIVE_SHAPE, COLUMNS_NEWER_THAN_LIVE_SHAPE, CONSTRAINTS_NEWER_THAN_LIVE_SHAPE,
     DEPLOYED_ENV,
-    INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
+    INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE,
+    UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE, ApiCaller,
     Cluster, as_compared, catalog, database_name, newer_than_live_shape, superuser_url,
 )
 
@@ -365,7 +366,8 @@ class TheShapeIsTheLiveShape(PostgresCase):
               # a run's card version restricts since 0028_owner_role
               .replace("REFERENCES project.system(pid) ON DELETE SET NULL", "REFERENCES project.system(pid)"
                        " ON DELETE RESTRICT"))
-            for t, name, kind, d in live["constraints"] if name not in self.ALLOWED_GONE}
+            for t, name, kind, d in live["constraints"]
+            if name not in self.ALLOWED_GONE and name not in UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE}
         live = {kind: {as_compared(kind, r) for r in rows} for kind, rows in live.items()}
         for kind in live:
             with self.subTest(kind=kind):
@@ -524,10 +526,11 @@ class WhatTheLiveShapePredates(unittest.TestCase):
     def test_every_exemption_names_a_migration(self):
         migrations = [*TABLES_NEWER_THAN_LIVE_SHAPE.values(), *INDEXES_NEWER_THAN_LIVE_SHAPE.values(),
                       *COLUMNS_NEWER_THAN_LIVE_SHAPE.values(), *CONSTRAINTS_NEWER_THAN_LIVE_SHAPE.values(),
-                      *COLUMNS_CHANGED_SINCE_LIVE_SHAPE.values()]
+                      *COLUMNS_CHANGED_SINCE_LIVE_SHAPE.values(), *UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE.values()]
         self.assertEqual(set(migrations), {"0021_engine_deployment_marker", "0022_one_system_target_per_system",
                                            "0023_ledger_outbox", "0025_evaluation_input_helper_ref",
-                                           "0026_observation_evaluation_plugin", "0027_component_retired_at"})
+                                           "0026_observation_evaluation_plugin", "0027_component_retired_at",
+                                           "0030_settings_are_kept"})
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())
