@@ -59,6 +59,8 @@ class AIComponent(HasData):
     # set when the component was deleted while evaluations still used it: it stays for their record, out of the
     # lists and the choices for new runs, until it is restored
     retired_at = models.DateTimeField(null=True, blank=True)
+    # the sha256 of the stored file (`data`), taken at upload; empty for a file uploaded before it was taken
+    data_sha256 = models.CharField(max_length=64, blank=True, default="")
 
     @property
     def is_file_backed(self) -> bool:

@@ -99,7 +99,8 @@ class Components(Recording):
             res = await components.put(f"/{comp.pid}/data", FILES={"file": upload})
         self.assertEqual(res.status_code, 200, res.text)
         [event] = await events()
-        self.assertEvent(event, "engine.component.file_uploaded", "component", comp.pid, {"size": 8})
+        self.assertEvent(event, "engine.component.file_uploaded", "component", comp.pid,
+                         {"size": 8, "sha256": hashlib.sha256(b"a,b\n1,2\n").hexdigest()})
 
     async def test_deleting_a_component(self):
         comp = await self._component(AIComponentType.MODEL)

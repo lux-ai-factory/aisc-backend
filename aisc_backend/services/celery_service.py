@@ -88,7 +88,8 @@ def _plugin_of(plugin_config, using: str) -> dict:
 
 def _contents_of(evaluation_uuid: uuid.UUID, using: str, platform_pid: str) -> tuple[str | None, dict]:
     """What a run is made of, for its start in the ledger: (the card version it assesses, the details). The
-    details name each plugin (_plugin_of), the local model files, and the endpoint each target or connection it names would reach now. HttpError(503) when it names one and
+    details name each plugin (_plugin_of), the stored file and hash of each file input, the local model files,
+    and the endpoint each target or connection it names would reach now. HttpError(503) when it names one and
     the platform cannot say which: nothing is started."""
     from aisc_backend import platform_helpers
     from aisc_backend.models import Evaluation, EvaluationInput, EvaluationPlugin
@@ -99,6 +100,11 @@ def _contents_of(evaluation_uuid: uuid.UUID, using: str, platform_pid: str) -> t
     details = {"plugins": [_plugin_of(test.plugin_config, using) for test in tests]}
     inputs = list(EvaluationInput.objects.using(using).filter(evaluation_plugin__evaluation=evaluation)
                   .select_related("component", "evaluation_plugin__plugin_config__plugin").order_by("id"))
+    files = [{"plugin": put.evaluation_plugin.plugin_config.plugin.name, "input": put.name,
+              "component": str(put.component.pid), "file": put.component.data, "sha256": put.component.data_sha256}
+             for put in inputs if put.component is not None and put.component.is_file_backed and put.component.data]
+    if files:
+        details["inputs"] = files
     local_models = _local_models(evaluation_uuid, using)
     if local_models:
         details["local_models"] = local_models

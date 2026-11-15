@@ -83,7 +83,7 @@ def component_saved(sender, instance, created, raw=False, using=None, **kwargs):
                     details={"component_type": instance.component_type}, using=using)
     elif "data" in changed:                                           # a new file: the upstream PUT .../data
         ledger.emit("engine.component.file_uploaded", item_type="component", item_id=instance.pid,
-                    details={"size": instance.file_size}, using=using)
+                    details={"size": instance.file_size, "sha256": instance.data_sha256}, using=using)
     else:
         ledger.emit("engine.component.updated", item_type="component", item_id=instance.pid,
                     details={"changed": changed}, using=using)
