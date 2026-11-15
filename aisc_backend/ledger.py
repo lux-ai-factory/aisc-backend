@@ -228,7 +228,7 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
     sent = failed = 0
     queued = LedgerOutbox.objects.using(using).filter(delivered_at__isnull=True, refused__isnull=True)
     for row in list(queued.order_by("id")[:limit]):
-        status = send(str(row.project_pid), _as_sent(row.event))
+        status = send(str(row.project_pid), _as_sent(row.event, row.queued_at))
         if status is not None and 200 <= status < 300:
             LedgerOutbox.mark(using, row.pk, delivered=True)
             sent += 1
@@ -245,12 +245,15 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
     return sent, failed
 
 
-def _as_sent(event: dict) -> dict:
-    """The event as the platform receives it. A configuration event queued before its secrets were masked at
-    save is masked here, so no plaintext secret leaves the engine; the stored row is left to the cleanup
-    (`manage.py clean_old_secrets`)."""
+def _as_sent(event: dict, queued_at=None) -> dict:
+    """The event as the platform receives it, saying when it was queued (`occurred_at`): the platform judges
+    a run's events by when they happened, not by when this pass sends them. A configuration event queued
+    before its secrets were masked at save is masked here, so no plaintext secret leaves the engine; the
+    stored row is left to the cleanup (`manage.py clean_old_secrets`)."""
     if not isinstance(event, dict):
         return event
+    if queued_at is not None:
+        event = {**event, "occurred_at": queued_at.isoformat()}
     content = event.get("content")
     if event.get("action") != CONFIGURED or not isinstance(content, dict) or "config" not in content:
         return event
