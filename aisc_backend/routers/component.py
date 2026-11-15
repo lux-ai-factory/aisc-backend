@@ -1,3 +1,4 @@
+import hashlib
 import os
 import uuid
 from pathlib import Path
@@ -178,6 +179,10 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
         raise HttpError(404, f"Component {component_pid} not found")
     if not component.is_file_backed:
         raise HttpError(400, "Only dataset/model/file components accept an uploaded file")
+    if component.data and await EvaluationInput.objects.filter(component=component).aexists():
+        # a past run names this component: replacing its file would point that run at bytes it never read
+        raise HttpError(409, f"{component.name} was used by a run, so its file is kept as it is: add a new "
+                             "component for the new file")
 
     if not file.size:
         raise HttpError(422, "the file is empty")
@@ -189,6 +194,10 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     if suffix not in allowed:
         raise HttpError(415, f"a {component.component_type} file ends in one of {', '.join(sorted(allowed))}")
     file.name = f"{str(uuid.uuid4())}{suffix}"
+    digest = hashlib.sha256()
+    for chunk in file.chunks():
+        digest.update(chunk)
+    file.seek(0)
 
     container = storage_container_for(component)
     result = file_repository.upload_file(file, container)
@@ -199,6 +208,7 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     component.data = file.name
     component.file_size = file.size
     component.storage_container = container
+    component.data_sha256 = digest.hexdigest()
     await ai_component_repository.save(component)
 
     await sync_to_async(log_action)(

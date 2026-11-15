@@ -154,9 +154,11 @@ class AuditClerk:
           metadata      - WHY/details: dict of what actually changed (stored as JSON)
         """
         metadata = metadata or {}
+        # immudb's client cannot send a null parameter (it sends True where the protocol wants an int), so a
+        # missing value is recorded as empty rather than losing the whole event
         self._run(lambda client: client.sqlExec(
             _INSERT,
-            params={
+            params={name: "" if value is None else value for name, value in {
                 "occurred_at": datetime.now(timezone.utc),
                 "actor": actor,
                 "action": action,
@@ -168,7 +170,7 @@ class AuditClerk:
                 "metadata": json.dumps(metadata),
                 "summary": _build_summary(actor, action, resource_type, resource_id,
                                           source_app, source_ip, outcome, metadata),
-            },
+            }.items()},
         ))
 
     def list_events(self, limit: int = 100) -> list[dict]:

@@ -9,7 +9,7 @@ from aisc_backend import ledger
 from aisc_backend.config_secret_fields import (CONFIG_SECRET_PREFIX, RESTORE_REFUSED, SECRET_DESCRIPTION,
                                                SecretFieldRefused, check_split, resolved, secret_hints,
                                                split_secret_fields, value_at, with_set_at)
-from aisc_backend.config_secrets import LEDGER_SECRET_NAME, SECRET_SET, masked_for_ledger
+from aisc_backend.config_secrets import SECRET_SET, masked_for_ledger
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import (Plugin, PluginConfig, PluginConfigProjectConfig, ProjectConfig,
                                  ProjectConfigCategory)
@@ -56,14 +56,33 @@ def _package_event(action: str, package_name: str, version: str, **details) -> N
 
 logger = logging.getLogger(__name__)
 
-#: A key holding one of these is taken for a secret even when the plugin's form does not mark it
-#: (a plugin that cannot be loaded, or a field saved before the form marked it).
-_SECRET_NAME = LEDGER_SECRET_NAME
-
-
-def _secret(name: str, field: dict, ui: dict) -> bool:
+def _secret(field: dict, ui: dict) -> bool:
+    """The plugin's form marks the field as secret (format password, as SecretStr makes it, writeOnly, or the
+    password widget). A field it does not mark is judged by `masked_for_ledger` on its name and value together
+    (a plugin that cannot be loaded, or a field saved before the form marked it)."""
     return (field.get("format") == "password" or field.get("writeOnly") is True
-            or (isinstance(ui, dict) and ui.get("ui:widget") == "password") or bool(_SECRET_NAME.search(name)))
+            or (isinstance(ui, dict) and ui.get("ui:widget") == "password"))
+
+
+def form_secret_paths(schema: dict, ui: dict) -> frozenset[str]:
+    """The paths (`a.b`, `a[].b` inside the items of a list) of the fields the plugin's form marks as secret."""
+    schema = schema if isinstance(schema, dict) else {}
+    return frozenset(_marked_paths(schema, ui, schema.get("$defs") or {}, ""))
+
+
+def _marked_paths(schema: dict, ui, defs: dict, prefix: str):
+    items = schema.get("items")
+    if items is not None:
+        ui_items = ui.get("items") if isinstance(ui, dict) else None
+        yield from _marked_paths(resolved(items, defs), ui_items, defs, f"{prefix}[]")
+    for name, field in (schema.get("properties") or {}).items():
+        field = resolved(field, defs)
+        field_ui = ui.get(name) if isinstance(ui, dict) else None
+        path = f"{prefix}.{name}" if prefix else str(name)
+        if _secret(field, field_ui):
+            yield path
+        else:
+            yield from _marked_paths(field, field_ui, defs, path)
 
 
 def _masked(value, schema: dict, ui, defs: dict):
@@ -79,7 +98,7 @@ def _masked(value, schema: dict, ui, defs: dict):
     for name, inner in value.items():
         field = resolved(properties.get(name), defs)
         field_ui = ui.get(name) if isinstance(ui, dict) else None
-        if _secret(str(name), field, field_ui):
+        if _secret(field, field_ui):
             out[name] = SECRET_SET if inner not in (None, "", [], {}) else None
         else:
             out[name] = _masked(inner, field, field_ui, defs)
@@ -100,8 +119,8 @@ def _plugin_form(plugin: Plugin, plugin_obj=None) -> tuple[dict, dict]:
 
 def _ledger_config(config, schema: dict, ui: dict, kept_paths=()):
     """The configuration as the ledger may hold it. The secret fields are those the plugin's form marks
-    (format password, as SecretStr makes it, writeOnly, the password widget), and any whose name says so;
-    a field kept as a project secret is set."""
+    (format password, as SecretStr makes it, writeOnly, the password widget); a field kept as a project secret is
+    set. The value rule (`masked_for_ledger`) is applied on top wherever the copy leaves the engine."""
     masked = _masked(config, schema, ui, schema.get("$defs") or {})
     return with_set_at(masked, kept_paths, SECRET_SET)
 
@@ -109,7 +128,7 @@ def _ledger_config(config, schema: dict, ui: dict, kept_paths=()):
 def _shown_config(config, schema: dict, ui: dict, kept_paths=()):
     """A stored configuration as the engine answers it: masked as the ledger copy is, and every string with a
     key shape set, so a row saved before keys were kept as project secrets never answers its key in clear."""
-    return masked_for_ledger(_ledger_config(config, schema, ui, kept_paths))
+    return masked_for_ledger(_ledger_config(config, schema, ui, kept_paths), form_secret_paths(schema, ui))
 
 
 def shown_current_config(plugin: Plugin) -> dict | None:

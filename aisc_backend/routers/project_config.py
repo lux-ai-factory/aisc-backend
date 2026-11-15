@@ -1,5 +1,7 @@
 import uuid
 
+from django.utils import timezone
+
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -81,5 +83,7 @@ async def delete_project_config(request, project_pid: uuid.UUID, project_config_
     project_config = await project_config_repository.get(project_config_pid, get_related=True)
     if project_config.project.pid != project_pid:
         raise HttpError(400, "Project config not associated with project id")
-    await project_config_repository.delete(project_config)
+    # kept, marked deleted: the plugin configurations of past runs still name it
+    project_config.deleted_at = timezone.now()
+    await project_config_repository.save(project_config)
     return 204, None

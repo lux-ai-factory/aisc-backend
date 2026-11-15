@@ -201,9 +201,18 @@ class Delivering(InAProject, TestCase):
         rows = self._queue(2)
         sent = []
         self.assertEqual(ledger.deliver("default", lambda pid, event: sent.append((pid, event)) or 202), (2, 0))
-        self.assertEqual(sent, [(PID, rows[0].event), (PID, rows[1].event)])
+        self.assertEqual(sent, [(PID, {**row.event, "occurred_at": row.queued_at.isoformat()}) for row in rows])
         self.assertFalse(LedgerOutbox.objects.filter(delivered_at__isnull=True).exists())
         self.assertEqual(ledger.deliver("default", lambda pid, event: self.fail("sent twice")), (0, 0))
+
+    def test_each_event_says_when_it_was_queued(self):
+        """The platform judges a run's events by when they happened: a start delivered after a short run's
+        seal still comes first, because it says when the engine queued it."""
+        rows = self._queue(1)
+        sent = []
+        ledger.deliver("default", lambda pid, event: sent.append(event) or 202)
+        self.assertEqual(sent[0]["occurred_at"], rows[0].queued_at.isoformat())
+        self.assertNotIn("occurred_at", LedgerOutbox.objects.get(pk=rows[0].pk).event)
 
     def test_a_refused_event_is_kept_and_never_sent_again(self):
         rows = self._queue(2)

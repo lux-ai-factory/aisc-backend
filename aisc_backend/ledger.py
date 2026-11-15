@@ -32,7 +32,6 @@ import os
 import threading
 import uuid
 from contextvars import ContextVar
-from datetime import datetime, timezone
 from urllib import error, request as urlrequest
 
 from aisc_identity.switches import ledger_mode
@@ -127,9 +126,10 @@ def _database() -> str:
 
 
 def emit(action: str, *, item_type: str, item_id, details: dict | None = None, using: str | None = None,
-         request_id: str | None = None, run_id=None, **states) -> int | None:
+         request_id: str | None = None, run_id=None, card_version=None, **states) -> int | None:
     """Queue one event on `using` (the admitted project's database), inside the caller's transaction.
 
+    `card_version` is the pid of the AI card version the event is about (a run's), left out when None.
     `states` takes content, before and after. Returns the outbox row's id, or None while the ledger is
     off or no project is admitted."""
     from aisc_backend.models import LedgerOutbox
@@ -146,6 +146,8 @@ def emit(action: str, *, item_type: str, item_id, details: dict | None = None, u
              "details": details or {}}
     if run_id is not None:
         event["run_id"] = str(run_id)
+    if card_version is not None:
+        event["card_version"] = str(card_version)
     event.update({key: value for key, value in states.items() if value is not None})
     row = LedgerOutbox.objects.using(using).create(project_pid=pid, event=event)
     if can_send():
@@ -154,9 +156,10 @@ def emit(action: str, *, item_type: str, item_id, details: dict | None = None, u
 
 
 def emit_for_run(action: str, evaluation_pid, *, item_type: str, item_id, details: dict | None = None,
-                 using: str | None = None) -> int | None:
-    """Queue a worker's event: it cites the request and the run of its evaluation's start. None when the
-    start was not recorded (the ledger was off then), since the platform would have no run to bind it to."""
+                 using: str | None = None, **states) -> int | None:
+    """Queue a worker's event: it cites the request and the run of its evaluation's start, and the card version
+    the start names. None when the start was not recorded (the ledger was off then), since the platform would
+    have no run to bind it to. `states` as for emit."""
     from aisc_backend.models import LedgerOutbox
 
     if not on() or projectdb.admitted_pid.get() is None:
@@ -168,7 +171,8 @@ def emit_for_run(action: str, evaluation_pid, *, item_type: str, item_id, detail
         logger.info("ledger: %s of evaluation %s not recorded: its run's start is not", action, evaluation_pid)
         return None
     return emit(action, item_type=item_type, item_id=item_id, details=details, using=using,
-                request_id=start.event["request_id"], run_id=start.event.get("run_id"))
+                request_id=start.event["request_id"], run_id=start.event.get("run_id"),
+                card_version=start.event.get("card_version"), **states)
 
 
 async def atomically(work):
@@ -224,16 +228,16 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
     sent = failed = 0
     queued = LedgerOutbox.objects.using(using).filter(delivered_at__isnull=True, refused__isnull=True)
     for row in list(queued.order_by("id")[:limit]):
-        status = send(str(row.project_pid), _as_sent(row.event))
+        status = send(str(row.project_pid), _as_sent(row.event, row.queued_at))
         if status is not None and 200 <= status < 300:
-            LedgerOutbox.objects.using(using).filter(pk=row.pk).update(delivered_at=datetime.now(timezone.utc))
+            LedgerOutbox.mark(using, row.pk, delivered=True)
             sent += 1
             continue
         failed += 1
         if status in REFUSALS:
             logger.error("ledger: the platform refused engine event %s (%s, status %s); kept, not sent again",
                          row.event.get("event_id"), row.event.get("action"), status)
-            LedgerOutbox.objects.using(using).filter(pk=row.pk).update(refused=status)
+            LedgerOutbox.mark(using, row.pk, delivered=False, refused=status)
             continue
         logger.warning("ledger: engine event %s not sent (%s); it and the later ones stay queued",
                        row.event.get("event_id"), "no answer" if status is None else f"status {status}")
@@ -241,12 +245,15 @@ def _deliver(using: str, send, limit: int) -> tuple[int, int]:
     return sent, failed
 
 
-def _as_sent(event: dict) -> dict:
-    """The event as the platform receives it. A configuration event queued before its secrets were masked at
-    save is masked here, so no plaintext secret leaves the engine; the stored row is left to the cleanup
-    (`manage.py clean_old_secrets`)."""
+def _as_sent(event: dict, queued_at=None) -> dict:
+    """The event as the platform receives it, saying when it was queued (`occurred_at`): the platform judges
+    a run's events by when they happened, not by when this pass sends them. A configuration event queued
+    before its secrets were masked at save is masked here, so no plaintext secret leaves the engine; the
+    stored row is left to the cleanup (`manage.py clean_old_secrets`)."""
     if not isinstance(event, dict):
         return event
+    if queued_at is not None:
+        event = {**event, "occurred_at": queued_at.isoformat()}
     content = event.get("content")
     if event.get("action") != CONFIGURED or not isinstance(content, dict) or "config" not in content:
         return event

@@ -46,7 +46,8 @@ from aisc_backend.tests.isolation_support import (
     configurator_only,
     BACKEND, COLUMNS_CHANGED_SINCE_LIVE_SHAPE, COLUMNS_NEWER_THAN_LIVE_SHAPE, CONSTRAINTS_NEWER_THAN_LIVE_SHAPE,
     DEPLOYED_ENV,
-    INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE, ApiCaller,
+    INDEXES_NEWER_THAN_LIVE_SHAPE, LIVE_SHAPE, SUPERUSER_URL_VAR, TABLES_NEWER_THAN_LIVE_SHAPE,
+    UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE, ApiCaller,
     Cluster, as_compared, catalog, database_name, newer_than_live_shape, superuser_url,
 )
 
@@ -218,11 +219,12 @@ class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
                 self.assertIn("0020_the_database_is_the_project", names)
                 self.assertIn("0019_no_login_of_its_own", names)
 
-    def test_the_tables_belong_to_engine_rw_in_schema_engine(self):
+    def test_the_tables_belong_to_engine_owner_in_schema_engine(self):
+        """Migrated as engine_migrator, acting as engine_owner (0028_owner_role); engine_rw keeps rows only."""
         owners = {r[0] for r in self.cluster.rows(
             self.w["A"]["database"],
             "SELECT tableowner FROM pg_tables WHERE schemaname = 'engine'")}
-        self.assertEqual(owners, {"engine_rw"})
+        self.assertEqual(owners, {"engine_owner"})
         public = self.cluster.rows(self.w["A"]["database"],
                                    "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")[0][0]
         self.assertEqual(public, 0, "search_path=engine, nothing lands in public")
@@ -253,11 +255,12 @@ class TheOneShotMigratesEveryProjectDatabase(PostgresCase):
                                   "SELECT name FROM engine.django_migrations GROUP BY app, name HAVING count(*) > 1")
         self.assertEqual(dupes, [])
 
-    def test_the_evaluation_points_at_project_system_set_null(self):
+    def test_the_evaluation_points_at_project_system_and_restricts(self):
+        """A run's card version cannot be deleted from under it (0028_owner_role; it was SET NULL)."""
         rows = self.cluster.rows(self.w["A"]["database"], """
             SELECT confrelid::regclass::text, confdeltype FROM pg_constraint
             WHERE conname = 'aisc_backend_evaluation_system_id_fkey'""")
-        self.assertEqual(rows, [("project.system", "n")])
+        self.assertEqual(rows, [("project.system", "r")])
 
     def test_no_foreign_key_leaves_the_database(self):
         rows = self.cluster.rows(self.w["A"]["database"], """
@@ -359,8 +362,12 @@ class TheShapeIsTheLiveShape(PostgresCase):
                 for kind, rows in mine.items()}
         live["constraints"] = {
             (t, self.RENAMED.get(name, name), kind,
-             d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)"))
-            for t, name, kind, d in live["constraints"] if name not in self.ALLOWED_GONE}
+             d.replace("REFERENCES core.system(pid)", "REFERENCES project.system(pid)")
+              # a run's card version restricts since 0028_owner_role
+              .replace("REFERENCES project.system(pid) ON DELETE SET NULL", "REFERENCES project.system(pid)"
+                       " ON DELETE RESTRICT"))
+            for t, name, kind, d in live["constraints"]
+            if name not in self.ALLOWED_GONE and name not in UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE}
         live = {kind: {as_compared(kind, r) for r in rows} for kind, rows in live.items()}
         for kind in live:
             with self.subTest(kind=kind):
@@ -519,10 +526,11 @@ class WhatTheLiveShapePredates(unittest.TestCase):
     def test_every_exemption_names_a_migration(self):
         migrations = [*TABLES_NEWER_THAN_LIVE_SHAPE.values(), *INDEXES_NEWER_THAN_LIVE_SHAPE.values(),
                       *COLUMNS_NEWER_THAN_LIVE_SHAPE.values(), *CONSTRAINTS_NEWER_THAN_LIVE_SHAPE.values(),
-                      *COLUMNS_CHANGED_SINCE_LIVE_SHAPE.values()]
+                      *COLUMNS_CHANGED_SINCE_LIVE_SHAPE.values(), *UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE.values()]
         self.assertEqual(set(migrations), {"0021_engine_deployment_marker", "0022_one_system_target_per_system",
                                            "0023_ledger_outbox", "0025_evaluation_input_helper_ref",
-                                           "0026_observation_evaluation_plugin", "0027_component_retired_at"})
+                                           "0026_observation_evaluation_plugin", "0027_component_retired_at",
+                                           "0030_settings_are_kept", "0031_component_file_hash"})
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())

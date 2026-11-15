@@ -63,16 +63,27 @@ class PluginConfig(Base):
         return f"{self.plugin.name} config ({self.created_at})"
 
 
+class LiveSettingMappings(models.Manager):
+    """The links to settings that are not deleted: what a plugin configuration offers a new run. The link to a
+    deleted setting is kept, and `_base_manager` reads it."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(project_config__deleted_at__isnull=True)
+
+
 class PluginConfigProjectConfig(Base):
-    """Links a PluginConfig to a ProjectConfig it references during a run."""
+    """Links a PluginConfig to a ProjectConfig it references during a run. Kept when the setting is deleted
+    (the setting is only marked deleted), so a past run's configuration still names it."""
 
     plugin_config = models.ForeignKey(
         PluginConfig, on_delete=models.CASCADE, related_name="setting_mappings"
     )
     project_config = models.ForeignKey(
-        "ProjectConfig", on_delete=models.CASCADE, related_name="config_mappings"
+        "ProjectConfig", on_delete=models.PROTECT, related_name="config_mappings"
     )
     plugin_config_key = models.CharField(max_length=255)
+
+    objects = LiveSettingMappings()
 
     class Meta:
         constraints = [

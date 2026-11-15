@@ -328,6 +328,10 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
     if any(validation_errors.values()):
         raise HttpError(400, format_validation_error({"message": "Required project settings are missing or invalid", **validation_errors}))
 
+    # the endpoints the run's start records are named before the run is stored: a refusal leaves no Pending run
+    connections = await sync_to_async(celery_service.endpoints_before_launch, thread_sensitive=False)(
+        [component for _config, _plugin, _helpers, inputs in resolved for _input, component in inputs])
+
     evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
     evaluation = await evaluation_repository.create(evaluation)
 
@@ -356,7 +360,10 @@ async def _create_evaluation_task(request, data: CreateEvaluationRequest):
 
         evaluation_plugins.append(run_plugin)
 
-    evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
+    if connections is None:
+        evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid)
+    else:
+        evaluation_plugins_task = await celery_service.run_evaluation(evaluation.pid, connections=connections)
 
     # only the task id: the worker may already have moved the evaluation on from the Pending this copy holds
     evaluation.task = evaluation_plugins_task.task_id
@@ -377,7 +384,16 @@ async def rename_evaluation(request, evaluation_pid: uuid.UUID, data: RunNameReq
     evaluation = await Evaluation.objects.filter(pid=evaluation_pid).afirst()
     if evaluation is None:
         raise HttpError(404, "Evaluation not found")
-    await EvaluationPlugin.objects.filter(evaluation=evaluation).aupdate(name=name)
+
+    async def rename():
+        # the new name and its event, citing this request, commit together or not at all
+        tests = EvaluationPlugin.objects.filter(evaluation=evaluation)
+        before = await tests.order_by("id").values_list("name", flat=True).afirst()
+        await tests.aupdate(name=name)
+        await sync_to_async(ledger.emit)("engine.evaluation.renamed", item_type="evaluation", item_id=evaluation.pid,
+                                         details={"name_before": before or "", "name_after": name})
+
+    await ledger.atomically(rename)
     # AUDIT: who renamed which run, and to what
     await sync_to_async(log_action)(
         request, action="rename", resource_type="evaluation", resource_id=str(evaluation.pid),

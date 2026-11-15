@@ -5,7 +5,10 @@ The one-shot `aisc-backend-migrate` runs this at start; the engine also runs
 (projectdb.open_alias). For each `project_<hex>` database the engine's role may
 connect to, it applies the Django migrations (schema `engine`, search_path set
 by the alias) and then grants the readers what READER_GRANTS lists, as the owner of the
-tables. Both happen under a Postgres advisory lock taken in that database, so two
+tables. Both run on the database's migration alias (projectdb.migrate_alias: engine_migrator,
+acting as engine_owner), and only once the database's engine schema is engine_owner's: a schema
+still the platform's waits for the platform to hand it over (postgres-setup makes the role), and
+nothing is migrated. Both happen under a Postgres advisory lock taken in that database, so two
 runs at once migrate it once.
 
 The database list comes from pg_database, not from the platform's project
@@ -68,32 +71,31 @@ def grant_readers(connection) -> None:
         cursor.execute(READER_GRANTS)
 
 
-def _provisioned(connection) -> bool:
-    """The engine schema exists and the role may create tables in it."""
+def _schema_owner(connection) -> str | None:
+    """Who owns the engine schema of the database, or None when it is not there (no template yet)."""
     with connection.cursor() as cursor:
-        cursor.execute("SELECT oid FROM pg_namespace WHERE nspname = 'engine'")
+        cursor.execute("SELECT pg_get_userbyid(nspowner)::text FROM pg_namespace WHERE nspname = 'engine'")
         row = cursor.fetchone()
-        if row is None:
-            return False
-        cursor.execute("SELECT has_schema_privilege(current_user, 'engine', 'CREATE')")
-        return bool(cursor.fetchone()[0])
+    return row[0] if row else None
 
 
 def migrate_database(alias: str) -> None:
-    """Migrate one project database and grant its readers, under its advisory lock."""
-    token = projectdb.admitted.set(alias)  # historical-model RunPython queries route here
+    """Migrate one project database and grant its readers, as the migrator, under its advisory lock."""
+    projectdb.ensure(alias)
+    migrator = projectdb.migrate_alias(alias)
+    token = projectdb.admitted.set(migrator)  # historical-model RunPython queries route here
     try:
-        projectdb.ensure(alias)
-        connection = connections[alias]
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT to_regclass('django_migrations') IS NOT NULL")
-            has_history = cursor.fetchone()[0]
-        if not has_history and not _provisioned(connection):
+        projectdb.ensure(migrator)
+        connection = connections[migrator]
+        owner = _schema_owner(connection)
+        if owner is None:
             raise projectdb.SchemaNotProvisioned(alias)
+        if owner != projectdb.SCHEMA_OWNER:
+            raise projectdb.SchemaNotOwned(alias, owner)
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_lock(%s)", [ENGINE_MIGRATE_LOCK])
         try:
-            call_command("migrate", database=alias, interactive=False, verbosity=0)
+            call_command("migrate", database=migrator, interactive=False, verbosity=0)
             grant_readers(connection)
         finally:
             try:
@@ -103,6 +105,7 @@ def migrate_database(alias: str) -> None:
                 connection.close()
     finally:
         projectdb.admitted.reset(token)
+        connections[migrator].close()
 
 
 class Command(BaseCommand):
@@ -139,6 +142,9 @@ class Command(BaseCommand):
                 self.stdout.write(f"migrated {name}")
             except (projectdb.NoSuchProjectDatabase, projectdb.SchemaNotProvisioned):
                 self.stdout.write(f"skipped {name}")
+            except projectdb.SchemaNotOwned as exc:
+                failed.append(name)
+                self.stderr.write(f"{'waiting' if exc.wait else 'failed'} {exc}")
             except Exception as exc:  # noqa: BLE001 - reported by type only, then the next one
                 failed.append(name)
                 self.stderr.write(f"failed {name}: {type(exc).__name__}")

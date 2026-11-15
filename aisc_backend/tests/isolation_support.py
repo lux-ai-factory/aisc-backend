@@ -46,6 +46,8 @@ COLUMNS_NEWER_THAN_LIVE_SHAPE: dict[tuple[str, str], str] = {
     ("aisc_backend_observation", "evaluation_plugin_id"): "0026_observation_evaluation_plugin",
     ("aisc_backend_evaluationinput", "helper_ref"): "0025_evaluation_input_helper_ref",
     ("aisc_backend_aicomponent", "retired_at"): "0027_component_retired_at",
+    ("aisc_backend_projectconfig", "deleted_at"): "0030_settings_are_kept",
+    ("aisc_backend_aicomponent", "data_sha256"): "0031_component_file_hash",
 }
 #: Constraints on tables the live shape has, made by a later migration, by name.
 CONSTRAINTS_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
@@ -55,6 +57,11 @@ CONSTRAINTS_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
 #: names a component or a helper, so its component may be empty.
 COLUMNS_CHANGED_SINCE_LIVE_SHAPE: dict[tuple[str, str], str] = {
     ("aisc_backend_evaluationinput", "component_id"): "0025_evaluation_input_helper_ref",
+}
+#: Unique keys of the live shape that a later migration narrowed to the rows not deleted: the key's constraint
+#: is gone, and its index is the same but for its WHERE clause.
+UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE: dict[str, str] = {
+    "unique_project_config_key": "0030_settings_are_kept",
 }
 #: Indexes on tables the live shape has, made by a later migration.
 INDEXES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
@@ -85,6 +92,8 @@ def as_compared(kind: str, row: tuple) -> tuple:
     changed has its not-null field (the fourth) set to None; every other row is left as it is."""
     if kind == "columns" and (row[0], row[1]) in COLUMNS_CHANGED_SINCE_LIVE_SHAPE:
         return (*row[:3], None, *row[4:])
+    if kind == "indexes" and row[1] in UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE:     # compared without its WHERE
+        return (*row[:-1], row[-1].split(" WHERE ", 1)[0])
     return row
 
 #: The example pid of every language's tests.
@@ -190,13 +199,13 @@ class Cluster:
 
     def platform_schema(self):
         """core.* as the platform makes it at start (platform_service.migrate, as
-        platform_rw, its owner). Idempotent."""
+        platform_migrator, whose sessions act as platform_owner). Idempotent."""
         import psycopg
 
         _platform_on_path()
         from platform_service.migrate import migrate
 
-        with psycopg.connect(dsn_for(self.url, user="platform_rw")) as conn:
+        with psycopg.connect(dsn_for(self.url, user="platform_migrator")) as conn:
             migrate(conn)
 
     def platform_project(self, name: str, members: dict[str, str]) -> str:
@@ -213,11 +222,12 @@ class Cluster:
         return pid
 
     def provision(self, pid: str) -> str:
-        """The project's database with every template file there is (projectdb.provision)."""
+        """The project's database with every template file there is (projectdb.provision, as platform_migrator,
+        as the platform makes it)."""
         _platform_on_path()
         from platform_service import projectdb
 
-        return projectdb.provision(dsn_for(self.url), pid)
+        return projectdb.provision(dsn_for(self.url, user="platform_migrator"), pid)
 
     def bare_database(self) -> str:
         """A project_<hex> database with no template: engine_rw may not connect to it."""

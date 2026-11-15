@@ -72,6 +72,10 @@ class UpstreamTableNames(TestCase):
             "0025_evaluation_input_helper_ref",
             "0026_observation_evaluation_plugin",
             "0027_component_retired_at",
+            "0028_owner_role",
+            "0029_append_only_results",
+            "0030_settings_are_kept",
+            "0031_component_file_hash",
         ])
 
 

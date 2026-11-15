@@ -99,7 +99,8 @@ class Components(Recording):
             res = await components.put(f"/{comp.pid}/data", FILES={"file": upload})
         self.assertEqual(res.status_code, 200, res.text)
         [event] = await events()
-        self.assertEvent(event, "engine.component.file_uploaded", "component", comp.pid, {"size": 8})
+        self.assertEvent(event, "engine.component.file_uploaded", "component", comp.pid,
+                         {"size": 8, "sha256": hashlib.sha256(b"a,b\n1,2\n").hexdigest()})
 
     async def test_deleting_a_component(self):
         comp = await self._component(AIComponentType.MODEL)
@@ -230,7 +231,7 @@ class Runs(Recording):
         with unrecorded():
             plugin = Plugin.objects.create(name="DemoPlugin", display_name="Demo", package_name="demo-pkg",
                                            version="0.1.0", project=self.project)
-            config = PluginConfig.objects.create(plugin=plugin, config={})
+            config = self.config = PluginConfig.objects.create(plugin=plugin, config={})
             self.evaluation = Evaluation.objects.create(status=EvaluationStatus.Pending, project=self.project)
             self.evaluation_plugin = EvaluationPlugin.objects.create(evaluation=self.evaluation,
                                                                      plugin_config=config)
@@ -238,6 +239,11 @@ class Runs(Recording):
         patcher = mock.patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET})
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def _demo_plugin(self):
+        """The one plugin of the run as its start names it (its empty configuration's hash)."""
+        return {"name": "DemoPlugin", "package": "demo-pkg", "version": "0.1.0", "plugin_config_id": self.config.id,
+                "config_sha256": hashlib.sha256(b"{}").hexdigest()}
 
     async def _start(self):
         from aisc_backend.services import celery_service
@@ -264,7 +270,7 @@ class Runs(Recording):
         send.assert_called_once()
         [event] = await events()
         self.assertRunEvent(event, "engine.evaluation.run_requested", "evaluation", self.evaluation.pid,
-                            {"plugins": ["DemoPlugin"]})
+                            {"plugins": [self._demo_plugin()]})
 
     @override_settings(AISC_DEPLOYMENT="configurator")
     async def test_the_worker_is_sent_the_request_and_the_run_its_start_cites(self):
@@ -296,7 +302,7 @@ class Runs(Recording):
         await self._start()
         [event] = await events()
         self.assertRunEvent(event, "engine.evaluation.run_requested", "evaluation", self.evaluation.pid,
-                            {"plugins": ["DemoPlugin"],
+                            {"plugins": [self._demo_plugin()],
                              "local_models": [{"plugin": "DemoPlugin", "input": "model", "file": "model.onnx"}]})
 
     async def test_a_run_that_could_not_be_sent_is_not_recorded(self):
@@ -349,7 +355,7 @@ class Runs(Recording):
         res = await self._as_the_worker("post", f"/evaluations/{self.evaluation.pid}/measures", json=body)
         self.assertEqual(res.status_code, 201, res.text)
         _, recorded = await events()
-        self.assertRunEvent(recorded, "engine.measures.recorded", "evaluation", self.evaluation.pid, {"count": 2})
+        self.assertRunEvent(recorded, "engine.measures.recorded", "evaluation", self.evaluation.pid, {"count": 2, "part": 1, "parts": 1})
 
     async def test_uploading_an_artifact(self):
         from aisc_backend.models.artifact import Artifact
@@ -561,7 +567,7 @@ class Plugins(Recording):
             await self.plugins.post(f"/{pid}/config", json={"config": {"threshold": 0.9}})
             await self.plugins.post(f"/{pid}/configs/{config_id}/restore")
         masked = {"threshold": 0.5, "passphrase": "set", "sealed": "set", "auth_header": "set",
-                  "judge": {"model": "gpt-4o", "phrase": "set"}, "judge_api_key": "set", "access_token": None}
+                  "judge": {"model": "gpt-4o", "phrase": "set"}, "judge_api_key": "set", "access_token": ""}
         # the keys the save kept as project secrets are recorded first, each as its own secret event
         configured, *_, restored = [e for e in await events() if e["action"] == "engine.plugin.configured"]
         self.assertEqual(configured["content"]["config"], masked)

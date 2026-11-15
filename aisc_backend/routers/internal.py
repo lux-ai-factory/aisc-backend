@@ -1,6 +1,8 @@
 import datetime
 import hashlib
+import json
 import logging
+import math
 import uuid
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from ninja import Router, Schema, Form, UploadedFile, File, Body
 from ninja.errors import HttpError
 from pydantic import BaseModel, ConfigDict, Field
+
+from aisc_identity.canonical import sha256_of
 
 from aisc_backend import ledger
 from aisc_backend.audit.log import log_action
@@ -381,6 +385,48 @@ async def mark_plugin_failed(
     return "ok"
 
 
+def _finite_or_named(number):
+    """A number as canonical JSON can hold it: a NaN or an infinity has no JSON form, so it is named instead."""
+    if isinstance(number, float) and not math.isfinite(number):
+        return "NaN" if math.isnan(number) else ("Infinity" if number > 0 else "-Infinity")
+    return number
+
+
+def measures_content(measurements) -> list[dict]:
+    """Recorded measures as the ledger freezes them: one row per measure, sorted by test and name, with the
+    hash of its dimensions instead of the dimensions, which may hold the system's own answers."""
+    def test_of(measurement):
+        test = getattr(measurement, "evaluation_plugin", None) or measurement.observation.evaluation_plugin
+        return str(getattr(test, "pid", test))
+
+    rows = [{"evaluation_plugin": test_of(m), "name": m.name,
+             "score": _finite_or_named(float(m.score)),
+             "uncertainty": _finite_or_named(float(m.uncertainty or 0.0)),
+             "unit": m.unit, "direction": m.direction, "error": m.error,
+             "dimensions_sha256": sha256_of(m.dimensions) if m.dimensions else None}
+            for m in measurements]
+    return sorted(rows, key=lambda row: (row["evaluation_plugin"], row["name"]))
+
+
+#: The most measure rows' JSON one event carries; the platform takes an event of at most 32 KB.
+MEASURES_PER_EVENT_BYTES = 24 * 1024
+
+
+def _parts_of(rows: list[dict]) -> list[list[dict]]:
+    """The rows in as few events as fit under MEASURES_PER_EVENT_BYTES each; one (empty) part when there are none,
+    so a recording of no measures is still an event."""
+    parts, part, size = [], [], 0
+    for row in rows:
+        row_size = len(json.dumps(row, ensure_ascii=False)) + 1
+        if part and size + row_size > MEASURES_PER_EVENT_BYTES:
+            parts.append(part)
+            part, size = [], 0
+        part.append(row)
+        size += row_size
+    parts.append(part)
+    return parts
+
+
 @router.post("/evaluations/{evaluation_pid}/measures", response={201: Schema})
 async def create_evaluation_measures(
     request,
@@ -395,8 +441,8 @@ async def create_evaluation_measures(
     }
 
     async def record():
-        # the measures and their ledger event commit together
-        count = 0
+        # the measures and their ledger event commit together; the event carries the measures themselves
+        recorded = []
         for evaluation_plugin_uuid, measures in data.items():
             # Create a new Observation for each plugin
 
@@ -435,10 +481,15 @@ async def create_evaluation_measures(
 
             if measurement_objs:
                 await measurement_repository.bulk_create(measurement_objs)
-            count += len(measurement_objs)
-        await sync_to_async(ledger.emit_for_run)(
-            "engine.measures.recorded", evaluation.pid, item_type="evaluation", item_id=evaluation.pid,
-            details={"count": count})
+            for measurement in measurement_objs:
+                measurement.evaluation_plugin = evaluation_plugin
+            recorded.extend(measurement_objs)
+        # each event says which part of the recording it is, of how many: the ledger alone shows none is missing
+        parts = _parts_of(measures_content(recorded))
+        for number, part in enumerate(parts, start=1):
+            await sync_to_async(ledger.emit_for_run)(
+                "engine.measures.recorded", evaluation.pid, item_type="evaluation", item_id=evaluation.pid,
+                details={"count": len(part), "part": number, "parts": len(parts)}, content=part)
 
     await ledger.atomically(record)
 

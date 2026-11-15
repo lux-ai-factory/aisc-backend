@@ -380,7 +380,7 @@ class ProjectDoor:
                 except (projectdb.NoSuchProjectDatabase, projectdb.SchemaNotProvisioned):
                     projectdb.forget(alias)
                     return _refuse(404, "no such project")
-                except (projectdb.MigrationFailed, DatabaseError):
+                except (projectdb.MigrationFailed, projectdb.SchemaNotOwned, DatabaseError):
                     return _refuse(503, "the project's database cannot be opened")
 
             admitted = projectdb.admitted.set(alias)
