@@ -48,10 +48,12 @@ COLUMNS_NEWER_THAN_LIVE_SHAPE: dict[tuple[str, str], str] = {
     ("aisc_backend_aicomponent", "retired_at"): "0027_component_retired_at",
     ("aisc_backend_projectconfig", "deleted_at"): "0030_settings_are_kept",
     ("aisc_backend_aicomponent", "data_sha256"): "0031_component_file_hash",
+    ("aisc_backend_evaluation", "launch_key"): "0033_evaluation_launch_key",
 }
 #: Constraints on tables the live shape has, made by a later migration, by name.
 CONSTRAINTS_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
     "evaluation_input_component_or_helper_ref": "0025_evaluation_input_helper_ref",
+    "one_metric_per_name": "0032_measures_recorded_once",
 }
 #: Columns the live shape has whose nullability a later migration changed, as (table, column): a run input
 #: names a component or a helper, so its component may be empty.
@@ -66,6 +68,10 @@ UNIQUE_KEYS_NARROWED_SINCE_LIVE_SHAPE: dict[str, str] = {
 #: Indexes on tables the live shape has, made by a later migration.
 INDEXES_NEWER_THAN_LIVE_SHAPE: dict[str, str] = {
     "aisc_one_system_target_per_system": "0022_one_system_target_per_system",
+    "one_metric_per_name": "0032_measures_recorded_once",
+    # Django's second index of a unique text column, for LIKE lookups; its definition names the column with
+    # its operator class, so the column's exemption does not cover it
+    "aisc_backend_evaluation_launch_key_aa408c96_like": "0033_evaluation_launch_key",
 }
 
 
