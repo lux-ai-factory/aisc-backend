@@ -53,7 +53,8 @@ class StatsRepository:
             avg_uncertainty=Avg("uncertainty"),
         )
 
-        error_count = await measurements.exclude(error="N/A").acount()
+        # "no error" is stored as NULL (the worker), "" or "N/A" (imports): none of them is an error
+        error_count = await measurements.exclude(error__isnull=True).exclude(error__in=("", "N/A")).acount()
         error_rate = (
             (error_count / total_measurements * 100) if total_measurements > 0 else 0.0
         )
