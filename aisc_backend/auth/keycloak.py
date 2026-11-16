@@ -60,6 +60,15 @@ class KeycloakAuth(HttpBearer):
 
     """
 
+    def __call__(self, request):
+        # Keycloak-less mode (AUTH_ENABLED=false): let header-less requests
+        # through. django-ninja rejects a missing Authorization header with
+        # 401 before authenticate() runs, which would lock out logged-out
+        # frontends even though verification is disabled.
+        if not AUTH_ENABLED and not request.headers.get("Authorization"):
+            return True
+        return super().__call__(request)
+
     def authenticate(self, request, token):
         # if authenticator is disabled, allow all requests
         if not AUTH_ENABLED:

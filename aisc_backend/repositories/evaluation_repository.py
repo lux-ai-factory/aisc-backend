@@ -90,6 +90,29 @@ class EvaluationRepository(BaseRepository[Evaluation]):
             .afirst()
         )
 
+    async def failed_or_active_for_project(self, project) -> list[Evaluation]:
+        """The project's evaluations that still have (or may still have) a live
+        celery run: running or failed ones, so the project's task list is not
+        cluttered with every finished run."""
+        from aisc_backend.models import EvaluationStatus
+
+        return [
+            item
+            async for item in Evaluation.objects.filter(project=project)
+            .exclude(status=EvaluationStatus.Done)
+            .order_by("-created_at")
+        ]
+
+    async def with_tasks_for_project(self, project) -> list[Evaluation]:
+        """The project's evaluations that carry a celery task id, newest first —
+        finished runs included, so the task list shows every dispatch."""
+        return [
+            item
+            async for item in Evaluation.objects.filter(project=project)
+            .exclude(task__isnull=True)
+            .order_by("-created_at")
+        ]
+
     async def plugin_status(self, evaluation: Evaluation) -> tuple[bool, int]:
         has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
         total_plugins = await evaluation.evaluation_plugins.acount()

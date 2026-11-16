@@ -45,9 +45,11 @@ async def get_component(request, component_pid: uuid.UUID):
 
 @router.patch("/{component_pid}", response=AIComponentOutSchema)
 async def update_component(request, component_pid: uuid.UUID, data: AIComponentInSchema):
-    component = await ai_component_repository.get(component_pid)
+    component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
+
+    project_pid = str(component.system.project.pid)
 
     if data.name is not None:
         component.name = data.name
@@ -65,16 +67,23 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
     component = await ai_component_repository.get_with_source_dataset(component.pid)
     await sync_to_async(log_action)(
         request, action="update", resource_type="component",
-        resource_id=str(component_pid), metadata={"name": component.name})
+        resource_id=str(component_pid),
+        metadata={"projectPid": project_pid, "name": component.name})
     return component
 
 
 @router.delete("/{component_pid}", response={204: None})
 async def delete_component(request, component_pid: uuid.UUID):
-    component = await ai_component_repository.get(component_pid)
+    component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
+    project_pid = str(component.system.project.pid)
     await ai_component_repository.delete(component)
+    await sync_to_async(log_action)(
+        request, action="delete", resource_type="component",
+        resource_id=str(component_pid),
+        metadata={"projectPid": project_pid, "name": component.name,
+                  "component_type": component.component_type})
     return 204, None
 
 
@@ -83,11 +92,13 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
-    component = await ai_component_repository.get(component_pid)
+    component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
     if not component.is_file_backed:
         raise HttpError(400, "Only dataset/model/file components accept an uploaded file")
+
+    project_pid = str(component.system.project.pid)
 
     suffix = Path(file.name).suffix.lower()
     file.name = f"{str(uuid.uuid4())}{suffix}"
@@ -106,7 +117,7 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     await sync_to_async(log_action)(
         request, action="upload", resource_type="component",
         resource_id=str(component_pid),
-        metadata={"filename": file.name, "filesize": file.size,
+        metadata={"projectPid": project_pid, "filename": file.name, "filesize": file.size,
                   "component_type": component.component_type})
     return UploadComponentFileResponse(file_name=file.name, file_size=file.size)
 

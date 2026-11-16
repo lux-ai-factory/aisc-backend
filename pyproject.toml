@@ -29,6 +29,7 @@ dependencies = [
     "whitenoise>=6.12.0",
     "jsonschema>=4.26.0",
     "cryptography>=50.0.1",
+    "packaging>=24.0",
     "aisc-plugin-manager>=0.3.0",
     "aisc-plugin-interface>=0.3.0",
     "httpx>=0.28.1",

@@ -1,3 +1,4 @@
+from unittest import mock
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -95,8 +96,18 @@ class ComponentRouterTestCase(TestCase):
 
     async def test_delete_component(self):
         comp = await self._component(AIComponentType.MODEL)
-        res = await client.delete(f"/{comp.pid}")
+        with mock.patch(
+            "aisc_backend.routers.component.log_action",
+            new=mock.Mock(),
+        ) as audit:
+            res = await client.delete(f"/{comp.pid}")
         self.assertEqual(res.status_code, 204)
+        audit.assert_called_once()
+        kwargs = audit.call_args.kwargs
+        self.assertEqual(kwargs["action"], "delete")
+        self.assertEqual(kwargs["resource_type"], "component")
+        self.assertEqual(kwargs["resource_id"], str(comp.pid))
+        self.assertEqual(kwargs["metadata"]["projectPid"], str(self.project.pid))
 
     async def test_delete_missing_component_404(self):
         res = await client.delete("/00000000-0000-0000-0000-000000000000")

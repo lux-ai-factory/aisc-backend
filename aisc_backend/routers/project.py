@@ -6,18 +6,33 @@ from aisc_backend.repositories import file_repository
 from aisc_backend.services.feature_derivation import derive_features
 
 from asgiref.sync import sync_to_async
+from django.db import transaction
 from ninja import Router, Schema, Query
 from ninja.errors import HttpError
 from pydantic import Field
 
+from aisc_backend.audit.clerk import clerk
 from aisc_backend.audit.log import log_action
+from aisc_backend.services import celery_service
+
+from aisc_backend.auth.access import (
+    caller_of,
+    owner_or_403,
+    refuse_losing_last_owner,
+    role_or_404,
+)
+from aisc_backend.auth.membership import InvalidMembership, validate_role
+from aisc_backend.repositories.membership_repository import MembershipRepository
 
 from aisc_backend.models import (
     EvaluationStatus,
     AIComponent,
     AIComponentType,
+    Project,
+    ProjectStatus,
 )
 from aisc_backend.models.common import StorageContainer
+from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.repositories.ai_component_repository import AISystemRepository, AIComponentRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
@@ -47,6 +62,7 @@ ai_component_repository = AIComponentRepository()
 project_config_repository = ProjectConfigRepository()
 evaluation_repository = EvaluationRepository()
 measurement_repository = MeasurementRepository()
+membership_repository = MembershipRepository()
 
 
 class EvaluationInputTemplateEntrySchema(Schema):
@@ -56,38 +72,165 @@ class EvaluationInputTemplateEntrySchema(Schema):
 
 @router.post("", response=ProjectOutSchema)
 async def create_project(request, data: ProjectInSchema):
-    project = await project_repository.create(data.name)
+    # The person who starts a project owns it — project never exists unowned.
+    caller = caller_of(request)
+    project = await sync_to_async(_create_project_with_owner)(
+        data.name, caller.subject, caller.email
+    )
     # AUDIT: who created which project (best-effort; never breaks the create)
     await sync_to_async(log_action)(
         request, action="create", resource_type="project",
-        resource_id=str(project.pid), metadata={"name": project.name})
+        resource_id=str(project.pid), metadata={"projectPid": str(project.pid), "name": project.name})
+    return project
+
+
+def _create_project_with_owner(name: str, subject: str, email: str | None) -> Project:
+    """Create the project and its first owner in one transaction.
+
+    Sync ORM on purpose: Django's Atomic has no async context manager, so the
+    two inserts must share one connection, which the async path cannot give.
+    """
+    with transaction.atomic():
+        project = Project(name=name, status=ProjectStatus.Created)
+        project.save()
+        ProjectMember.objects.create(
+            project=project, subject=subject, email=email or "",
+            role=MembershipRole.Owner,
+        )
     return project
 
 
 @router.patch("/{pid}", response=ProjectOutSchema)
 async def update_project(request, pid: uuid.UUID, data: ProjectInSchema):
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     updated = await project_repository.patch(project, data)
     # AUDIT: who renamed which project, and to what
     await sync_to_async(log_action)(
         request, action="update", resource_type="project",
-        resource_id=str(pid), metadata={"name": data.name})
+        resource_id=str(pid), metadata={"projectPid": str(pid), "name": data.name})
     return updated
 
 
 @router.get("", response=list[ProjectOutSchema])
 async def get_projects(request):
-    return await project_repository.get_all()
+    caller = caller_of(request)
+    if caller.has_role("admin"):
+        return await project_repository.get_all()
+    return await membership_repository.projects_for(caller.subject)
 
 
 @router.get("/by-name/{name}", response=ProjectOutSchema)
 async def get_project_by_name(request, name):
-    return await project_repository.get_one(name=name)
+    project = await project_repository.get_one(name=name)
+    await role_or_404(request, project)
+    return project
 
 
 @router.get("/{pid}", response=ProjectDetailsOutSchema)
 async def get_project_details(request, pid: uuid.UUID):
-    return await project_repository.get(pid, True)
+    project = await project_repository.get(pid, True)
+    await role_or_404(request, project)
+    return project
+
+
+class MemberIn(Schema):
+    subject: str
+    email: str | None = None
+    role: str = "viewer"
+
+
+class MemberRoleIn(Schema):
+    role: str
+
+
+class MemberOut(Schema):
+    subject: str
+    email: str
+    role: str
+
+
+@router.get("/{pid}/members", response=list[MemberOut])
+async def project_members(request, pid: uuid.UUID):
+    project = await project_repository.get(pid)
+    await role_or_404(request, project)
+    return await membership_repository.members(project)
+
+
+@router.post("/{pid}/members", response=MemberOut)
+async def add_project_member(request, pid: uuid.UUID, data: MemberIn):
+    project = await project_repository.get(pid)
+    await owner_or_403(request, project)
+    try:
+        role = validate_role(data.role)
+    except InvalidMembership as exc:
+        raise HttpError(422, str(exc))
+    member = await membership_repository.add_member(
+        project, data.subject, data.email, role
+    )
+    await sync_to_async(log_action)(
+        request, action="member_added", resource_type="project_member",
+        resource_id=data.subject, metadata={"projectPid": str(pid), "role": member["role"]})
+    return MemberOut(**member)
+
+
+@router.put("/{pid}/members/{subject}", response=MemberOut)
+async def set_project_member_role(request, pid: uuid.UUID, subject: str, data: MemberRoleIn):
+    project = await project_repository.get(pid)
+    await owner_or_403(request, project)
+    try:
+        wanted = validate_role(data.role)
+    except InvalidMembership as exc:
+        raise HttpError(422, str(exc))
+    if wanted != "owner":
+        await refuse_losing_last_owner(project, subject)
+    member = await membership_repository.add_member(project, subject, None, wanted)
+    await sync_to_async(log_action)(
+        request, action="member_role_changed", resource_type="project_member",
+        resource_id=subject, metadata={"projectPid": str(pid), "role": member["role"]})
+    return MemberOut(**member)
+
+
+@router.delete("/{pid}/members/{subject}", response={204: None})
+async def remove_project_member(request, pid: uuid.UUID, subject: str):
+    project = await project_repository.get(pid)
+    await owner_or_403(request, project)
+    await refuse_losing_last_owner(project, subject)
+    if not await membership_repository.remove_member(project, subject):
+        raise HttpError(404, f"{subject!r} is not in this project")
+    await sync_to_async(log_action)(
+        request, action="member_removed", resource_type="project_member",
+        resource_id=subject, metadata={"projectPid": str(pid)})
+    return 204, None
+
+
+@router.get("/{pid}/logs", response=dict)
+async def get_project_logs(request, pid: uuid.UUID):
+    """The project's ledger events, for any member of it. Same door as
+    /audit/project/{pid}, under the project route for the webapp."""
+    project = await project_repository.get(pid)
+    await role_or_404(request, project)
+    return {"events": clerk.list_events(limit=1000, project_id=str(pid))}
+
+
+@router.get("/{pid}/tasks", response=dict)
+async def get_project_tasks(request, pid: uuid.UUID):
+    """The celery tasks of this project's evaluations only. A member sees its
+    own project's tasks and nothing else."""
+    project = await project_repository.get(pid)
+    await role_or_404(request, project)
+    evaluations = await evaluation_repository.failed_or_active_for_project(project)
+    tasks = []
+    for evaluation in evaluations:
+        task_id = getattr(evaluation, "task", None)
+        state = await celery_service.get_evaluation_task_state(task_id)
+        if task_id is not None:
+            tasks.append({
+                "evaluation_pid": str(evaluation.pid),
+                "task_id": str(task_id),
+                "state": state,
+            })
+    return {"tasks": tasks}
 
 
 async def derive_datashape(source_dataset: AIComponent) -> dict:

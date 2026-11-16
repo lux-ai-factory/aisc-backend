@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -29,6 +29,7 @@ dependencies = [
     { name = "httpx" },
     { name = "immudb-py" },
     { name = "jsonschema" },
+    { name = "packaging" },
     { name = "pandas" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
@@ -52,6 +53,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "immudb-py", specifier = ">=1.5.0" },
     { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "packaging", specifier = ">=24.0" },
     { name = "pandas", specifier = ">=3.0.6" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pyarrow", specifier = ">=25.0.1" },

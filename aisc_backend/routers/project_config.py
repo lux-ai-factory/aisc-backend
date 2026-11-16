@@ -1,11 +1,15 @@
 import uuid
 
+from asgiref.sync import sync_to_async
 from ninja import Router
 from ninja.errors import HttpError
 
-from aisc_backend.models import ProjectConfig, ProjectConfigCategory
+from aisc_backend.audit.log import log_action
+from aisc_backend.models import AIComponentType, ProjectConfig, ProjectConfigCategory
+from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
+from aisc_backend.routers.project import derive_datashape
 from aisc_backend.schemas.project_config import (
     ProjectConfigInSchema,
     ProjectConfigOutSchema,
@@ -17,10 +21,21 @@ from aisc_backend.utils.encryption import encrypt_value
 router = Router(tags=["project settings"])
 project_config_repository = ProjectConfigRepository()
 project_repository = ProjectRepository()
+ai_component_repository = AIComponentRepository()
 
 
 def _masked(value: str) -> str:
     return value[:4] + "..." + value[-4:] if len(value) > 8 else "..." + value[-4:]
+
+
+@router.post("/{project_pid}/derive-features", response=dict)
+async def derive_features_from_dataset(request, project_pid: uuid.UUID, source_dataset_pid: uuid.UUID):
+    """Derive the data shape (features) from a dataset component so the UI can
+    show/preview it before the datashape component is created."""
+    source_dataset = await ai_component_repository.get(source_dataset_pid)
+    if source_dataset is None or source_dataset.component_type != AIComponentType.DATASET:
+        raise HttpError(400, "source_dataset_pid must reference a dataset component")
+    return await derive_datashape(source_dataset)
 
 
 @router.get("/{project_pid}", response=list[ProjectConfigOutSchema])
@@ -47,6 +62,10 @@ async def create_project_config(request, project_pid: uuid.UUID, data: ProjectCo
             json_value=data.json_value.model_dump() if data.json_value is not None else {},
         )
     )
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="project_config",
+        resource_id=str(project_config.pid), metadata={"projectPid": str(project_pid),
+                                                       "category": data.category, "key": key})
     return project_config
 
 
@@ -60,9 +79,9 @@ async def available_project_config(request, project_pid: uuid.UUID):
 
 @router.patch("/{project_pid}/{project_config_pid}", response=ProjectConfigOutSchema)
 async def update_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID, data: ProjectConfigUpdateSchema):
-    project_config = await project_config_repository.get(project_config_pid)
-    if project_config.project != project_pid:
-        raise HttpError(400, f"Project config not associated with project id")
+    project_config = await project_config_repository.get(
+        project_config_pid, project_pid=project_pid
+    )
     if data.name is not None:
         project_config.name = data.name
     if data.value is not None:
@@ -73,11 +92,19 @@ async def update_project_config(request, project_pid: uuid.UUID, project_config_
     if data.json_value is not None:
         project_config.json_value = data.json_value.model_dump()
     await project_config_repository.save(project_config)
+    await sync_to_async(log_action)(
+        request, action="update", resource_type="project_config",
+        resource_id=str(project_config_pid),
+        metadata={"projectPid": str(project_pid), "key": project_config.key})
     return project_config
 
 
 @router.delete("/{project_pid}/{project_config_pid}", response={204: None})
 async def delete_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID):
     project_config = await project_config_repository.get(project_config_pid)
+    await sync_to_async(log_action)(
+        request, action="delete", resource_type="project_config",
+        resource_id=str(project_config_pid),
+        metadata={"projectPid": str(project_pid), "key": project_config.key})
     await project_config_repository.delete(project_config)
     return 204, None

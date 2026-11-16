@@ -208,6 +208,16 @@ KEYCLOAK_ISSUER = env("KEYCLOAK_ISSUER", default="")
 # Where the realm publishes its public keys (used to verify token signatures).
 KEYCLOAK_JWKS_URL = env("KEYCLOAK_JWKS_URL", default="")
 
+# --- Keycloak Admin (read by services.keycloak_admin) ---
+# The backend talks to Keycloak's Admin REST API with a confidential
+# service-account client (never the browser, never a user's password). Empty
+# means the admin surface is off (the client methods fail closed / return
+# empty lists, like the other stub-able services). Made by scripts/secrets.sh.
+KEYCLOAK_ADMIN_URL = env("KEYCLOAK_ADMIN_URL", default="")
+KEYCLOAK_REALM = env("KEYCLOAK_REALM", default="aisc")
+KEYCLOAK_ADMIN_CLIENT_ID = env("KEYCLOAK_ADMIN_CLIENT_ID", default="aisc-backend-admin")
+KEYCLOAK_ADMIN_CLIENT_SECRET = env("KEYCLOAK_ADMIN_CLIENT_SECRET", default="")
+
 # --- Model listing TLS ---
 # Controls TLS certificate verification when listing models from an
 # OpenAI-compatible endpoint. Set to "False" to skip verification (allow
@@ -224,7 +234,31 @@ IMMUDB_PASSWORD = env("IMMUDB_PASSWORD", default=env("IMMUDB_ADMIN_PASSWORD", de
 # The dedicated audit database (separate from immudb's defaultdb).
 IMMUDB_DATABASE = env("IMMUDB_DATABASE", default="auditdb")
 
+# --- Service tokens (read by aisc_backend.auth.service_token) ---
+# The shared secret that accepts a service-to-service call at the backend's own
+# service door (an isolated app calling back), and the one the backend sends
+# when it calls an app's door. Made by scripts/secrets.sh. Empty = door closed.
+SERVICE_TOKEN = env("SERVICE_TOKEN", default="")
+SERVICE_TOKEN_FOR_APPS = env("SERVICE_TOKEN_FOR_APPS", default="")
 
+# --- Membership backfill (read by the bootstrap_membership command) ---
+# Comma-separated Keycloak subjects who own every existing project that has no
+# members yet (the single-tenant backfill; run once after upgrading to membership).
+PROJECT_BOOTSTRAP_OWNERS = env("PROJECT_BOOTSTRAP_OWNERS", default="")
+# --- Headless qualification service (read by services.qualification_service) ---
+# The isolated qualification compute service: answers in, AI card out. Empty
+# means the backend falls back to a deterministic summary card (dev/tests).
+QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
+# --- Headless report service (read by services.report_service) ---
+# The isolated report renderer: snapshot in, PDF/HTML out. Empty means the
+# backend falls back to a deterministic HTML summary (dev/tests).
+REPORT_SERVICE_URL = env("REPORT_SERVICE_URL", default="")
+# --- Controls catalogue (read by services.controls_catalogue) ---
+# The hosted checklist catalogue (AI Factory Sandbox Configurator API v1.1).
+# `manage.py sync_controls_catalogue` upserts its rows into the control tables;
+# the catalogue surface reads them like the old vendored seed.
+CONTROLS_CATALOG_URL = env("CONTROLS_CATALOG_URL",
+                           default="https://sandboxconfigurator.aifactory.lu/api/api")
 ## .env vars
 
 APP_NAME = env("APP_NAME","aisc-backend")
@@ -245,7 +279,12 @@ REDIS_BACKEND_URL = env("REDIS_BACKEND_URL","")
 CELERY_APP_NAME = env("CELERY_APP_NAME","celery_app")
 
 
-PLUGIN_PATH = env('PLUGIN_PATH', '')
+# Where plugins are discovered from (local disk). Defaults to the repo's
+# bundled def_plugins folder so the explore catalogue shows local packages
+# out of the box; PACKAGE_REGISTRY_* adds the public devpi catalogue.
+REPO_ROOT = BASE_DIR.parent.parent
+_DEFAULT_PLUGIN_PATH = str(REPO_ROOT / "def_plugins") if (REPO_ROOT / "def_plugins").is_dir() else ""
+PLUGIN_PATH = env('PLUGIN_PATH', _DEFAULT_PLUGIN_PATH)
 PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
 PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
 PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))

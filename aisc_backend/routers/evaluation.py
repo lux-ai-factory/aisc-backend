@@ -6,7 +6,7 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
-from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
+from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput, PluginConfig
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.metric import Metric
@@ -16,7 +16,7 @@ from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
-from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository
+from aisc_backend.repositories.plugin_repository import EvaluationPluginRepository, PluginRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.artifact import ArtifactOutSchema, ArtifactPreviewSchema
 from aisc_backend.schemas.evaluation import (
@@ -37,6 +37,7 @@ router = Router(tags=["evaluation"])
 
 evaluation_repository = EvaluationRepository()
 project_repository = ProjectRepository()
+plugin_repository = PluginRepository()
 ai_component_repository = BaseRepository(model=AIComponent)
 observation_repository = BaseRepository(model=Observation)
 measurement_repository = MeasurementRepository()
@@ -53,6 +54,8 @@ class EvaluationPluginInputInSchema(Schema):
 class EvaluationPluginInSchema(Schema):
     name: str
     inputs: list[EvaluationPluginInputInSchema] | None = None
+    # Optional config version to run; defaults to the plugin's current (latest) config
+    config_id: int | None = None
 
 
 class CreateEvaluationRequest(Schema):
@@ -73,12 +76,19 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             None,
         )
         if plugin:
-            if plugin.current_config is None:
+            if plugin.current_config is None and plugin_to_run.config_id is None:
                 raise HttpError(400, f"Plugin {plugin.name} has no current config")
+            if plugin_to_run.config_id is not None:
+                try:
+                    plugin_config = await plugin_repository.get_config(plugin, plugin_to_run.config_id)
+                except PluginConfig.DoesNotExist:
+                    raise HttpError(400, f"Plugin {plugin.name} config {plugin_to_run.config_id} not found")
+            else:
+                plugin_config = plugin.current_config
             plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
             selected_settings = [
                 mapping.project_config
-                async for mapping in plugin.current_config.setting_mappings.select_related("project_config").all()
+                async for mapping in plugin_config.setting_mappings.select_related("project_config").all()
             ]
             setting_errors = await validate_plugin_settings(
                 project, plugin.name, plugin_obj.project_config_definitions,
@@ -86,7 +96,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             )
             for key in validation_errors:
                 validation_errors[key].extend(setting_errors[key])
-            resolved.append((plugin_to_run, plugin.current_config))
+            resolved.append((plugin_to_run, plugin_config))
         else:
             raise HttpError(400, f"Plugin {plugin_to_run.name} is not enabled for this project")
 
