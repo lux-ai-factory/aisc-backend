@@ -512,11 +512,10 @@ async def create_evaluation_measures(
                 # one metric per name, also when two tests record the same name at once
                 metric, _ = await Metric.objects.aget_or_create(name=measure_in_schema.name)
 
-                # Save Measure associated with the Observation
-                measure_in_schema.observation = observation
-                measure_in_schema.metric = metric
-
-                fields = measure_in_schema.model_dump()
+                # Save Measure associated with the Observation (model objects never go into the schema's
+                # integer fields, which would warn at every measure)
+                fields = measure_in_schema.model_dump(exclude={"observation", "metric"})
+                fields.update(observation=observation, metric=metric)
                 # conversation text stays in the platform's trace: the measure keeps a reference to it
                 fields["dimensions"] = conversation_dimensions.referenced(fields.get("dimensions"),
                                                                           evaluation_plugin.pid)
