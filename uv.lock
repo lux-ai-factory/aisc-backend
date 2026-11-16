@@ -66,15 +66,17 @@ name = "aisc-identity"
 version = "0.1.0"
 source = { path = "vendor/aisc_identity-0.1.0-py3-none-any.whl" }
 dependencies = [
+    { name = "httpx" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
 wheels = [
-    { filename = "aisc_identity-0.1.0-py3-none-any.whl", hash = "sha256:93125fc8c7eea0e0bf4cad82f61a0ef7ef843d5e7c07a6400d3d994eda16a258" },
+    { filename = "aisc_identity-0.1.0-py3-none-any.whl", hash = "sha256:061f2bac65d52409fe282f60b90d1bf59cc4c9b2a04f81b5b48e5cc3b0c9048b" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.111" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dev'", specifier = ">=3.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8" },
