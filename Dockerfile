@@ -24,8 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --upgrade-package aisc-plugin-manager \
-        --no-dev
+    uv sync --frozen --no-dev
 
 # Collect static files (for Django admin)
 RUN uv run manage.py collectstatic --noinput
@@ -41,6 +40,10 @@ COPY . .
 # Copy installed virtualenv from builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/staticfiles /app/staticfiles
+
+# its own user: the code and the environment stay root's, readable, not writable
+RUN adduser -D -u 10010 -h /home/engine engine
+USER engine
 
 EXPOSE 8000
 
