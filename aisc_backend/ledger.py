@@ -34,6 +34,7 @@ import uuid
 from contextvars import ContextVar
 from urllib import error, request as urlrequest
 
+from aisc_identity import ledger_delivery
 from aisc_identity.switches import ledger_mode
 from asgiref.sync import async_to_sync, markcoroutinefunction, sync_to_async
 from django.db import connections, router, transaction
@@ -52,8 +53,8 @@ RUN_REQUESTED = "engine.evaluation.run_requested"
 CONFIGURED = "engine.plugin.configured"
 #: The platform's answers that refuse the event itself (no project, another event with this id, too
 #: big, malformed): it is kept with the status and never sent again. Any other answer is for the
-#: operator to fix, so the event waits for the next pass.
-REFUSALS = (404, 409, 413, 422)
+#: operator to fix, so the event waits for the next pass. The shared delivery loop's.
+REFUSALS = ledger_delivery.REFUSALS
 #: Postgres advisory lock of a delivery pass, per project database ("ldgr" in ASCII).
 _PASS_LOCK = 0x6C646772
 TIMEOUT = 5.0
@@ -199,13 +200,13 @@ def deliver(using: str, send, limit: int = 100) -> tuple[int, int]:
     try:
         connection = connections[using]
         if connection.vendor != "postgresql":
-            return _deliver(using, send, limit)
+            return _pass(using, send, limit)
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_try_advisory_lock(%s)", [_PASS_LOCK])
             if not cursor.fetchone()[0]:
                 return 0, 0
         try:
-            return _deliver(using, send, limit)
+            return _pass(using, send, limit)
         finally:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_unlock(%s)", [_PASS_LOCK])
@@ -222,27 +223,30 @@ def _process_lock(using: str) -> threading.Lock:
         return _locks.setdefault(using, threading.Lock())
 
 
-def _deliver(using: str, send, limit: int) -> tuple[int, int]:
+def _pass(using: str, send, limit: int) -> tuple[int, int]:
+    """One pass through the shared delivery loop (aisc_identity.ledger_delivery): (sent, not sent)."""
     from aisc_backend.models import LedgerOutbox
 
-    sent = failed = 0
-    queued = LedgerOutbox.objects.using(using).filter(delivered_at__isnull=True, refused__isnull=True)
-    for row in list(queued.order_by("id")[:limit]):
-        status = send(str(row.project_pid), _as_sent(row.event, row.queued_at))
-        if status is not None and 200 <= status < 300:
-            LedgerOutbox.mark(using, row.pk, delivered=True)
-            sent += 1
-            continue
-        failed += 1
-        if status in REFUSALS:
-            logger.error("ledger: the platform refused engine event %s (%s, status %s); kept, not sent again",
-                         row.event.get("event_id"), row.event.get("action"), status)
-            LedgerOutbox.mark(using, row.pk, delivered=False, refused=status)
-            continue
+    tried = []
+
+    def send_row(row):
+        tried.append(row)
+        return send(str(row.project_pid), _as_sent(row.event, row.queued_at)), ""
+
+    def refused(row, status, _text):
+        logger.error("ledger: the platform refused engine event %s (%s, status %s); kept, not sent again",
+                     row.event.get("event_id"), row.event.get("action"), status)
+        LedgerOutbox.mark(using, row.pk, delivered=False, refused=status)
+
+    def stopped(row, status):
         logger.warning("ledger: engine event %s not sent (%s); it and the later ones stay queued",
                        row.event.get("event_id"), "no answer" if status is None else f"status {status}")
-        break
-    return sent, failed
+
+    queued = LedgerOutbox.objects.using(using).filter(delivered_at__isnull=True, refused__isnull=True)
+    sent, _ = ledger_delivery.deliver(lambda n: list(queued.order_by("id")[:n]),
+                                      lambda row: LedgerOutbox.mark(using, row.pk, delivered=True),
+                                      refused, send_row, limit, stopped=stopped)
+    return sent, len(tried) - sent
 
 
 def _as_sent(event: dict, queued_at=None) -> dict:
@@ -295,15 +299,6 @@ def _post(url: str, body: bytes, headers: dict) -> _Reply:
         return _Reply(exc.code, exc.read())
 
 
-def _no_project(reply) -> bool:
-    """Whether a 404 is the platform's own "no project" answer, not a wrong address."""
-    try:
-        detail = json.loads(reply.body or b"{}").get("detail")
-    except (ValueError, AttributeError):
-        return False
-    return isinstance(detail, str) and detail.startswith("no project ")
-
-
 def http_sender(post=None):
     """A `send` for `deliver` that posts to the platform's internal ledger route.
 
@@ -317,15 +312,25 @@ def http_sender(post=None):
         if not base or not token:
             logger.warning("ledger: PLATFORM_URL or PLATFORM_LEDGER_ENGINE_TOKEN is not set; engine events stay queued")
             return None
+        url = base + ledger_delivery.EVENTS_PATH.format(pid=pid)
         try:
-            reply = post(f"{base}/internal/projects/{pid}/ledger/events", json.dumps(event).encode("utf-8"),
-                         {"Content-Type": "application/json", "X-AISC-Service-Token": token})
-        except Exception as exc:  # noqa: BLE001 - the platform is down, or the URL is wrong
-            logger.warning("ledger: the platform can't be reached (%s); engine events stay queued",
-                           type(exc).__name__)
+            # one try: an event the platform did not answer waits for the next pass
+            status, body = ledger_delivery.http_sender(url, token, timeout=TIMEOUT, retries=(), post=_raw(post))(event)
+        except Exception as exc:  # noqa: BLE001 - the URL is wrong, or the answer garbled
+            status, body = None, type(exc).__name__
+        if status is None:
+            logger.warning("ledger: the platform can't be reached (%s); engine events stay queued", body)
             return None
-        if reply.status == 404 and not _no_project(reply):
+        if status == 404 and not ledger_delivery.no_project(body):
             logger.warning("ledger: %s answered 404 without naming the project; check PLATFORM_URL", base)
             return None
-        return reply.status
+        return status
     return send
+
+
+def _raw(post):
+    """The shared sender's post(url, json, headers, timeout) over this module's post(url, body, headers)."""
+    def shared_post(url, event, headers, _timeout):
+        reply = post(url, json.dumps(event).encode("utf-8"), headers)
+        return reply.status, reply.body
+    return shared_post
