@@ -93,7 +93,7 @@ dependencies = [
     { name = "rich" },
 ]
 wheels = [
-    { filename = "aisc_plugin_interface-0.5.0-py3-none-any.whl", hash = "sha256:704da20a23ab14efbba6d59435c849b013a2201c8de8fb9c536fa82063416b0d" },
+    { filename = "aisc_plugin_interface-0.5.0-py3-none-any.whl", hash = "sha256:d0255595ae718e47049ff1816ea5f9326752e6332c3bc5c37e47372e35b99c8c" },
 ]
 
 [package.metadata]
