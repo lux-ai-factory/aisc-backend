@@ -66,15 +66,17 @@ name = "aisc-identity"
 version = "0.1.0"
 source = { path = "vendor/aisc_identity-0.1.0-py3-none-any.whl" }
 dependencies = [
+    { name = "httpx" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
 wheels = [
-    { filename = "aisc_identity-0.1.0-py3-none-any.whl", hash = "sha256:aa44bc67ebaf626c08294a84b646654b477bc71ae9d8550f6fd2740b73e40a86" },
+    { filename = "aisc_identity-0.1.0-py3-none-any.whl", hash = "sha256:17073d4ebbecdffb8184fa26d9c9189ee2fd737dbb3e33094ae1f634bf2c3a8e" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.111" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dev'", specifier = ">=3.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8" },
@@ -91,7 +93,7 @@ dependencies = [
     { name = "rich" },
 ]
 wheels = [
-    { filename = "aisc_plugin_interface-0.5.0-py3-none-any.whl", hash = "sha256:704da20a23ab14efbba6d59435c849b013a2201c8de8fb9c536fa82063416b0d" },
+    { filename = "aisc_plugin_interface-0.5.0-py3-none-any.whl", hash = "sha256:d0255595ae718e47049ff1816ea5f9326752e6332c3bc5c37e47372e35b99c8c" },
 ]
 
 [package.metadata]

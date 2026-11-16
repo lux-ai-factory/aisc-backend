@@ -245,7 +245,9 @@ class MoreTextShapes(SimpleTestCase):
     def test_the_rule_says_what_it_does_not_catch(self):
         from pathlib import Path
 
-        source = Path(rules().__file__).read_text()
+        import aisc_redact  # where the rule, and what it says of itself, now live
+
+        source = Path(aisc_redact.__file__).read_text()
         self.assertIn("base64", source)
         self.assertRegex(source, r"(split|broken) across lines")
 
