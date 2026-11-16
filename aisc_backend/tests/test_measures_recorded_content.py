@@ -6,6 +6,7 @@ many parts there are, so the ledger alone shows that none is missing."""
 import json
 import math
 
+from aisc_backend.conversation_dimensions import referenced
 from aisc_backend.routers import internal
 from aisc_backend.tests.run_ledger_support import RunRecording, canonical_sha256, events_of
 
@@ -42,8 +43,9 @@ class MeasuresRecordedContent(RunRecording):
                                         "dimensions": {"response": "the system's own words"}}])
         self.assertTrue(recorded.get("content"), "the event carries no measures")
         self.assertNotIn("the system's own words", json.dumps(recorded))
-        self.assertEqual(recorded["content"][0]["dimensions_sha256"],
-                         canonical_sha256({"response": "the system's own words"}))
+        # the hash of the dimensions as stored: the answer replaced by its reference to the recorded call
+        stored = referenced({"response": "the system's own words"}, self.evaluation_plugin.pid)
+        self.assertEqual(recorded["content"][0]["dimensions_sha256"], canonical_sha256(stored))
 
     def test_non_finite_scores_are_recorded_as_strings(self):
         content_of = getattr(internal, "measures_content", None)

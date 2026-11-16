@@ -35,6 +35,9 @@ class Evaluation(CreatedAtModel):
     # retried request) answers with this run instead of making a second one. Null for a launch sent without one.
     launch_key = models.CharField(max_length=128, null=True, blank=True, unique=True, default=None)
 
+    # When an owner's purge removed this run's measures, observations and artifacts; the row itself stays.
+    purged_at = models.DateTimeField(null=True, blank=True, default=None)
+
     def get_observations(self) -> list[Observation]:
         return list(self.observations.all())
 

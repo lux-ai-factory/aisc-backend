@@ -21,8 +21,14 @@ def actor_of(request) -> str:
 
 
 def source_ip_of(request) -> str | None:
-    """WHERE FROM: the client IP, honouring a proxy's X-Forwarded-For (first hop) when present."""
+    """WHERE FROM: the person's address as the gateway saw it (X-Real-IP, which Caddy sets), else a proxy's
+    X-Forwarded-For (first hop), else the connection's. None for a call on the internal routes: the stack's own
+    service made it, so no person was anywhere."""
+    if "/internal/" in (getattr(request, "path", "") or ""):
+        return None
     meta = getattr(request, "META", {}) or {}
+    if meta.get("HTTP_X_REAL_IP"):
+        return meta["HTTP_X_REAL_IP"].strip()
     xff = meta.get("HTTP_X_FORWARDED_FOR")
     if xff:
         return xff.split(",")[0].strip()

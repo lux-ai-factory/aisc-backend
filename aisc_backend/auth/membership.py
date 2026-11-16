@@ -20,6 +20,7 @@ from aisc_identity.caller import IdentityMissing, caller_from_claims
 from django.db import DEFAULT_DB_ALIAS, connections
 from ninja.errors import HttpError
 
+from aisc_backend import conversation_artifacts
 from aisc_backend.auth import keycloak
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,16 @@ def require(request, platform_project_id, needed: str = "viewer") -> str | None:
 # Everything else behind the door is a row of the admitted project's database.
 
 
-def _require_owner(request, project) -> str | None:
+def may(request, platform_project_id, needed: str) -> bool:
+    """Whether the caller has at least that role in the project (always, with membership not checked)."""
+    try:
+        require(request, platform_project_id, needed)
+    except HttpError:
+        return False
+    return True
+
+
+def _require_owner(request, project, needed: str = "viewer") -> str | None:
     """Membership of the project a row belongs to.
 
     A row with no project belongs to nobody: nobody reaches it, an admin
@@ -110,7 +120,7 @@ def _require_owner(request, project) -> str | None:
         return None
     if project is None:
         raise HttpError(404, "no such thing")
-    return require(request, project.platform_project_id)
+    return require(request, project.platform_project_id, needed)
 
 
 def for_stored_file(request, container, file_name: str) -> str | None:
@@ -138,7 +148,8 @@ def for_stored_file(request, container, file_name: str) -> str | None:
         .first()
     )
     evaluation = getattr(getattr(artifact, "evaluation_plugin", None), "evaluation", None)
-    return _require_owner(request, getattr(evaluation, "project", None))
+    # one that holds a conversation reaches owners and editors only
+    return _require_owner(request, getattr(evaluation, "project", None), conversation_artifacts.needed_role(artifact))
 
 
 def for_task(request, task_pid) -> str | None:

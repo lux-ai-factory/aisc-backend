@@ -40,7 +40,8 @@ internal_client = TestAsyncClient(internal_router)
 INTERNAL_SECRET = "test-internal-secret"
 INTERNAL_HEADERS = {"X-Internal-Secret": INTERNAL_SECRET}
 
-TOP_LEVEL_KEYS = {"id", "pid", "created_at", "status", "project", "task", "system_id", "evaluation_plugins"}
+TOP_LEVEL_KEYS = {"id", "pid", "created_at", "status", "project", "task", "system_id", "purged_at",
+                  "evaluation_plugins"}
 PROJECT_KEYS = {"name", "pid"}
 EVALUATION_PLUGIN_KEYS = {
     "id", "pid", "created_at", "description", "display_name", "error_message", "evaluation",
