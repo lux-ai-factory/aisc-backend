@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aisc_identity.canonical import sha256_of
 
-from aisc_backend import conversation_artifacts, ledger, plugin_declarations
+from aisc_backend import conversation_artifacts, conversation_dimensions, ledger, plugin_declarations
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_backend.config_secrets import scrub_text
@@ -516,7 +516,11 @@ async def create_evaluation_measures(
                 measure_in_schema.observation = observation
                 measure_in_schema.metric = metric
 
-                measurement_objs.append(Measurement(**measure_in_schema.model_dump()))
+                fields = measure_in_schema.model_dump()
+                # conversation text stays in the platform's trace: the measure keeps a reference to it
+                fields["dimensions"] = conversation_dimensions.referenced(fields.get("dimensions"),
+                                                                          evaluation_plugin.pid)
+                measurement_objs.append(Measurement(**fields))
 
             if measurement_objs:
                 await measurement_repository.bulk_create(measurement_objs)
