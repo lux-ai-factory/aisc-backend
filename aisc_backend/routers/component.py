@@ -125,6 +125,9 @@ async def delete_component(request, component_pid: uuid.UUID):
                 metadata={"name": component.name, "evaluations": used_by})
         return 200, {"retired": True, "evaluations": used_by}
     await ai_component_repository.delete(component)
+    if component.data and component.storage_container:
+        # once the row is gone nothing names the file: it goes too (a refusal is logged, the delete stands)
+        await sync_to_async(file_repository.remove_object)(component.storage_container, component.data)
     await sync_to_async(log_action)(
         request, action="delete", resource_type="component", resource_id=str(component_pid),
         metadata={"name": component.name, "component_type": component.component_type})

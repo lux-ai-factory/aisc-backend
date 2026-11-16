@@ -67,3 +67,15 @@ async def get_s3_file_stream(bucket_name: str, file_name: str) -> StreamingHttpR
         raise
     except Exception as e:
         raise HttpError(500, f"Error fetching file from {bucket_name}: {str(e)}")
+
+def remove_object(bucket_name: str, object_name: str) -> bool:
+    """Remove one stored file. Never raises: a file the store refuses to remove is named in the log at
+    WARNING, so it can be removed by hand, and False comes back."""
+    try:
+        _get_s3_client().delete_object(Bucket=bucket_name, Key=object_name)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "the stored file %s/%s could not be removed; it is named by no row now, remove it by hand",
+            bucket_name, object_name, exc_info=True)
+        return False
+    return True
