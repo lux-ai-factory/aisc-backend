@@ -80,6 +80,11 @@ class UpstreamTableNames(TestCase):
             "0033_evaluation_launch_key",
             "0034_plugin_manifest_and_pins",
             "0035_run_code_identity",
+            "0036_run_purge",
+            "0037_stored_objects",
+            "0038_runs_finished_before",
+            "0039_artifact_holds_conversation",
+            "0040_measurement_dimensions_referenced",
         ])
 
 

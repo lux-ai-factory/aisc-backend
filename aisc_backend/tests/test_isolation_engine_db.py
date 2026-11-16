@@ -532,7 +532,8 @@ class WhatTheLiveShapePredates(unittest.TestCase):
                                            "0026_observation_evaluation_plugin", "0027_component_retired_at",
                                            "0030_settings_are_kept", "0031_component_file_hash",
                                            "0032_measures_recorded_once", "0033_evaluation_launch_key",
-                                           "0034_plugin_manifest_and_pins", "0035_run_code_identity"})
+                                           "0034_plugin_manifest_and_pins", "0035_run_code_identity",
+                                           "0036_run_purge", "0039_artifact_holds_conversation"})
         for migration in migrations:
             with self.subTest(migration=migration):
                 self.assertTrue((BACKEND / "aisc_backend" / "migrations" / f"{migration}.py").is_file())
