@@ -14,6 +14,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend import ledger, platform_helpers, plugin_declarations
+from aisc_backend.auth import membership
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -558,14 +559,23 @@ async def get_evaluation_artifacts(
     response: list[ArtifactOutSchema] = []
 
     artifacts = evaluation_plugin.get_artifacts()
+    # a conversation's content is shown to owners and editors only; a viewer sees that it is there
+    may_read_conversations = None
     for artifact in artifacts:
         path = Path(artifact.data)
         suffix = path.suffix.lower()
 
+        if artifact.holds_conversation and may_read_conversations is None:
+            may_read_conversations = await sync_to_async(
+                lambda: membership.may(request, evaluation.project.platform_project_id, "editor"))()
         try:
+            if artifact.holds_conversation and not may_read_conversations:
+                raise PermissionError("a viewer is not shown a conversation")
             body = file_repository.get_object(StorageContainer.Artifacts, artifact.data)["Body"]
             head = body.read(PREVIEW_BYTES + 1)
             preview_data = preview_of(suffix, head[:PREVIEW_BYTES], len(head) > PREVIEW_BYTES)
+        except PermissionError:
+            preview_data = None
         except Exception as exc:
             # one artifact that cannot be read leaves the others listed: it shows no preview, and can still
             # be downloaded once the store answers

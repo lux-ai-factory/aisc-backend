@@ -9,6 +9,9 @@ class Artifact(HasData):
         related_name="artifacts",
         on_delete=models.PROTECT
     )
+    # it holds a conversation with the system under test: only the project's owners and editors open it
+    # (conversation_artifacts.py)
+    holds_conversation = models.BooleanField(default=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

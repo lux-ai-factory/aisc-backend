@@ -14,4 +14,4 @@ class ArtifactOutSchema(ModelSchema):
 
     class Meta:
         model = Artifact
-        fields = ["name", "data"]
+        fields = ["name", "data", "holds_conversation"]
