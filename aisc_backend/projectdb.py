@@ -38,6 +38,12 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import DEFAULT_DB_ALIAS, OperationalError, connections
 
+# NotAPid (a ValueError): what should name a project is not a pid. The shared class, so the door catches the
+# shared rule's refusals too.
+from aisc_identity.projectdb import NotAPid
+from aisc_identity.projectdb import database_name as shared_database_name
+from aisc_identity.projectdb import pid_of as shared_pid_of
+
 PID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 DATABASE = re.compile(r"^project_[0-9a-f]{32}$")
 
@@ -45,10 +51,6 @@ DATABASE = re.compile(r"^project_[0-9a-f]{32}$")
 admitted: ContextVar[str | None] = ContextVar("aisc_admitted_alias", default=None)
 #: The platform pid admitted for the current request (read by the door).
 admitted_pid: ContextVar[str | None] = ContextVar("aisc_admitted_pid", default=None)
-
-
-class NotAPid(ValueError):
-    """What should name a project is not a pid."""
 
 
 class NoProjectAdmitted(RuntimeError):
@@ -194,16 +196,16 @@ def ticket_is_valid(platform_pid, evaluation_pid, ticket) -> bool:
 
 
 def database_name(pid) -> str:
-    """`project_` + the lower-case pid without hyphens."""
-    return "project_" + normalise(pid).replace("-", "")
+    """`project_` + the lower-case pid without hyphens, by the shared rule."""
+    return shared_database_name(normalise(pid))
 
 
 def pid_of(database: str) -> str:
-    """The platform pid a project database is named after."""
-    if not DATABASE.match(database or ""):
+    """The platform pid a project database is named after, by the shared rule; NotAPid for any other name."""
+    pid = shared_pid_of(database)
+    if pid is None:
         raise NotAPid("not a project database name")
-    h = database[len("project_"):]
-    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+    return pid
 
 
 def _replace_settings(new: dict) -> None:
