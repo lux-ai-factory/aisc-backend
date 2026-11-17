@@ -208,6 +208,34 @@ class ObjectiveSetOut(Schema):
     versions: list[ObjectiveSetVersionOut] = []
 
 
+class ObjectiveSetFieldChangeOut(Schema):
+    """One field of one row that differs between two versions."""
+
+    field: str
+    before: str = ""
+    after: str = ""
+
+
+class ObjectiveSetChangedRowOut(Schema):
+    objective_id: str
+    fields: list[ObjectiveSetFieldChangeOut] = []
+
+
+class ObjectiveSetDiffOut(Schema):
+    """What changed between two versions of a set (a published one, or the draft).
+
+    `from_version` / `to_version` are version numbers, or null when that side is
+    the draft (the draft has no number: it is what the next publish would freeze).
+    """
+
+    from_version: int | None = None
+    to_version: int | None = None
+    added: list[str] = []
+    removed: list[str] = []
+    changed: list[ObjectiveSetChangedRowOut] = []
+    unchanged: list[str] = []
+
+
 class ObjectiveSetApplyIn(Schema):
     """Apply a published version to the project: its rows become local objectives."""
 

@@ -105,9 +105,44 @@ class ToolResultOut(Schema):
     last_run: str | None = None
     local: bool = False
     local_runs: int = 0
+    #: observations recorded for this tool's runs (an all-local evaluation's are left out)
+    observations: int = 0
     helpers: list[ToolHelperOut] = []
     connections: list[ToolConnectionOut] = []
     dashboard_url: str | None = None
+
+
+class DashboardLinkOut(Schema):
+    """The scoped dashboard link: what it is about, and whether it is authenticated.
+
+    `url` is present only when it is signed (`RESULTS_DASHBOARD_SECRET`), so
+    `authenticated` says why a page has no link to show.
+    """
+
+    url: str | None = None
+    authenticated: bool = False
+    #: whether a bridge URL *and* token are configured, so the dashboard can be told
+    bridge_configured: bool = False
+    scope: dict = {}
+
+
+class ChartMetricOut(Schema):
+    """One metric over the scoped runs: the visualizer's own aggregate, chart-shaped."""
+
+    metric: str
+    unit: str = ""
+    count: int = 0
+    min_score: float | None = None
+    max_score: float | None = None
+    avg_score: float | None = None
+
+
+class ChartScopeOut(Schema):
+    version: int | None = None
+    target: str | None = None
+    evaluations: int = 0
+    #: all-local evaluations left out of the charts (not assessment record)
+    local_models_left_out: int = 0
 
 
 class GreyedToolOut(Schema):
@@ -121,5 +156,8 @@ class ProjectResultsOut(Schema):
     version: ResultsVersion | None = None
     target: str | None = None
     dashboards_url: str | None = None
+    dashboard: DashboardLinkOut = DashboardLinkOut()
     tools: list[ToolResultOut] = []
     greyed: list[GreyedToolOut] = []
+    charts: list[ChartMetricOut] = []
+    chart_scope: ChartScopeOut = ChartScopeOut()

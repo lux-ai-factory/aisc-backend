@@ -277,6 +277,20 @@ APP_CATALOG_URL = env("APP_CATALOG_URL",
 # the results page shows the scoped run summary with no chart link. The bridge
 # only builds links — it never queries a third-party table or a second DB.
 RESULTS_DASHBOARD_URL = env("RESULTS_DASHBOARD_URL", default="")
+# The key the bridge signs its links with (`services.dashboard_link`). The link
+# carries the project/version/tool scope and an expiry, so the dashboard — or the
+# proxy in front of it — can verify who it is for and refuse a stale or edited
+# one. Empty means no link is minted at all: an unauthenticated link to a
+# dashboard that holds every project's data is worse than no link.
+RESULTS_DASHBOARD_SECRET = env("RESULTS_DASHBOARD_SECRET", default="")
+#: How long a minted link stays valid, in seconds.
+RESULTS_DASHBOARD_LINK_TTL = env.int("RESULTS_DASHBOARD_LINK_TTL", default=900)
+# The dashboard's own bridge API (the pilot's `dashboard_bridge`): the platform
+# tells Superset which projects exist, with a shared token, and the dashboard
+# refuses every call when the token is empty. Empty URL or token closes our side
+# too — we never call it without a token.
+RESULTS_DASHBOARD_BRIDGE_URL = env("RESULTS_DASHBOARD_BRIDGE_URL", default="")
+RESULTS_DASHBOARD_BRIDGE_TOKEN = env("RESULTS_DASHBOARD_BRIDGE_TOKEN", default="")
 # --- The risk mapper's model (read by services.risk_mapper) ---
 # "Suggest with AI" on step 2. The project's own helper model (Manage > AI
 # assistants) wins; this stack setting is the fallback. With neither set the

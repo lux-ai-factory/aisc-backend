@@ -1,9 +1,11 @@
 """
 Router tests for scoped results and the dashboard bridge (ANA-01).
 
-A stranger gets 404; the selected AI-card version scopes the run counts; a
-locally served model's run stays distinct; the dashboard links are built only
-when a base URL is configured, and they carry the project/version/tool scope.
+A stranger gets 404; the selected AI-card version scopes the run counts; two
+projects never see each other's runs; a locally served model's run stays distinct;
+the charts are the visualizer's own aggregate over the scoped runs; and the
+dashboard links are *signed and scoped* — built only when a base URL and a key are
+configured, and verifiable for exactly one project, version and tool.
 """
 from datetime import timedelta
 
@@ -18,7 +20,12 @@ from aisc_backend.models.plugin import EvaluationInput, Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.models.qualification import System, SystemVersion
+from aisc_backend.models.measure import Measurement
+from aisc_backend.models.metric import Metric
+from aisc_backend.models.observation import Observation
+from aisc_backend.routers.project import router as project_router
 from aisc_backend.routers.results import router as results_router
+from aisc_backend.services import dashboard_link
 
 client = TestAsyncClient(results_router)
 
@@ -75,6 +82,22 @@ async def _run(project, plugin, *, when, status="Done", component=None, local=Fa
             adapter_version="1", model="gpt-4o-mini",
         )
     return evaluation, run
+
+
+async def _measurements(evaluation, metric_name, scores):
+    """Real observations and measurements for an evaluation, as the engine writes them."""
+    observation = await Observation.objects.acreate(
+        observer="engine", tool="aisc-plugin-fairness::fairness (v1.0)", evaluation=evaluation
+    )
+    metric = await Metric.objects.acreate(
+        name=metric_name, description="", type_spec="float"
+    )
+    for index, score in enumerate(scores):
+        await Measurement.objects.acreate(
+            observation=observation, metric=metric, unit="ratio",
+            time=timezone.now() + timedelta(seconds=index), score=score,
+        )
+    return observation
 
 
 async def _versions(project):
@@ -187,7 +210,19 @@ class ResultsRouterTest(TestCase):
         body = (await client.get(f"/{project.pid}/results")).json()
         self.assertIsNone(body["dashboards_url"])
 
-    @override_settings(RESULTS_DASHBOARD_URL="https://superset.example/dashboard")
+    @override_settings(RESULTS_DASHBOARD_URL="https://superset.example/dashboard",
+                       RESULTS_DASHBOARD_SECRET="")
+    async def test_no_link_without_a_key_even_with_a_base_url(self):
+        """An unsigned link to a dashboard holding every project's data is not shipped."""
+        project = await _project()
+        await _versions(project)
+        body = (await client.get(f"/{project.pid}/results")).json()
+        self.assertIsNone(body["dashboards_url"])
+        self.assertFalse(body["dashboard"]["authenticated"])
+        self.assertEqual(body["dashboard"]["scope"]["project"], str(project.pid))
+
+    @override_settings(RESULTS_DASHBOARD_URL="https://superset.example/dashboard",
+                       RESULTS_DASHBOARD_SECRET="link-key")
     async def test_dashboard_links_carry_project_version_and_tool_scope(self):
         project = await _project()
         _system, v1, _v2 = await _versions(project)
@@ -204,3 +239,104 @@ class ResultsRouterTest(TestCase):
         self.assertIn("version=1", body["dashboards_url"])
         self.assertIn(f"target={component.pid}", body["dashboards_url"])
         self.assertIn("tool=fairness", body["tools"][0]["dashboard_url"])
+
+        # authenticated: the link verifies for exactly this scope
+        scope, refusal = dashboard_link.verify_link(
+            body["dashboards_url"], project=str(project.pid), key="link-key"
+        )
+        self.assertIsNone(refusal)
+        self.assertEqual(scope["version"], "1")
+        self.assertEqual(scope["target"], str(component.pid))
+        self.assertIsNone(scope["tool"])
+        self.assertTrue(body["dashboard"]["authenticated"])
+        tool_scope, tool_refusal = dashboard_link.verify_link(
+            body["tools"][0]["dashboard_url"], project=str(project.pid), key="link-key"
+        )
+        self.assertIsNone(tool_refusal)
+        self.assertEqual(tool_scope["tool"], "fairness")
+
+        # ... and for no other project
+        other, refusal = dashboard_link.verify_link(
+            body["dashboards_url"], project="00000000-0000-0000-0000-000000000000",
+            key="link-key",
+        )
+        self.assertIsNone(other)
+        self.assertEqual(refusal, dashboard_link.WRONG_PROJECT)
+
+    @override_settings(RESULTS_DASHBOARD_URL="https://superset.example/dashboard",
+                       RESULTS_DASHBOARD_SECRET="link-key")
+    async def test_two_projects_never_see_each_other(self):
+        first = await _project("isolation-a")
+        second = await _project("isolation-b")
+        await _versions(first)
+        await _versions(second)
+        now = timezone.now()
+        a_plugin = await _plugin(first, "fairness")
+        b_plugin = await _plugin(second, "robustness")
+        await _run(first, a_plugin, when=now, status="Done", component=await _component(first))
+        await _run(second, b_plugin, when=now, status="Done", component=await _component(second))
+
+        a_body = (await client.get(f"/{first.pid}/results")).json()
+        b_body = (await client.get(f"/{second.pid}/results")).json()
+        self.assertEqual([t["plugin_name"] for t in a_body["tools"]], ["fairness"])
+        self.assertEqual([t["plugin_name"] for t in b_body["tools"]], ["robustness"])
+
+        # a project the caller is not in is not theirs to read
+        third = await _project("isolation-c", member=False)
+        stranger = await client.get(f"/{third.pid}/results")
+        self.assertEqual(stranger.status_code, 404)
+
+        # and a link minted for one project does not verify for the other
+        scope, refusal = dashboard_link.verify_link(
+            a_body["dashboards_url"], project=str(second.pid), key="link-key"
+        )
+        self.assertIsNone(scope)
+        self.assertEqual(refusal, dashboard_link.WRONG_PROJECT)
+        self.assertNotEqual(a_body["dashboard"]["scope"]["project"],
+                            b_body["dashboard"]["scope"]["project"])
+
+    @override_settings(RESULTS_DASHBOARD_URL="https://superset.example/dashboard",
+                       RESULTS_DASHBOARD_SECRET="link-key")
+    async def test_charts_are_the_visualizer_aggregate_over_the_scoped_runs(self):
+        """The results page's charts and the visualizer read the same rows."""
+        project = await _project("charts")
+        _system, v1, _v2 = await _versions(project)
+        now = timezone.now()
+        used = await _plugin(project, "fairness")
+        component = await _component(project)
+        evaluation, _run_row = await _run(
+            project, used, when=now, status="Done", component=component
+        )
+        _evaluation, local_row = await _run(
+            project, used, when=now, status="Done", component=component, local=True
+        )
+        await _measurements(evaluation, "accuracy", [0.4, 0.6])
+        await _measurements(local_row.evaluation, "accuracy", [0.99])
+
+        body = (await client.get(f"/{project.pid}/results")).json()
+        self.assertEqual([c["metric"] for c in body["charts"]], ["accuracy"])
+        chart = body["charts"][0]
+        self.assertEqual(chart["count"], 2)
+        self.assertAlmostEqual(chart["avg_score"], 0.5, places=6)
+        self.assertAlmostEqual(chart["min_score"], 0.4, places=6)
+        self.assertAlmostEqual(chart["max_score"], 0.6, places=6)
+        # the local-model run's observations and measurements are left out
+        self.assertEqual(body["tools"][0]["observations"], 1)
+        self.assertEqual(body["chart_scope"]["evaluations"], 1)
+        self.assertEqual(body["chart_scope"]["local_models_left_out"], 1)
+
+        # the visualizer's own aggregate over the same rows agrees: one row per
+        # observation, the assessment one matching the chart and the local one
+        # being exactly the figure the chart leaves out
+        aggregate = await TestAsyncClient(project_router).post(
+            f"/{project.pid}/measurements/aggregate",
+            json={"group_by": [], "aggregations": ["count", "min_score", "max_score", "avg_score"]},
+        )
+        self.assertEqual(aggregate.status_code, 200)
+        rows = sorted(aggregate.json()["results"], key=lambda r: r["count"])
+        self.assertEqual([r["count"] for r in rows], [1, 2])
+        self.assertAlmostEqual(rows[0]["avg_score"], 0.99, places=6)
+        self.assertEqual(rows[1]["count"], chart["count"])
+        self.assertAlmostEqual(rows[1]["avg_score"], chart["avg_score"], places=6)
+        self.assertAlmostEqual(rows[1]["min_score"], chart["min_score"], places=6)
+        self.assertAlmostEqual(rows[1]["max_score"], chart["max_score"], places=6)

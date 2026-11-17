@@ -84,5 +84,35 @@ class MeasurementRepository(BaseRepository[Measurement]):
 
         return [item async for item in queryset]
 
+    async def metric_summary(self, base_queryset) -> List[Dict[str, Any]]:
+        """One row per metric: how many measurements, and their mean/least/most score.
+
+        The chart-shaped view of the same rows `aggregate_measurements` groups by
+        observation or dimension — used by the scoped results page, so its charts
+        and the visualizer's aggregates are two readings of one query, not two
+        code paths.
+        """
+        rows = (
+            base_queryset.values("metric__name", "unit")
+            .annotate(
+                count=Count("id"),
+                min_score=Min("score"),
+                max_score=Max("score"),
+                avg_score=Avg("score"),
+            )
+            .order_by("metric__name")
+        )
+        return [
+            {
+                "metric": row["metric__name"],
+                "unit": row["unit"] or "",
+                "count": row["count"],
+                "min_score": row["min_score"],
+                "max_score": row["max_score"],
+                "avg_score": row["avg_score"],
+            }
+            async for row in rows
+        ]
+
     async def bulk_create(self, instances: list[Measurement]) -> list[Measurement]:
         return await Measurement.objects.abulk_create(instances)

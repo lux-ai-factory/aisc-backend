@@ -41,6 +41,7 @@ from aisc_backend.schemas.control_objective import (
     ObjectiveRatingsIn,
     ObjectiveSetApplyIn,
     ObjectiveSetApplyOut,
+    ObjectiveSetDiffOut,
     ObjectiveSetIn,
     ObjectiveSetOut,
     ObjectiveSetRowIn,
@@ -53,6 +54,7 @@ from aisc_backend.schemas.control_objective import (
 )
 from aisc_backend.services import control_objectives as priorities
 from aisc_backend.services import objective_profiles, risk_mapper
+from aisc_backend.services.objective_sets import diff_rows
 
 router = Router(tags=["control-objectives"])
 
@@ -839,6 +841,37 @@ async def update_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID, data
         resource_id=str(row.pid),
         metadata={"projectPid": str(pid), "name": row.name, "draft": len(row.draft)})
     return await _set_out(row)
+
+
+@router.get("/{pid}/objective-sets/{set_pid}/diff", response=ObjectiveSetDiffOut)
+async def diff_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID,
+                             from_version: int | None = None, to_version: int | None = None):
+    """Compare two versions of a set, **by default the published one with the draft**.
+
+    That pair is the question a person editing a set is actually asking ("what am
+    I about to change it into?"). `from_version`/`to_version` name published
+    versions to compare instead; either side omitted falls back to the default
+    pair, so a version number is never inferred silently.
+    """
+    _project, row = await _set_for(request, pid, set_pid)
+    rows = {
+        v.number: (v.objectives or [])
+        async for v in ObjectiveSetVersion.objects.filter(objective_set=row)
+    }
+    if from_version is not None and from_version not in rows:
+        raise HttpError(404, f"version {from_version} is not published")
+    if to_version is not None and to_version not in rows:
+        raise HttpError(404, f"version {to_version} is not published")
+
+    head = row.published_version
+    before_number = from_version if from_version is not None else head
+    after_number = to_version if to_version is not None else None
+    before = rows.get(before_number, []) if before_number is not None else []
+    after = rows[after_number] if after_number is not None else (row.draft or [])
+    result = diff_rows(before, after)
+    return ObjectiveSetDiffOut(
+        from_version=before_number, to_version=after_number, **result
+    )
 
 
 @router.post("/{pid}/objective-sets/{set_pid}/publish", response=ObjectiveSetOut)

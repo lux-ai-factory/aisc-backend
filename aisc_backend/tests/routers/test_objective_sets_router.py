@@ -211,3 +211,70 @@ class ObjectiveSetsRouterTest(TestCase):
         body = await _create(first)
         resp = await co_client.get(f"/{second.pid}/objective-sets/{body['pid']}")
         self.assertEqual(resp.status_code, 404)
+
+
+class ObjectiveSetDiffRouterTest(TestCase):
+    """The history view: what changed between a published version and the draft."""
+
+    async def test_the_default_comparison_is_the_published_version_against_the_draft(self):
+        project = await _project("sets-diff")
+        body = await _create(project)
+        await co_client.post(f"/{project.pid}/objective-sets/{body['pid']}/publish")
+
+        # reword CX-1, drop CX-2, add CX-3 in the draft
+        draft = [
+            dict(DRAFT[0], text="Keep a signed model card"),
+            {"objective_id": "CX-3", "text": "Review annually"},
+        ]
+        await co_client.put(
+            f"/{project.pid}/objective-sets/{body['pid']}",
+            json={"name": body["name"], "code_prefix": "CX", "draft": draft},
+        )
+
+        resp = await co_client.get(f"/{project.pid}/objective-sets/{body['pid']}/diff")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        diff = resp.json()
+        self.assertEqual(diff["from_version"], 1)
+        self.assertIsNone(diff["to_version"])          # the draft
+        self.assertEqual(diff["added"], ["CX-3"])
+        self.assertEqual(diff["removed"], ["CX-2"])
+        self.assertEqual([c["objective_id"] for c in diff["changed"]], ["CX-1"])
+        self.assertEqual(diff["changed"][0]["fields"][0]["field"], "text")
+
+    async def test_two_published_versions_can_be_compared(self):
+        project = await _project("sets-diff-versions")
+        body = await _create(project)
+        url = f"/{project.pid}/objective-sets/{body['pid']}"
+        await co_client.post(f"{url}/publish")
+        await co_client.put(url, json={
+            "name": body["name"], "code_prefix": "CX",
+            "draft": [DRAFT[0], {"objective_id": "CX-4", "text": "Added later"}],
+        })
+        await co_client.post(f"{url}/publish")
+
+        resp = await co_client.get(f"{url}/diff?from_version=1&to_version=2")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        diff = resp.json()
+        self.assertEqual(diff["from_version"], 1)
+        self.assertEqual(diff["to_version"], 2)
+        self.assertEqual(diff["added"], ["CX-4"])
+        self.assertEqual(diff["removed"], ["CX-2"])
+
+    async def test_an_unpublished_version_number_is_refused(self):
+        project = await _project("sets-diff-missing")
+        body = await _create(project)
+        await co_client.post(f"/{project.pid}/objective-sets/{body['pid']}/publish")
+        resp = await co_client.get(
+            f"/{project.pid}/objective-sets/{body['pid']}/diff?from_version=7"
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    async def test_nothing_published_reads_as_everything_added(self):
+        project = await _project("sets-diff-draft")
+        body = await _create(project)
+        resp = await co_client.get(f"/{project.pid}/objective-sets/{body['pid']}/diff")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        diff = resp.json()
+        self.assertIsNone(diff["from_version"])
+        self.assertIsNone(diff["to_version"])
+        self.assertEqual(diff["added"], ["CX-1", "CX-2"])

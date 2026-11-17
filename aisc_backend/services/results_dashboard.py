@@ -18,26 +18,48 @@ recorded as a deviation from the pilot's explicit run→version link (see
 
 A run on a locally served model is not part of the assessment record; the tools
 carry the flag (`local`) so the results page can keep it distinct, exactly as the
-report renderer already does.
+report renderer already does — and the charts are drawn from the *other* runs
+only, so a local model's scores never reach a reported figure.
+
+The charts are the visualizer's own query (`MeasurementRepository`), read through
+the scope: a metric's count/mean/least/most and its points over the scoped runs.
+The dashboard links are signed and scoped (`services.dashboard_link`), so the
+dashboard can tell whose link it is looking at and refuse an edited or stale one.
 """
 from __future__ import annotations
 
 import uuid
 from collections import OrderedDict
-from urllib.parse import urlencode
 
 from django.conf import settings
 
 from aisc_backend.models.connection import RunBinding
 from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
+from aisc_backend.models.observation import Observation
 from aisc_backend.models.plugin import Plugin
 from aisc_backend.models.qualification import System, SystemVersion
-from aisc_backend.services import report_local_runs
+from aisc_backend.repositories.measurement_repository import MeasurementRepository
+from aisc_backend.services import dashboard_bridge, dashboard_link, report_local_runs
 
 #: EvaluationPlugin statuses, grouped the way the pilot's tiles show them.
 _DONE = "Done"
 _FAILED = "Failed"
 _RUNNING = ("Running", "Pending")
+
+
+def dashboard_scope(
+    project_pid,
+    version_number: int | None = None,
+    tool: str | None = None,
+    target: str | None = None,
+) -> dict:
+    """What a link is about: the project, and the version/target/tool it has chosen."""
+    return {
+        "project": str(project_pid),
+        "version": None if version_number is None else str(version_number),
+        "target": str(target) if target else None,
+        "tool": str(tool) if tool else None,
+    }
 
 
 def build_dashboard_url(
@@ -46,23 +68,17 @@ def build_dashboard_url(
     tool: str | None = None,
     target: str | None = None,
 ) -> str | None:
-    """The external dashboard URL for this scope, or None when the bridge is closed.
+    """The signed, scoped dashboard URL for this scope; None when the bridge is closed.
 
-    Pure: it only builds a URL from configuration. The dashboard is Superset's
-    own process reading its own store; the bridge never queries a table of ours.
+    Closed means no base URL *or* no signing key: a link the dashboard cannot
+    verify is not a link (see `services.dashboard_link`). Pure URL assembly — the
+    dashboard is Superset's own process reading its own store, and nothing here
+    queries a table of ours.
     """
-    base = (settings.RESULTS_DASHBOARD_URL or "").strip()
-    if not base:
-        return None
-    params: dict[str, str] = {"project": str(project_pid)}
-    if version_number is not None:
-        params["version"] = str(version_number)
-    if target:
-        params["target"] = str(target)
-    if tool:
-        params["tool"] = str(tool)
-    separator = "&" if "?" in base else "?"
-    return f"{base}{separator}{urlencode(params)}"
+    return dashboard_link.build_link(
+        settings.RESULTS_DASHBOARD_URL or "",
+        dashboard_scope(project_pid, version_number, tool, target),
+    )
 
 
 async def _version_window(project, version_pid):
@@ -108,7 +124,9 @@ def _blank_tool(name: str, label: str) -> dict:
         "local_runs": 0,
         "helpers": [],
         "connections": [],
+        "observations": 0,
         "_run_ids": [],
+        "_evaluation_ids": [],
         "_helper_seen": set(),
         "_connection_seen": set(),
     }
@@ -144,6 +162,8 @@ async def scoped_results(project, version_pid=None, target=None) -> dict:
             name, _blank_tool(name, plugin.display_name if plugin else name)
         )
         entry["_run_ids"].append(run.id)
+        if run.evaluation_id not in entry["_evaluation_ids"]:
+            entry["_evaluation_ids"].append(run.evaluation_id)
         if run.status == _DONE:
             entry["executed"] += 1
         elif run.status == _FAILED:
@@ -185,10 +205,37 @@ async def scoped_results(project, version_pid=None, target=None) -> dict:
 
     version_number = version.number if version is not None else None
     target_key = str(target) if target else None
+
+    # The observations behind the tiles, and the metric series the visualizer
+    # would draw: the same rows the report and the aggregate endpoint read, and
+    # an all-local evaluation is left out of both (it is not assessment record).
+    scoped_evaluation_ids = sorted({eid for entry in tools.values() for eid in entry["_evaluation_ids"]})
+    local_only = await report_local_runs.only_local_evaluation_ids(scoped_evaluation_ids)
+    charted_evaluation_ids = [eid for eid in scoped_evaluation_ids if eid not in local_only]
+    observations: dict[int, int] = {}
+    if scoped_evaluation_ids:
+        async for eid in Observation.objects.filter(
+            evaluation_id__in=scoped_evaluation_ids
+        ).values_list("evaluation_id", flat=True):
+            observations[eid] = observations.get(eid, 0) + 1
+
+    repository = MeasurementRepository()
+    charts = []
+    if charted_evaluation_ids:
+        measurements = await repository.filter_queryset(
+            observation__evaluation_id__in=charted_evaluation_ids
+        )
+        charts = await repository.metric_summary(measurements)
+
     out_tools = []
     for entry in tools.values():
         run_count = entry["executed"] + entry["failed"] + entry["running"]
         entry["local"] = bool(run_count) and entry["local_runs"] == len(entry["_run_ids"])
+        entry["observations"] = sum(
+            observations.get(eid, 0)
+            for eid in entry["_evaluation_ids"]
+            if eid not in local_only
+        )
         out_tools.append(
             {
                 "plugin_name": entry["plugin_name"],
@@ -199,6 +246,7 @@ async def scoped_results(project, version_pid=None, target=None) -> dict:
                 "last_run": entry["last_run"].isoformat() if entry["last_run"] else None,
                 "local": entry["local"],
                 "local_runs": entry["local_runs"],
+                "observations": entry["observations"],
                 "helpers": entry["helpers"],
                 "connections": entry["connections"],
                 "dashboard_url": build_dashboard_url(
@@ -217,14 +265,29 @@ async def scoped_results(project, version_pid=None, target=None) -> dict:
         if plugin.name not in tools
     ]
 
+    scope = dashboard_scope(project.pid, version_number, None, target_key)
+    dashboards_url = build_dashboard_url(project.pid, version_number, None, target_key)
     return {
         "version": (
             {"pid": version.pid, "number": version.number} if version else None
         ),
         "target": target_key,
-        "dashboards_url": build_dashboard_url(
-            project.pid, version_number, None, target_key
-        ),
+        "dashboards_url": dashboards_url,
+        # What the link is about, and whether it is authenticated: a link exists
+        # only when it is signed, so a page can say why it has none.
+        "dashboard": {
+            "url": dashboards_url,
+            "authenticated": dashboards_url is not None,
+            "bridge_configured": dashboard_bridge.configured(),
+            "scope": scope,
+        },
         "tools": out_tools,
         "greyed": greyed,
+        "charts": charts,
+        "chart_scope": {
+            "version": version_number,
+            "target": target_key,
+            "evaluations": len(charted_evaluation_ids),
+            "local_models_left_out": len(local_only),
+        },
     }
