@@ -80,6 +80,30 @@ def _is_control(item: dict) -> bool:
     return not types or "control" in types
 
 
+#: The sections a dimension is tagged in: the dimension itself, and the
+#: sub-dimensions the catalogue hangs under one (`controls_subdim` for a
+#: checklist, `testing_subdim` for a test), which name their dimension in
+#: `parent_dimension_slug`.
+_DIMENSION_SECTIONS = ("dimension", "controls_subdim", "testing_subdim")
+
+
+def _dimension_slugs(item: dict) -> list[str]:
+    """The item's dimension slugs, a sub-dimension counting for its parent.
+
+    Exactly the catalogue's own rule (its site folds a tag's `slug` and its
+    `parent_dimension_slug` together), so an item tagged only under
+    `purpose-limitation` is still a `privacy-data-governance` item.
+    """
+    slugs: list[str] = []
+    for tag in item.get("tags") or []:
+        if (tag or {}).get("section") not in _DIMENSION_SECTIONS:
+            continue
+        for slug in (tag.get("slug"), tag.get("parent_dimension_slug")):
+            if slug and slug not in slugs:
+                slugs.append(slug)
+    return slugs
+
+
 def _mapped(item: dict) -> dict:
     """One online list item -> the surface shape: METADATA ONLY.
 
@@ -102,6 +126,8 @@ def _mapped(item: dict) -> dict:
         "regulation_ids": regulation,
         "question_count": len(item.get("questions") or []),
         "tags": tags,
+        # the catalogue's own dimension tags: what "for this project" filters on
+        "dimensions": _dimension_slugs(item),
     }
 
 

@@ -26,8 +26,14 @@ from aisc_backend.services import controls_catalogue
 catalogue_client = TestAsyncClient(catalogue_router)
 
 TOOLS = [
-    {"id": 1, "slug": "risk-management-checklist", "name": "Risk Management Checklist"},
-    {"id": 2, "slug": "accuracy-checklist", "name": "Accuracy Checklist"},
+    {"id": 1, "slug": "risk-management-checklist", "name": "Risk Management Checklist",
+     "tags": [{"section": "type", "slug": "control"},
+              {"section": "dimension", "slug": "risk-management"}]},
+    {"id": 2, "slug": "accuracy-checklist", "name": "Accuracy Checklist",
+     "tags": [{"section": "type", "slug": "control"},
+              {"section": "dimension", "slug": "technical-robustness-safety"},
+              {"section": "controls_subdim", "slug": "human-fallback",
+               "parent_dimension_slug": "technical-robustness-safety"}]},
 ]
 
 
@@ -200,6 +206,45 @@ class CatalogueReadThroughTest(TestCase):
         # listing must NOT store anything: rows exist only after an install
         self.assertEqual(await ControlTemplate.objects.acount(), 0)
         self.assertEqual(await ControlSource.objects.acount(), 0)
+
+    async def test_items_carry_the_catalogue_s_own_dimensions(self):
+        """CAT-01: the listing says which trustworthiness dimensions each item is
+        tagged with, so the surface can filter by the project's objectives."""
+        controls_catalogue._list_cache = None
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock,
+            side_effect=[TOOLS],
+        ):
+            resp = await catalogue_client.get("/catalogue")
+
+        controls = {c["catalogue_id"]: c for c in resp.json()["controls"]}
+        self.assertEqual(controls["risk-management-checklist"]["dimensions"],
+                         ["risk-management"])
+        # a sub-dimension counts for the dimension it belongs to, and is kept too
+        self.assertEqual(
+            set(controls["accuracy-checklist"]["dimensions"]),
+            {"technical-robustness-safety", "human-fallback"},
+        )
+
+    async def test_the_listing_carries_the_dimension_vocabulary(self):
+        """The slugs are the catalogue's; the labels come from our own mapping, so
+        a UI can name what it filters without a second table of its own."""
+        controls_catalogue._list_cache = None
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock,
+            side_effect=[TOOLS],
+        ):
+            body = (await catalogue_client.get("/catalogue")).json()
+
+        self.assertEqual(len(body["dimensions"]), 11)
+        self.assertEqual(
+            body["dimensions"][0],
+            {"requirement": "REQ1", "slug": "human-agency-oversight",
+             "label": "Human Agency and Oversight"},
+        )
+        self.assertEqual(body["dimensions"][-1]["slug"], "record-keeping")
 
     async def test_list_results_are_cached(self):
         controls_catalogue._list_cache = None

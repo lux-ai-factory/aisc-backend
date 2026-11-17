@@ -46,6 +46,7 @@ from aisc_backend.schemas.control_objective import (
     ObjectiveSetOut,
     ObjectiveSetRowIn,
     ObjectiveSetVersionOut,
+    ProjectDimensionsOut,
     RiskObjectiveMappingIn,
     RiskObjectiveMappingOut,
     RiskOut,
@@ -53,6 +54,7 @@ from aisc_backend.schemas.control_objective import (
     RiskVersionOut,
 )
 from aisc_backend.services import control_objectives as priorities
+from aisc_backend.services import dimensions as dimension_map
 from aisc_backend.services import objective_profiles, risk_mapper
 from aisc_backend.services.objective_sets import diff_rows
 
@@ -531,6 +533,35 @@ async def remove_mapping(request, pid: uuid.UUID, mapping_pid: uuid.UUID):
 
 
 # --- the matrix, computed on read -----------------------------------------------
+
+
+@router.get("/{pid}/control-objectives/dimensions", response=ProjectDimensionsOut)
+async def project_dimensions(request, pid: uuid.UUID):
+    """The trustworthiness dimensions of the project's *selected* objectives.
+
+    What the catalogue is filtered by ("For this project"), the pilot's rule:
+    a dimension is one of the eleven AI Act macro requirements, so the selected
+    objectives' dimensions are what the catalogue items must carry. A project
+    that has selected nothing yet gets `dimensions: []`, which the catalogue
+    reads as "show everything".
+
+    The selection is the profile's objectives (its choice of what it works on);
+    a project that only ever flagged key objectives is read from those, so an
+    older project is not told it selected nothing.
+    """
+    project = await _project_for(request, pid)
+    profile = await ObjectiveProfile.objects.filter(project=project).afirst()
+    selected = list(profile.objectives) if profile else []
+    if not selected and profile is not None:
+        selected = list(profile.key_objectives)
+    wanted = {str(code) for code in selected if code}
+    chosen = [
+        o async for o in _visible_objectives(project).filter(objective_id__in=wanted)
+    ]
+    return ProjectDimensionsOut(
+        objectives=[o.objective_id for o in chosen],
+        dimensions=dimension_map.dimensions_of(o.macro_requirement for o in chosen),
+    )
 
 
 @router.get("/{pid}/control-objectives/matrix", response=MatrixOut)

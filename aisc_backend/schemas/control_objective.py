@@ -249,3 +249,15 @@ class ObjectiveSetApplyOut(Schema):
     objectives: list[str] = []
     created: list[str] = []
     updated: list[str] = []
+
+
+class ProjectDimensionsOut(Schema):
+    """The dimensions a project's catalogue is filtered by.
+
+    `objectives` are the selected objectives the dimensions come from, so the
+    client can say *why* the list is narrowed; an empty list means the project
+    has selected nothing yet, and the pilot's rule is then to show everything.
+    """
+
+    objectives: list[str] = []
+    dimensions: list[str] = []

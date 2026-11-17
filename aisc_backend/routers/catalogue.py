@@ -37,10 +37,11 @@ from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.routers.plugin import plugin_loader
 from aisc_backend.schemas.control import (
     CatalogueControlOut,
+    CatalogueDimensionOut,
     CatalogueOut,
     CataloguePluginOut,
 )
-from aisc_backend.services import controls_catalogue
+from aisc_backend.services import controls_catalogue, dimensions
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ async def catalogue(request, kind: str = "all"):
     return CatalogueOut(
         plugins=plugins,
         controls=controls,
+        dimensions=[CatalogueDimensionOut(**d) for d in dimensions.vocabulary()],
         app_catalog_url=getattr(settings, "APP_CATALOG_URL", "") or "",
     )
 

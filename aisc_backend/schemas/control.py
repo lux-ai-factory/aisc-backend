@@ -30,11 +30,24 @@ class CatalogueControlOut(Schema):
     regulation_ids: list[str] = []
     question_count: int = 0
     tags: list[str] = []
+    #: The catalogue's trustworthiness-dimension slugs this item is tagged with
+    #: (a sub-dimension folded into its parent). What "for this project" keeps.
+    dimensions: list[str] = []
+
+
+class CatalogueDimensionOut(Schema):
+    """One trustworthiness dimension: the objective requirement it comes from."""
+
+    requirement: str            # REQ1 .. REQ11
+    slug: str                   # the catalogue's own slug for it
+    label: str                  # the catalogue's own label for it
 
 
 class CatalogueOut(Schema):
     plugins: list[CataloguePluginOut]
     controls: list[CatalogueControlOut]
+    #: The dimension vocabulary, REQ order, so a UI can label the slugs it filters
+    dimensions: list[CatalogueDimensionOut] = []
     #: The catalogue's own published site (independently published, I9): the
     #: product links to it, never fetches or stores its pages.
     app_catalog_url: str = ""

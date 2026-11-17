@@ -36,31 +36,14 @@ from aisc_backend.models.plugin import Plugin
 from aisc_backend.models.project import Project
 from aisc_backend.models.qualification import System, SystemVersion
 from aisc_backend.services import control_objectives as priorities
+from aisc_backend.services.dimensions import dimension_of
 from aisc_backend.services import controls_scoring
 from aisc_backend.services import objective_profiles
 
 KINDS = ("test", "control")
 
-#: The eleven macro-requirements, each a dimension of the catalogue (the pilot's DIMENSIONS).
-_DIMENSION_BY_MACRO = {
-    "REQ1": "human-agency-oversight",
-    "REQ2": "technical-robustness-safety",
-    "REQ3": "privacy-data-governance",
-    "REQ4": "transparency",
-    "REQ5": "diversity-non-discrimination-fairness",
-    "REQ6": "societal-environmental-wellbeing",
-    "REQ7": "accountability",
-    "REQ8": "quality-management",
-    "REQ9": "risk-management",
-    "REQ10": "technical-documentation",
-    "REQ11": "record-keeping",
-}
-
-
-def dimension_of(macro_requirement: str) -> str:
-    """REQ2 from 'REQ2 Technical Robustness and Safety' -> its dimension slug."""
-    macro_id = (macro_requirement or "").split(None, 1)[0]
-    return _DIMENSION_BY_MACRO.get(macro_id, "")
+# The requirement -> dimension slug table lives in `services.dimensions`, its one
+# home: the catalogue surface and the objective filters read it too.
 
 
 class EvidenceError(ValueError):

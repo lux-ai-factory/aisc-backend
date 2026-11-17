@@ -6,7 +6,12 @@ mapping, and the matrix computed on read — all project-scoped (a stranger gets
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import ControlObjective, Risk, RiskVersion
+from aisc_backend.models.control_objective import (
+    ControlObjective,
+    ObjectiveProfile,
+    Risk,
+    RiskVersion,
+)
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.models.qualification import Qualification
@@ -64,6 +69,72 @@ async def _seed_objectives():
                 "assessment_mode": "Control",
             },
         )
+
+
+class ProjectDimensionsTest(TestCase):
+    """CAT-01: what "for this project" filters the catalogue by.
+
+    The dimensions of the project's *selected* objectives, and nothing at all
+    when it has selected none yet — the pilot's rule, which the catalogue reads
+    as "show everything" rather than "show nothing".
+    """
+
+    async def _local_objective(self, project, code, macro, text="An objective"):
+        return await ControlObjective.objects.acreate(
+            project=project, objective_id=code, macro_requirement=macro,
+            text=text, assessment_mode="Control",
+        )
+
+    async def test_the_dimensions_come_from_the_selected_objectives(self):
+        project = await _project()
+        await self._local_objective(project, "CX1", "REQ2 Technical Robustness and Safety")
+        await self._local_objective(project, "CX2", "REQ9 Risk Management")
+        await ObjectiveProfile.objects.acreate(
+            project=project, name="", objectives=["CX1", "CX2"],
+        )
+        body = (
+            await co_client.get(f"/{project.pid}/control-objectives/dimensions")
+        ).json()
+        self.assertEqual(body["objectives"], ["CX1", "CX2"])
+        # one slug per dimension, in requirement order
+        self.assertEqual(body["dimensions"], ["technical-robustness-safety", "risk-management"])
+
+    async def test_a_project_that_selected_nothing_gets_no_dimensions(self):
+        project = await _project()
+        body = (
+            await co_client.get(f"/{project.pid}/control-objectives/dimensions")
+        ).json()
+        self.assertEqual(body, {"objectives": [], "dimensions": []})
+
+    async def test_an_objective_of_the_project_s_own_carries_no_dimension(self):
+        project = await _project()
+        await self._local_objective(project, "CX1", "CX1 Our own theme")
+        await ObjectiveProfile.objects.acreate(
+            project=project, name="", objectives=["CX1"],
+        )
+        body = (
+            await co_client.get(f"/{project.pid}/control-objectives/dimensions")
+        ).json()
+        self.assertEqual(body["objectives"], ["CX1"])
+        self.assertEqual(body["dimensions"], [])
+
+    async def test_a_project_that_only_flagged_priorities_is_still_read(self):
+        project = await _project()
+        await self._local_objective(project, "CX1", "REQ4 Transparency")
+        await ObjectiveProfile.objects.acreate(
+            project=project, name="", objectives=[], key_objectives=["CX1"],
+        )
+        body = (
+            await co_client.get(f"/{project.pid}/control-objectives/dimensions")
+        ).json()
+        self.assertEqual(body["dimensions"], ["transparency"])
+
+    async def test_a_stranger_gets_404(self):
+        project = await Project.objects.acreate(
+            name="co-stranger", description="", status="Ready"
+        )
+        resp = await co_client.get(f"/{project.pid}/control-objectives/dimensions")
+        self.assertEqual(resp.status_code, 404)
 
 
 class ControlObjectivesRouterTest(TestCase):
