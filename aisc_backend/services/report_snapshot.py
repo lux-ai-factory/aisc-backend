@@ -40,6 +40,7 @@ from aisc_backend.services import control_objectives as priorities
 from aisc_backend.services import controls_scoring
 from aisc_backend.services import qualification_service
 from aisc_backend.services import report_blocks
+from aisc_backend.services import report_local_runs
 
 system_repository = SystemRepository()
 
@@ -70,11 +71,15 @@ async def build_snapshot(
     """
     system = await system_repository.get_or_create(project)
     version = await _select_version(system, version_pid)
+    compare_version = await resolve_compare_to(system, version, compare_to)
 
     wanted = [s for s in (sections or []) if s in REPORT_SECTIONS]
     evaluations = await _evaluations(project, evaluation_pids or [])
     objectives = await _objectives(project)
     coverage = await _coverage(project, version, objectives.get("priorities") or [])
+    comparison = await _comparison(
+        project, compare_version, coverage, objectives.get("priorities") or []
+    )
 
     return {
         "project": {
@@ -90,6 +95,7 @@ async def build_snapshot(
         "controls": await _controls(project),
         "objectives": objectives,
         "coverage": coverage,
+        "comparison": comparison,
         "evaluations": evaluations,
         "layout": _layout_ref(layout),
         "blocks": _blocks(layout),
@@ -196,6 +202,88 @@ async def _coverage(project: Project, version: SystemVersion | None, matrix: lis
     return rows
 
 
+class InvalidComparison(ValueError):
+    """The version to compare with is not an earlier version of the same project."""
+
+
+async def resolve_compare_to(
+    system, version: SystemVersion | None, compare_to: str | None
+) -> SystemVersion | None:
+    """The earlier version a report compares with, or None.
+
+    The pilot's rule (``ScopedData.for_version``): the version to compare with must be a
+    version of the same project numbered *below* the pinned one; anything else is refused.
+    """
+    if not compare_to:
+        return None
+    other = await SystemVersion.objects.filter(system=system, pid=compare_to).afirst()
+    if other is None or version is None or other.number >= version.number:
+        raise InvalidComparison(str(compare_to))
+    return other
+
+
+def _cmp_row(row: dict) -> dict:
+    return {
+        "objective_id": row["objective_id"],
+        "text": row.get("text", ""),
+        "tests": list(row.get("tests") or []),
+        "controls": list(row.get("controls") or []),
+    }
+
+
+async def _comparison(
+    project: Project,
+    compare_version: SystemVersion | None,
+    coverage: list[dict],
+    matrix: list[dict],
+) -> dict | None:
+    """What changed between the compared version and the pinned one (REP-01).
+
+    Both versions' evidence maps are read from the ORM and diffed by objective: an
+    objective covered now but not before is `gained`, one covered before but not now is
+    `lost`, and for an objective covered in both the evidence keys added and removed are
+    listed. `None` when the report compares with nothing.
+    """
+    if compare_version is None:
+        return None
+    previous = await _coverage(project, compare_version, matrix)
+    now = {r["objective_id"]: r for r in coverage}
+    before = {r["objective_id"]: r for r in previous}
+    gained: list[dict] = []
+    lost: list[dict] = []
+    changed: list[dict] = []
+    for oid, row in now.items():
+        old = before.get(oid)
+        if row["linked"] and (old is None or not old["linked"]):
+            gained.append(_cmp_row(row))
+        elif old is not None and old["linked"] and not row["linked"]:
+            lost.append(_cmp_row(old))
+        elif old is not None and old["linked"] and row["linked"]:
+            added = sorted(
+                (set(row["tests"]) | set(row["controls"]))
+                - (set(old["tests"]) | set(old["controls"]))
+            )
+            removed = sorted(
+                (set(old["tests"]) | set(old["controls"]))
+                - (set(row["tests"]) | set(row["controls"]))
+            )
+            if added or removed:
+                changed.append(
+                    {**_cmp_row(row), "added": added, "removed": removed}
+                )
+    return {
+        "version": _version_ref(compare_version),
+        "gained": gained,
+        "lost": lost,
+        "changed": changed,
+        "counts": {
+            "gained": len(gained),
+            "lost": len(lost),
+            "changed": len(changed),
+        },
+    }
+
+
 def _version_ref(version: SystemVersion | None) -> dict | None:
     if version is None:
         return None
@@ -236,10 +324,15 @@ async def _card_for(project: Project, version: SystemVersion | None) -> dict | N
     return card
 
 
-async def _measurement_rows(evaluation: Evaluation) -> list[dict]:
-    """The latest observation's raw measurements (metric, score, dimensions)."""
+async def _measurement_rows(evaluation: Evaluation, local_names: frozenset[str] = frozenset()) -> list[dict]:
+    """The latest observation's raw measurements (metric, score, dimensions).
+
+    Observations of a local-model run (matched by the plugin name the engine writes as
+    ``Observation.tool``) are left out: a run on a local model is not part of the
+    assessment record (see ``report_local_runs``)."""
     obs = (
         await Observation.objects.filter(evaluation=evaluation)
+        .exclude(tool__in=list(local_names))
         .order_by("-created_at")
         .afirst()
     )
@@ -321,17 +414,29 @@ def _evaluation_stats(rows: list[dict]) -> dict | None:
 async def _evaluations(project: Project, evaluation_pids: list[str]) -> list[dict]:
     if not evaluation_pids:
         return []
+    evaluations = [
+        e
+        async for e in Evaluation.objects.filter(
+            project=project, pid__in=evaluation_pids
+        ).order_by("created_at")
+    ]
+    ids = [e.id for e in evaluations]
+    # a run on a local model is not part of the assessment record (pilot parity):
+    # an evaluation whose runs are all local is left out, one that also has a
+    # non-local run stays with the non-local run's data alone.
+    only_local = await report_local_runs.only_local_evaluation_ids(ids)
+    local_tags = frozenset(await report_local_runs.local_tool_tags(ids))
     result = []
-    async for e in Evaluation.objects.filter(
-        project=project, pid__in=evaluation_pids
-    ).order_by("created_at"):
+    for e in evaluations:
+        if e.id in only_local:
+            continue
         result.append(
             {
                 "pid": str(e.pid),
                 "status": e.status,
                 "task": str(e.task) if e.task is not None else None,
                 "created_at": e.created_at.isoformat(),
-                "key_results": _evaluation_stats(await _measurement_rows(e)),
+                "key_results": _evaluation_stats(await _measurement_rows(e, local_tags)),
             }
         )
     return result

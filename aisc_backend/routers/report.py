@@ -39,7 +39,7 @@ from aisc_backend.schemas.report import (
     ReportSettingsIn,
     ReportSettingsOut,
 )
-from aisc_backend.services import report_blocks, report_render, report_service, report_snapshot
+from aisc_backend.services import report_blocks, report_local_runs, report_render, report_service, report_snapshot
 from aisc_backend.services.report_snapshot import REPORT_SECTIONS
 
 router = Router(tags=["reporting"])
@@ -399,26 +399,38 @@ async def generate_report(request, pid: uuid.UUID, data: ReportIn):
             raise HttpError(422, _problems_message(problems))
 
     evaluation_pids = []
+    selected_db_ids: dict[int, str] = {}
     for epid in data.evaluation_pids or []:
         try:
             eqid = uuid.UUID(str(epid))
         except ValueError:
             raise HttpError(404, f"no such evaluation {epid!r}")
-        exists = await Evaluation.objects.filter(project=project, pid=eqid).aexists()
-        if not exists:
+        evaluation = await Evaluation.objects.filter(project=project, pid=eqid).afirst()
+        if evaluation is None:
             raise HttpError(404, f"no such evaluation {epid!r}")
         evaluation_pids.append(str(eqid))
+        selected_db_ids[evaluation.id] = str(eqid)
 
-    snapshot = await report_snapshot.build_snapshot(
-        project,
-        evaluation_pids=evaluation_pids,
-        sections=sections,
-        version_pid=data.version_pid or None,
-        layout=layout,
-        period=data.period,
-        other_versions=data.other_versions,
-        compare_to=data.compare_to or None,
-    )
+    # a run on a local model is not part of the assessment record (pilot parity):
+    # an evaluation whose runs are all local is refused when asked for by pid.
+    only_local = await report_local_runs.only_local_evaluation_ids(list(selected_db_ids))
+    if only_local:
+        bad = ", ".join(sorted(selected_db_ids[i] for i in only_local))
+        raise HttpError(422, f"a local-model run is not part of the assessment record: {bad}")
+
+    try:
+        snapshot = await report_snapshot.build_snapshot(
+            project,
+            evaluation_pids=evaluation_pids,
+            sections=sections,
+            version_pid=data.version_pid or None,
+            layout=layout,
+            period=data.period,
+            other_versions=data.other_versions,
+            compare_to=data.compare_to or None,
+        )
+    except report_snapshot.InvalidComparison:
+        raise HttpError(422, "compare_to must name an earlier version of this project")
     document, _ = await report_service.generate(str(pid), snapshot, fmt)
     document_pdf = None
     if fmt == "docx":
