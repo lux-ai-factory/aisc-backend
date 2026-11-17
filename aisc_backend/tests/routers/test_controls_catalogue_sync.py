@@ -9,7 +9,7 @@ surface: an empty DB lists and installs straight from the hosted catalogue.
 """
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.control import (
@@ -212,6 +212,61 @@ class CatalogueReadThroughTest(TestCase):
             second = await controls_catalogue.list_controls()
         self.assertEqual(first, second)
         self.assertEqual(get_json.call_count, 1)  # cache hit, no second fetch
+
+    @override_settings(APP_CATALOG_URL="https://sandboxconfigurator.aifactory.lu/catalogue")
+    async def test_catalogue_carries_the_published_site_url(self):
+        """CAT-01: the product links the independently published catalogue."""
+        controls_catalogue._list_cache = None
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock,
+            side_effect=[TOOLS],
+        ):
+            body = (await catalogue_client.get("/catalogue")).json()
+        self.assertEqual(
+            body["app_catalog_url"], "https://sandboxconfigurator.aifactory.lu/catalogue"
+        )
+
+    async def test_kind_narrows_to_one_catalogue_kind(self):
+        """One combined UI can ask for tests or checklists only."""
+        controls_catalogue._list_cache = None
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock,
+            side_effect=[TOOLS],
+        ) as get_json:
+            only_controls = (await catalogue_client.get("/catalogue?kind=control")).json()
+        self.assertTrue(only_controls["controls"])
+        self.assertEqual(only_controls["plugins"], [])
+
+        get_json.reset_mock()
+        only_plugins = (await catalogue_client.get("/catalogue?kind=plugin")).json()
+        self.assertEqual(only_plugins["controls"], [])
+        get_json.assert_not_called()  # no checklist kind asked for: no fetch at all
+
+        bad = await catalogue_client.get("/catalogue?kind=nonsense")
+        self.assertEqual(bad.status_code, 400)
+
+    async def test_install_is_project_scoped(self):
+        """A stranger gets 404 and a viewer 403 on the install route."""
+        stranger = await Project.objects.acreate(name="s", description="", status="Ready")
+        resp = await catalogue_client.post(
+            f"/projects/{stranger.pid}/catalogue/installs"
+            f"?catalogue_id=accuracy-checklist&kind=control",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+        viewer_project = await Project.objects.acreate(
+            name="v", description="", status="Ready"
+        )
+        await ProjectMember.objects.acreate(
+            project=viewer_project, subject="development", role=MembershipRole.Viewer,
+        )
+        resp = await catalogue_client.post(
+            f"/projects/{viewer_project.pid}/catalogue/installs"
+            f"?catalogue_id=accuracy-checklist&kind=control",
+        )
+        self.assertEqual(resp.status_code, 403)
 
     async def test_install_materialises_only_the_installed_control(self):
         project = await self._owned_project()

@@ -9,6 +9,7 @@ projectPid.
 import uuid
 
 from asgiref.sync import sync_to_async
+from django.db.models import Q
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -142,10 +143,20 @@ _CATALOGUE_REQUIRED = ("objective_id", "macro_requirement", "text", "assessment_
 
 
 def _visible_objectives(project):
-    from django.db import models as _models
     return ControlObjective.objects.filter(
-        _models.Q(project__isnull=True) | _models.Q(project=project)
+        Q(project__isnull=True) | Q(project=project)
     ).order_by("objective_id")
+
+
+async def _code_taken(project, code: str) -> bool:
+    """A local code may not repeat inside the project nor shadow the catalogue.
+
+    Codes are unique per project (a project can keep its own `FAIR1` while
+    another keeps the same one); they are never unique across projects.
+    """
+    return await ControlObjective.objects.filter(
+        Q(project__isnull=True) | Q(project=project), objective_id=code
+    ).aexists()
 
 
 @router.get("/{pid}/control-objectives/catalogue", response=list[ControlObjectiveOut])
@@ -161,7 +172,7 @@ async def add_catalogue_objective(request, pid: uuid.UUID, data: ControlObjectiv
     missing = [k for k in _CATALOGUE_REQUIRED if not (getattr(data, k) or "").strip()]
     if missing:
         raise HttpError(400, f"missing required fields: {', '.join(missing)}")
-    if await ControlObjective.objects.filter(objective_id=data.objective_id.strip()).aexists():
+    if await _code_taken(project, data.objective_id.strip()):
         raise HttpError(409, f"objective {data.objective_id.strip()} already exists")
     row = await ControlObjective.objects.acreate(
         project=project,
@@ -193,9 +204,9 @@ async def edit_catalogue_objective(
         raise HttpError(404, f"no such objective {objective_id}")
     if row.project_id is None:
         raise HttpError(403, "the seeded catalogue is read-only")
-    if data.objective_id.strip() != objective_id and await ControlObjective.objects.filter(
-        objective_id=data.objective_id.strip()
-    ).aexists():
+    if data.objective_id.strip() != objective_id and await _code_taken(
+        project, data.objective_id.strip()
+    ):
         raise HttpError(409, f"objective {data.objective_id.strip()} already exists")
     for field in ("objective_id", "macro_requirement", "legal_basis", "sub_requirement_label",
                   "text", "assessment_mode", "target", "standards_grounding",
@@ -308,6 +319,12 @@ async def rate_risk(request, pid: uuid.UUID, risk_pid: uuid.UUID, data: RiskRati
     risk = await Risk.objects.filter(project=project, pid=risk_pid).afirst()
     if risk is None:
         raise HttpError(404, "no such risk")
+    # The pilot's rating is 1..5 with an optional rationale up to 1000 characters.
+    for field, value in (("impact", data.impact), ("likelihood", data.likelihood)):
+        if value is not None and not 1 <= value <= 5:
+            raise HttpError(400, f"{field} must be between 1 and 5")
+    if len(data.comment or "") > 1000:
+        raise HttpError(400, "the rationale must be at most 1000 characters")
     prev = (risk.impact, risk.likelihood, risk.comment, risk.airo_text)
     risk.impact = data.impact
     risk.likelihood = data.likelihood
@@ -446,8 +463,13 @@ async def control_objectives_matrix(request, pid: uuid.UUID):
     overrides: dict = {}
     profile = await ObjectiveProfile.objects.filter(project=project).afirst()
     if profile is not None:
-        keys = {kid: True for kid in profile.key_objectives}
         overrides = profile.objective_ratings or {}
+        # Once the assessor has chosen, their list is the answer — including the
+        # objectives they left OUT, which is how unticking a default key sticks.
+        # An empty list means "no choice yet": the computed defaults apply.
+        if profile.key_objectives:
+            keys = {o.objective_id: False for o in objectives}
+            keys.update({kid: True for kid in profile.key_objectives})
 
     ordered = priorities.prioritise(
         objectives=prepared, mappings=objective_map, rating_of=rating, keys=keys,
@@ -507,6 +529,30 @@ async def set_profile(request, pid: uuid.UUID, data: ObjectiveProfileIn):
         resource_id=str(profile.pid),
         metadata={"projectPid": str(pid), "name": data.name,
                   "key_objectives": data.key_objectives})
+    return ObjectiveProfileOut(
+        pid=profile.pid, name=profile.name, objectives=profile.objectives,
+        key_objectives=profile.key_objectives, catalogue_digest=profile.catalogue_digest,
+        objective_ratings=profile.objective_ratings or {},
+    )
+
+
+@router.delete("/{pid}/control-objectives/profile/keys", response=ObjectiveProfileOut)
+async def undo_priority_choices(request, pid: uuid.UUID):
+    """Undo the assessor's priority choices: the computed defaults apply again.
+
+    Clears only the key choices — the profile's objectives and its manual
+    objective ratings stay as they are.
+    """
+    project = await _project_for(request, pid, needed="editor")
+    profile, _ = await ObjectiveProfile.objects.aget_or_create(
+        project=project, defaults={"name": ""},
+    )
+    profile.key_objectives = []
+    await profile.asave()
+    await sync_to_async(log_action)(
+        request, action="update", resource_type="objective_profile",
+        resource_id=str(profile.pid),
+        metadata={"projectPid": str(pid), "keyObjectives": "reset"})
     return ObjectiveProfileOut(
         pid=profile.pid, name=profile.name, objectives=profile.objectives,
         key_objectives=profile.key_objectives, catalogue_digest=profile.catalogue_digest,

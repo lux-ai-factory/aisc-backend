@@ -28,6 +28,7 @@ from aisc_backend.routers.plugin import router as plugin_router
 from aisc_backend.routers.task import router as task_router
 from aisc_backend.routers.file import router as file_router
 from aisc_backend.routers.stats import router as stats_router
+from aisc_backend.routers.results import router as results_router
 from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
 from aisc_backend.routers.authz import router as authz_router
@@ -66,6 +67,7 @@ v1_router.add_router("/projects", project_router)
 v1_router.add_router("/projects", qualification_router)  # /{pid}/system-versions, /questionnaire, /qualification
 v1_router.add_router("/projects", control_objectives_router)  # /{pid}/control-objectives/*
 v1_router.add_router("/projects", evidence_router)  # /{pid}/evidence/* (versioned evidence map)
+v1_router.add_router("/projects", results_router)  # /{pid}/results (scoped results + dashboard bridge)
 v1_router.add_router("/projects", connection_router)  # /{pid}/connections/*, /{pid}/runs/{plugin}/bindings
 v1_router.add_router("/projects", helper_router)  # /{pid}/helpers/* (helper models per role)
 v1_router.add_router("/projects", allowed_host_router)  # /{pid}/allowed-hosts/* (internal-host allowlist)

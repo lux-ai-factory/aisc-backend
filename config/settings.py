@@ -267,6 +267,16 @@ REPORT_SERVICE_URL = env("REPORT_SERVICE_URL", default="")
 # the catalogue surface reads them like the old vendored seed.
 CONTROLS_CATALOG_URL = env("CONTROLS_CATALOG_URL",
                            default="https://sandboxconfigurator.aifactory.lu/api/api")
+# The catalogue's own published site, linked from the in-product catalogue page.
+# It stays an independently published artifact (I9); the product never fetches
+# or stores its pages, it only links to it.
+APP_CATALOG_URL = env("APP_CATALOG_URL",
+                      default="https://sandboxconfigurator.aifactory.lu/catalogue")
+# --- Results dashboard bridge (read by services.results_dashboard) ---
+# The external analytics dashboard (Superset). Empty means the bridge is closed:
+# the results page shows the scoped run summary with no chart link. The bridge
+# only builds links — it never queries a third-party table or a second DB.
+RESULTS_DASHBOARD_URL = env("RESULTS_DASHBOARD_URL", default="")
 ## .env vars
 
 APP_NAME = env("APP_NAME","aisc-backend")

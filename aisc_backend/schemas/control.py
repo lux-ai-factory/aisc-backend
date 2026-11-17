@@ -35,6 +35,9 @@ class CatalogueControlOut(Schema):
 class CatalogueOut(Schema):
     plugins: list[CataloguePluginOut]
     controls: list[CatalogueControlOut]
+    #: The catalogue's own published site (independently published, I9): the
+    #: product links to it, never fetches or stores its pages.
+    app_catalog_url: str = ""
 
 
 # --- installed library -----------------------------------------------------------

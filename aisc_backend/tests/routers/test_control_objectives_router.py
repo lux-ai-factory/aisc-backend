@@ -190,10 +190,21 @@ class ControlObjectivesRouterTest(TestCase):
         theirs = (await co_client.get(f"/{other.pid}/control-objectives/catalogue")).json()
         self.assertNotIn("CX-1", [o["id"] for o in theirs])
 
-        dup = await co_client.post(
+        # A local code is per project: another project may keep the same one...
+        theirs_add = await co_client.post(
             f"/{other.pid}/control-objectives/catalogue", json=payload,
         )
+        self.assertEqual(theirs_add.status_code, 200, theirs_add.text)
+        # ...but it may not repeat inside the project, nor shadow the catalogue.
+        dup = await co_client.post(
+            f"/{project.pid}/control-objectives/catalogue", json=payload,
+        )
         self.assertEqual(dup.status_code, 409)
+        shadow = await co_client.post(
+            f"/{project.pid}/control-objectives/catalogue",
+            json={**payload, "objective_id": "O1"},
+        )
+        self.assertEqual(shadow.status_code, 409)
 
         bad = await co_client.post(
             f"/{project.pid}/control-objectives/catalogue", json={"objective_id": "CX-2"},
@@ -351,6 +362,64 @@ class ControlObjectivesRouterTest(TestCase):
         priorities = {p["objective_id"]: p for p in matrix["priorities"]}
         self.assertTrue(priorities["O9"]["key"])
         self.assertFalse(priorities["O9"]["key_default"])
+
+    async def test_unticking_a_default_key_sticks_and_undo_restores_it(self):
+        """The assessor may untick a default priority objective, and undo it."""
+        await _seed_objectives()
+        project = await _project()
+        risk = await _risk(project, "critical risk")
+        await co_client.patch(
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
+            json={"impact": 5, "likelihood": 5})   # 25 critical -> O1 key by default
+        await co_client.post(f"/{project.pid}/control-objectives/risks/{risk.pid}/mappings",
+                             json={"objective_id": "O1"})
+
+        matrix = (await co_client.get(f"/{project.pid}/control-objectives/matrix")).json()
+        o1 = {p["objective_id"]: p for p in matrix["priorities"]}["O1"]
+        self.assertTrue(o1["key"])
+        self.assertTrue(o1["key_default"])
+
+        # the assessor chooses a set that leaves O1 out: O1 is no longer key
+        await co_client.put(f"/{project.pid}/control-objectives/profile", json={
+            "name": "p", "objectives": [], "key_objectives": ["O2"],
+        })
+        matrix = (await co_client.get(f"/{project.pid}/control-objectives/matrix")).json()
+        o1 = {p["objective_id"]: p for p in matrix["priorities"]}["O1"]
+        self.assertFalse(o1["key"])
+        self.assertTrue(o1["key_default"])   # still the default, just overridden
+
+        # undo the choices: the computed defaults apply again
+        undone = await co_client.delete(f"/{project.pid}/control-objectives/profile/keys")
+        self.assertEqual(undone.status_code, 200, undone.text)
+        self.assertEqual(undone.json()["key_objectives"], [])
+        matrix = (await co_client.get(f"/{project.pid}/control-objectives/matrix")).json()
+        o1 = {p["objective_id"]: p for p in matrix["priorities"]}["O1"]
+        self.assertTrue(o1["key"])
+
+    async def test_rating_bounds_and_rationale_length(self):
+        """Impact/likelihood are 1..5; the rationale is at most 1000 characters."""
+        project = await _project()
+        risk = await _risk(project, "r")
+        too_big = await co_client.patch(
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
+            json={"impact": 6, "likelihood": 1},
+        )
+        self.assertEqual(too_big.status_code, 400)
+        too_small = await co_client.patch(
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
+            json={"impact": 1, "likelihood": 0},
+        )
+        self.assertEqual(too_small.status_code, 400)
+        long_comment = await co_client.patch(
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
+            json={"impact": 1, "likelihood": 1, "comment": "x" * 1001},
+        )
+        self.assertEqual(long_comment.status_code, 400)
+        ok = await co_client.patch(
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
+            json={"impact": 5, "likelihood": 5, "comment": "x" * 1000},
+        )
+        self.assertEqual(ok.status_code, 200, ok.text)
 
     async def test_manual_score_and_likelihood_override_the_matrix(self):
         await _seed_objectives()

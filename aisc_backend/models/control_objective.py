@@ -35,7 +35,11 @@ class ControlObjective(Base):
     read-only everywhere.
     """
 
-    objective_id = models.CharField(max_length=8, unique=True)   # O1 .. O50
+    #: O1 .. O50 for the seeded catalogue; a project's own code for a local row.
+    #: Unique **per project** (and among the seeded rows), so two projects can
+    #: each keep a local code of the same name without colliding with each other
+    #: or with the shared catalogue.
+    objective_id = models.CharField(max_length=32)
     macro_requirement = models.CharField(max_length=255)
     legal_basis = models.CharField(max_length=255, blank=True, default="")
     sub_requirement_label = models.CharField(max_length=255, blank=True, default="")
@@ -56,6 +60,20 @@ class ControlObjective(Base):
     class Meta:
         app_label = "aisc_backend"
         ordering = ["objective_id"]
+        constraints = [
+            # a local code is unique inside its project...
+            models.UniqueConstraint(
+                fields=["project", "objective_id"],
+                name="control_objective_project_objective_id_uniq",
+            ),
+            # ...and the shared catalogue stays unique on its own (project NULL,
+            # which a plain unique constraint over (project, id) does not cover).
+            models.UniqueConstraint(
+                fields=["objective_id"],
+                condition=models.Q(project__isnull=True),
+                name="control_objective_seeded_objective_id_uniq",
+            ),
+        ]
 
     @property
     def requires_control(self) -> bool:

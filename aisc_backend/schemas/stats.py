@@ -76,3 +76,50 @@ class ProjectStatsPluginDurations(Schema):
 
 class ProjectStatsPluginUsage(Schema):
     plugins: list[PluginUsageSummary]
+
+
+# --- Scoped results and the dashboard bridge (ANA-01) ---------------------------
+
+
+class ResultsVersion(Schema):
+    pid: uuid.UUID
+    number: int
+
+
+class ToolHelperOut(Schema):
+    role: str
+    model: str
+
+
+class ToolConnectionOut(Schema):
+    name: str
+    protocol_name: str
+
+
+class ToolResultOut(Schema):
+    plugin_name: str
+    label: str
+    executed: int
+    failed: int
+    running: int
+    last_run: str | None = None
+    local: bool = False
+    local_runs: int = 0
+    helpers: list[ToolHelperOut] = []
+    connections: list[ToolConnectionOut] = []
+    dashboard_url: str | None = None
+
+
+class GreyedToolOut(Schema):
+    plugin_name: str
+    label: str
+
+
+class ProjectResultsOut(Schema):
+    """One AI-card version's scoped run summary + the analytics dashboard bridge."""
+
+    version: ResultsVersion | None = None
+    target: str | None = None
+    dashboards_url: str | None = None
+    tools: list[ToolResultOut] = []
+    greyed: list[GreyedToolOut] = []

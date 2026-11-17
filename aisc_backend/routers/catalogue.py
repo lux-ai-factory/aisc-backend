@@ -22,6 +22,7 @@ import logging
 import uuid
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -55,44 +56,56 @@ async def _project_for(request, pid: uuid.UUID, needed: str = "viewer") -> Proje
 
 
 @router.get("/catalogue", response=CatalogueOut)
-async def catalogue(request):
+async def catalogue(request, kind: str = "all"):
     """Everything installable: plugins (expanded per base-plugin class, from the
     loader) + control checklists (listed from the hosted catalogue, briefly
-    cached; nothing is stored until a checklist is installed)."""
+    cached; nothing is stored until a checklist is installed).
+
+    `kind` narrows the listing to `plugin`, `control` or `all` (the default), so
+    one combined UI can ask for both kinds at once without a second endpoint.
+    """
+    if kind not in ("all", "plugin", "control"):
+        raise HttpError(400, "kind must be one of all, plugin, control")
     # Read-through: listing comes from the hosted catalogue, so a fresh DB has a
     # full catalogue with no seed and no sync step.
-    try:
-        controls = [
-            CatalogueControlOut(**item)
-            for item in await controls_catalogue.list_controls()
-        ]
-    except controls_catalogue.CatalogueUnavailable as exc:
-        logger.warning("controls catalogue unreachable; listing plugins only: %s", exc)
-        controls = []
+    controls: list[CatalogueControlOut] = []
+    if kind in ("all", "control"):
+        try:
+            controls = [
+                CatalogueControlOut(**item)
+                for item in await controls_catalogue.list_controls()
+            ]
+        except controls_catalogue.CatalogueUnavailable as exc:
+            logger.warning("controls catalogue unreachable; listing plugins only: %s", exc)
     plugins = []
-    packages_dict = plugin_loader.list_packages(refresh=True)
-    for pkg_name, versions_dict in packages_dict.items():
-        for version, meta in versions_dict.items():
-            source = meta.get("source", "unknown")
-            if source == "local":
-                try:
-                    instances = plugin_loader.load_package(pkg_name, version)
-                except Exception:  # noqa: BLE001 - a broken package is listed package-level
-                    instances = {}
-                if instances:
-                    for cls_name, inst in instances.items():
-                        plugins.append(CataloguePluginOut(
-                            package_name=pkg_name, plugin_name=cls_name,
-                            display_name=getattr(inst, "display_name", None) or cls_name,
-                            display_icon=getattr(inst, "display_icon", "") or "",
-                            version=version, source=source,
-                        ))
-                    continue
-            plugins.append(CataloguePluginOut(
-                package_name=pkg_name, plugin_name="", display_name="",
-                version=version, source=source,
-            ))
-    return CatalogueOut(plugins=plugins, controls=controls)
+    if kind in ("all", "plugin"):
+        packages_dict = plugin_loader.list_packages(refresh=True)
+        for pkg_name, versions_dict in packages_dict.items():
+            for version, meta in versions_dict.items():
+                source = meta.get("source", "unknown")
+                if source == "local":
+                    try:
+                        instances = plugin_loader.load_package(pkg_name, version)
+                    except Exception:  # noqa: BLE001 - a broken package is listed package-level
+                        instances = {}
+                    if instances:
+                        for cls_name, inst in instances.items():
+                            plugins.append(CataloguePluginOut(
+                                package_name=pkg_name, plugin_name=cls_name,
+                                display_name=getattr(inst, "display_name", None) or cls_name,
+                                display_icon=getattr(inst, "display_icon", "") or "",
+                                version=version, source=source,
+                            ))
+                        continue
+                plugins.append(CataloguePluginOut(
+                    package_name=pkg_name, plugin_name="", display_name="",
+                    version=version, source=source,
+                ))
+    return CatalogueOut(
+        plugins=plugins,
+        controls=controls,
+        app_catalog_url=getattr(settings, "APP_CATALOG_URL", "") or "",
+    )
 
 
 @router.post("/projects/{pid}/catalogue/installs", response=dict)
