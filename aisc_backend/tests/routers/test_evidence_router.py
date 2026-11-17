@@ -14,7 +14,12 @@ from aisc_backend.models.control import (
     Submission,
     SubmissionAnswer,
 )
-from aisc_backend.models.control_objective import ControlObjective, ObjectiveProfile
+from aisc_backend.models.control_objective import (
+    ControlObjective,
+    ObjectiveProfile,
+    Risk,
+    RiskObjectiveMapping,
+)
 from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
 from aisc_backend.models.plugin import Plugin, PluginConfig
 from aisc_backend.models.project import Project
@@ -146,6 +151,85 @@ class EvidenceMapRouterTest(TestCase):
         self.assertEqual(len(body["controls"]), 1)
         self.assertEqual(body["controls"][0]["submission"]["answered"], 1)
         self.assertEqual(body["coverage"], {"linked": 0, "objectives": 2, "gaps": 2})
+
+    async def test_priority_and_stale_feed_the_gaps_and_priority_filters(self):
+        """The two filters read three per-objective fields; here is where they come from.
+
+        `priority` is earned: it is the risks the assessor bound to the objective
+        (a rating of High or worse makes it key by default), an explicit key
+        choice, or nothing — it is never a default. `linked` says a saved link
+        names it. `stale` says this version no longer selects it while a saved link
+        still does. The pilot's page filters on exactly those:
+
+            (!gaps || (!o.linked && !o.stale)) && (!prio || o.priority)
+        """
+        project = await _project("filters")
+        await _objectives("O1", "O2", "O3", "O4")
+        # the version selects O1..O3; O4 is left out of step 2's selection
+        await ObjectiveProfile.objects.acreate(
+            project=project, name="", objectives=["O1", "O2", "O3"], key_objectives=[],
+        )
+        objectives = {
+            o.objective_id: o
+            async for o in ControlObjective.objects.filter(project__isnull=True)
+        }
+        critical = await Risk.objects.acreate(
+            project=project, position=1, impact=5, likelihood=5,
+        )
+        low = await Risk.objects.acreate(project=project, position=2, impact=1, likelihood=1)
+        await RiskObjectiveMapping.objects.acreate(
+            project=project, risk=critical, objective=objectives["O1"],
+        )
+        await RiskObjectiveMapping.objects.acreate(
+            project=project, risk=low, objective=objectives["O2"],
+        )
+        await _plugin(project, "fairness")
+        version = await (await _version())(project)
+
+        # O4 is not selected, so it is not on the map at all until a link names it
+        body = (await client.get(f"/{project.pid}/evidence")).json()
+        self.assertEqual([o["id"] for o in body["objectives"]], ["O1", "O2", "O3"])
+        before = {o["id"]: o for o in body["objectives"]}
+        self.assertTrue(before["O1"]["priority"])       # mitigates a 25 (Critical) risk
+        self.assertFalse(before["O2"]["priority"])      # mitigates a 1 (Low) risk
+        self.assertFalse(before["O3"]["priority"])      # no risk maps to it
+        self.assertIsNone(before["O3"]["stale"])
+
+        link = await client.put(
+            f"/{project.pid}/evidence/links",
+            json={
+                "version": str(version.pid),
+                "links": [
+                    {"objective_id": "O1", "kind": "test", "key": "fairness", "note": None},
+                    {"objective_id": "O4", "kind": "test", "key": "fairness",
+                     "note": "kept from the version above"},
+                ],
+            },
+        )
+        self.assertEqual(link.status_code, 200, link.text)
+        linked = link.json()
+        rows = {o["id"]: o for o in linked["objectives"]}
+        # a link keeps O4 on the map, marked as no longer selected
+        self.assertEqual(sorted(rows), ["O1", "O2", "O3", "O4"])
+        self.assertEqual(rows["O4"]["stale"], "not selected")
+        self.assertTrue(rows["O4"]["linked"])
+        self.assertIsNone(rows["O2"]["stale"])
+        self.assertEqual(linked["coverage"], {"linked": 2, "objectives": 4, "gaps": 2})
+
+        # the row sets the page's filters leave, read off the payload alone
+        shown = linked["objectives"]
+        self.assertEqual(
+            [o["id"] for o in shown if not o["linked"] and not o["stale"]], ["O2", "O3"]
+        )
+        self.assertEqual([o["id"] for o in shown if o["priority"]], ["O1"])
+        self.assertEqual(
+            [
+                o["id"]
+                for o in shown
+                if (not o["linked"] and not o["stale"]) and o["priority"]
+            ],
+            [],
+        )
 
     async def test_link_note_and_unlink_roundtrip(self):
         project = await _project()
