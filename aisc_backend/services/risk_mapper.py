@@ -30,6 +30,7 @@ MAX_ATTEMPTS = 3
 
 #: The shared "no model configured" refusal (see `services.ai_assistant`).
 NoModelConfigured = ai_assistant.NoModelConfigured
+DestinationRefused = ai_assistant.DestinationRefused
 
 
 def normalise(text) -> str:

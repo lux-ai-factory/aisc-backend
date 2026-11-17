@@ -726,6 +726,8 @@ async def card_agent_turn(
         ask = await card_agent.resolve_agent(project)
     except ai_assistant.NoModelConfigured as exc:
         raise HttpError(503, str(exc))
+    except ai_assistant.DestinationRefused as exc:
+        raise HttpError(400, str(exc))
 
     patch = (qualification.answers or {}).get("__patch")
     patch = patch if isinstance(patch, dict) else None

@@ -469,6 +469,8 @@ async def suggest_mappings(request, pid: uuid.UUID, data: MappingSuggestionIn):
         propose = await risk_mapper.resolve_proposer(project)
     except risk_mapper.NoModelConfigured as exc:
         raise HttpError(503, str(exc))
+    except risk_mapper.DestinationRefused as exc:
+        raise HttpError(400, str(exc))
 
     result = await risk_mapper.suggest(
         risks=[{"pid": str(r.pid), "chain": risk_mapper.risk_chain_text(r)} for r in risks],

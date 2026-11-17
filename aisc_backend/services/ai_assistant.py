@@ -25,6 +25,10 @@ class NoModelConfigured(RuntimeError):
     """No model is configured for this assistant (project helper or stack setting)."""
 
 
+class DestinationRefused(RuntimeError):
+    """The model's endpoint is one the allowed-hosts door refuses for this project."""
+
+
 def make_openai_chat(base_url: str, model: str, api_key: str | None):
     """A chat call against an OpenAI-compatible endpoint, returning the reply text."""
 
@@ -63,7 +67,7 @@ async def resolve_chat(
     instead of silently doing nothing.
     """
     from aisc_backend.models.connection import Helper
-    from aisc_backend.services import connection_secrets
+    from aisc_backend.services import allowed_hosts, connection_secrets
 
     helpers = [h async for h in Helper.objects.filter(project=project).order_by("name")]
     if helpers:
@@ -71,6 +75,13 @@ async def resolve_chat(
             (h for role in PREFERRED_ROLES for h in helpers if role in (h.roles or [])),
             helpers[0],
         )
+        # A helper is the project's own endpoint, so it goes through the same door
+        # as a connection test (CON-01) — read now, before the call.
+        refusal = await allowed_hosts.guard_url(project, preferred.endpoint_url)
+        if refusal is not None:
+            raise DestinationRefused(
+                f"the model {preferred.name!r} is at {refusal['detail']}"
+            )
         key = await connection_secrets.get_secret(
             preferred.project_id, connection_secrets.helper_key_name(preferred.name)
         )
