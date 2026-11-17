@@ -86,7 +86,8 @@ class ComponentRouterTestCase(TestCase):
             json_value={"endpoint_url": "http://example.com", "secret_key": "k"},
         )
         with (
-            patch("aisc_backend.routers.component.list_openai_models", return_value=["gpt-4o"]),
+            patch("aisc_backend.component_endpoints.network_rule", return_value={}),
+            patch("aisc_backend.component_endpoints.list_models", return_value=["gpt-4o"]),
             patch("aisc_backend.routers.component.decrypt_value", return_value="sk-test"),
         ):
             res = await client.get(f"/{comp.pid}/models")

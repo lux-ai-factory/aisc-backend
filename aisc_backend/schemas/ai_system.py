@@ -21,6 +21,12 @@ class AIComponentInSchema(Schema):
     json_value: dict | None = None
 
 
+class AIComponentUpdateSchema(AIComponentInSchema):
+    #: an LLM component's secret typed again, for an edit that moves its endpoint to another origin: it becomes
+    #: the value of the project secret the component names (never answered)
+    secret_value: str | None = None
+
+
 class AISystemDetailOutSchema(ModelSchema):
     components: list[AIComponentOutSchema] = Field(default=[], alias="get_components")
 

@@ -93,6 +93,29 @@ def list_helper_models(project_pid: str, name: str) -> dict:
     return {"models": [m for m in body["models"] if isinstance(m, str)], "error": body.get("error")}
 
 
+def network_rule(project_pid: str) -> dict:
+    """The platform project's network rule, as the platform's own calls apply it: {"allowed_hosts",
+    "denied_addresses", "floor_hosts"} (the deployment's and the project's allowed internal hosts, the addresses
+    never reached, the hosts that may reach loopback). HelpersUnavailable when it cannot be read: a caller then
+    sends nothing."""
+    base = (os.environ.get("PLATFORM_URL") or "").rstrip("/")
+    token = os.environ.get("PLATFORM_ENGINE_TOKEN") or ""
+    if not base or not token:
+        raise HelpersUnavailable("PLATFORM_URL or PLATFORM_ENGINE_TOKEN is not set: the project's network rule "
+                                 "cannot be read")
+    url = f"{base}/internal/projects/{quote(str(project_pid), safe='')}/network-rule"
+    try:
+        status, body = _get(url, {"X-AISC-Service-Token": token})
+    except Exception as exc:  # noqa: BLE001 - the platform is down, or the URL is wrong
+        logger.warning("the platform can't be reached (%s): the network rule cannot be read", type(exc).__name__)
+        raise HelpersUnavailable("the platform can't be reached: the project's network rule cannot be read") from exc
+    fields = ("allowed_hosts", "denied_addresses", "floor_hosts")
+    if status != 200 or not isinstance(body, dict) or not all(isinstance(body.get(f), list) for f in fields):
+        logger.warning("the platform answered %s on the network rule of project %s", status, project_pid)
+        raise HelpersUnavailable(f"the platform answered {status}: the project's network rule cannot be read")
+    return {f: [str(v) for v in body[f]] for f in fields}
+
+
 def connection_fingerprints(project_pid: str, refs: list[str]) -> list[dict]:
     """Which endpoint each of a run's target and connection references would reach now, as the platform
     fingerprints it: [{"ref", "connection", "kind", "endpoint_sha256"}], never a key or the endpoint itself.

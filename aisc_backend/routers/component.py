@@ -10,15 +10,17 @@ from ninja import Router, File, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
+from aisc_backend import component_endpoints
 from aisc_backend.audit.log import log_action
 from aisc_backend.models import AIComponent, AIComponentType, EvaluationInput
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
-from aisc_backend.schemas.ai_system import AIComponentInSchema, AIComponentOutSchema
-from aisc_backend.utils.encryption import decrypt_value
-from aisc_plugin_interface import LLMConfig, list_openai_models, ModelListingError
+from aisc_backend.schemas.ai_system import AIComponentOutSchema, AIComponentUpdateSchema
+from aisc_backend.routers.project_config import _masked as masked_secret_value
+from aisc_backend.utils.encryption import decrypt_value, encrypt_value
+from aisc_plugin_interface import LLMConfig, ModelListingError
 from config.settings import MODEL_LISTING_SSL_VERIFY
 
 router = Router(tags=["component"])
@@ -75,12 +77,25 @@ async def get_component(request, component_pid: uuid.UUID):
 
 
 @router.patch("/{component_pid}", response=AIComponentOutSchema)
-async def update_component(request, component_pid: uuid.UUID, data: AIComponentInSchema):
+async def update_component(request, component_pid: uuid.UUID, data: AIComponentUpdateSchema):
+    """Edit a component. An LLM component that keeps its secret while its endpoint moves to another origin needs
+    the secret typed again (secret_value, which becomes that project secret's value): otherwise 422."""
     component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
     if data.json_value is not None:
         check_reference_of_project(data.json_value, component.system.project)
+    retyped = None
+    if (component.component_type == AIComponentType.LLM and data.json_value is not None
+            and component_endpoints.must_type_the_key_again(component.json_value, data.json_value)):
+        if not (data.secret_value or "").strip():
+            raise HttpError(422, component_endpoints.ENTER_THE_KEY_AGAIN)
+        retyped = await project_config_repository.get_secret_by_key(
+            component.system.project.pid, data.json_value["secret_key"])
+        if retyped is None:
+            raise HttpError(400, "Configured API key secret not found")
+        retyped.encrypted_value = encrypt_value(data.secret_value.strip())
+        retyped.masked_value = masked_secret_value(data.secret_value.strip())
 
     if data.name is not None:
         component.name = data.name
@@ -94,6 +109,8 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
             raise HttpError(400, "source_dataset must be a dataset component")
         component.source_dataset = source
 
+    if retyped is not None:
+        await project_config_repository.save(retyped)
     component = await ai_component_repository.save(component)
     component = await ai_component_repository.get_with_source_dataset(component.pid)
     await sync_to_async(log_action)(
@@ -226,9 +243,10 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
 async def get_component_models(request, component_pid: uuid.UUID):
     """List the models exposed by an llm component's OpenAI-compatible endpoint.
 
-    The API key is decrypted server-side and never sent to the client. On
-    failure, returns an empty list plus an error message so the UI can fall
-    back to a free-text model input.
+    The API key is decrypted server-side and never sent to the client. It goes only to an address the
+    project's network rule allows, with no redirect followed (component_endpoints). On failure, returns an
+    empty list plus an error message, never the endpoint's answer, so the UI can fall back to a free-text
+    model input.
     """
     component = await ai_component_repository.get_with_system_project(component_pid)
     if not component:
@@ -249,17 +267,19 @@ async def get_component_models(request, component_pid: uuid.UUID):
         raise HttpError(400, "Configured API key secret not found")
 
     try:
+        rule = await sync_to_async(component_endpoints.network_rule)(component.system.project)
         api_key = decrypt_value(secret.encrypted_value)
-        models = list_openai_models(
+        models = await sync_to_async(component_endpoints.list_models)(
             config.endpoint_url,
             api_key,
+            rule,
             verify_ssl=MODEL_LISTING_SSL_VERIFY,
         )
         return {"models": models, "error": None}
     except ModelListingError as exc:
         return {"models": [], "error": str(exc)}
-    except Exception as exc:  # pragma: no cover - defensive
-        return {"models": [], "error": str(exc)}
+    except Exception as exc:  # pragma: no cover - defensive: its kind only, never its text
+        return {"models": [], "error": f"the models could not be listed ({type(exc).__name__})"}
 
 
 @router.get("/{component_pid}/data")
