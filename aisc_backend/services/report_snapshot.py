@@ -30,6 +30,7 @@ from aisc_backend.models.control_objective import (    ControlObjective,
     RiskObjectiveMapping,
 )
 from aisc_backend.models.evaluation import Evaluation
+from aisc_backend.models.evidence import EvidenceLink, EvidenceReview
 from aisc_backend.models.measure import Measurement
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.project import Project
@@ -38,6 +39,7 @@ from aisc_backend.repositories.system_repository import SystemRepository
 from aisc_backend.services import control_objectives as priorities
 from aisc_backend.services import controls_scoring
 from aisc_backend.services import qualification_service
+from aisc_backend.services import report_blocks
 
 system_repository = SystemRepository()
 
@@ -51,14 +53,28 @@ async def build_snapshot(
     project: Project,
     evaluation_pids: list[str] | None = None,
     sections: list[str] | None = None,
+    *,
+    version_pid: str | None = None,
+    layout: dict | None = None,
+    period: str = "",
+    other_versions: bool = False,
+    compare_to: str | None = None,
 ) -> dict:
     """Assemble the report snapshot for a project (B5: scoped to the picked
-    evaluations, recording the picked sections for the renderer)."""
+    evaluations and sections; REP-01: scoped to a selected published version and
+    a layout, with the evidence map's coverage of that version).
+
+    Everything is read from the ORM here, once, at generation time; the caller
+    stores the result on the `Report` row and reads it back — nothing is
+    recomputed on read, so a report does not change when the project does.
+    """
     system = await system_repository.get_or_create(project)
-    version = await system_repository.latest(system)
+    version = await _select_version(system, version_pid)
 
     wanted = [s for s in (sections or []) if s in REPORT_SECTIONS]
     evaluations = await _evaluations(project, evaluation_pids or [])
+    objectives = await _objectives(project)
+    coverage = await _coverage(project, version, objectives.get("priorities") or [])
 
     return {
         "project": {
@@ -69,14 +85,115 @@ async def build_snapshot(
         "system": {
             "name": system.name,
             "version": _version_ref(version),
-            "card": await _latest_card(project),
+            "card": await _card_for(project, version),
         },
         "controls": await _controls(project),
-        "objectives": await _objectives(project),
+        "objectives": objectives,
+        "coverage": coverage,
         "evaluations": evaluations,
+        "layout": _layout_ref(layout),
+        "blocks": _blocks(layout),
         "sections": wanted or list(REPORT_SECTIONS),
+        "selection": {
+            "version_pid": str(version.pid) if version is not None else None,
+            "period": period,
+            "other_versions": bool(other_versions),
+            "compare_to": compare_to,
+        },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+async def _select_version(system, version_pid: str | None) -> SystemVersion | None:
+    """The published AI-card version a report is of: the named one (which must be
+    the project's), else the latest."""
+    if version_pid:
+        version = await SystemVersion.objects.filter(system=system, pid=version_pid).afirst()
+        if version is not None:
+            return version
+    return await system_repository.latest(system)
+
+
+def _layout_ref(layout: dict | None) -> dict | None:
+    if not layout:
+        return None
+    return {
+        "id": layout.get("id"),
+        "name": layout.get("name"),
+        "revision": layout.get("revision"),
+        "show_index": layout.get("show_index", True),
+        "numbering": layout.get("numbering", True),
+    }
+
+
+def _blocks(layout: dict | None) -> list[dict]:
+    """The ordered blocks to render: the layout's, else the assessment-report
+    built-in (a generate call always prints a sensible document)."""
+    if layout and layout.get("blocks"):
+        return layout["blocks"]
+    default = report_blocks.builtin_layout("builtin-assessment-report")
+    return default["blocks"] if default else []
+
+
+async def _coverage(project: Project, version: SystemVersion | None, matrix: list[dict]) -> list[dict]:
+    """The evidence map of one version: each objective, its linked tests and
+    checklists, whether it is covered, and who reviewed the map.
+
+    Read from `EvidenceLink`/`EvidenceReview` (the owning models) at generation
+    time; the result is frozen on the report. An objective that a saved link
+    names but the matrix no longer selects is kept and marked `stale`.
+    """
+    if version is None:
+        return []
+    links = [
+        link
+        async for link in EvidenceLink.objects.filter(project=project, version=version).select_related(
+            "objective"
+        )
+    ]
+    grouped: dict[str, dict[str, list[str]]] = {}
+    for link in links:
+        bucket = grouped.setdefault(link.objective.objective_id, {"tests": [], "controls": []})
+        bucket["tests" if link.kind == "test" else "controls"].append(link.key)
+    review = await EvidenceReview.objects.filter(project=project, version=version).afirst()
+    reviewed_by = None
+    if review is not None:
+        reviewed_by = review.reviewed_by_name or review.reviewed_by
+
+    rows: list[dict] = []
+    known: set = set()
+    for p in matrix:
+        oid = p.get("objective_id")
+        known.add(oid)
+        bucket = grouped.get(oid)
+        rows.append({
+            "objective_id": oid,
+            "text": p.get("text", ""),
+            "key": bool(p.get("key")),
+            "priority": p.get("score"),
+            "rank": p.get("rank"),
+            "linked": bool(bucket and (bucket["tests"] or bucket["controls"])),
+            "stale": False,
+            "tests": (bucket or {}).get("tests", []),
+            "controls": (bucket or {}).get("controls", []),
+            "reviewed_by": reviewed_by,
+        })
+    for oid, bucket in grouped.items():
+        if oid in known:
+            continue
+        rows.append({
+            "objective_id": oid,
+            "text": "",
+            "key": False,
+            "priority": None,
+            "rank": None,
+            "linked": True,
+            "stale": True,
+            "tests": bucket["tests"],
+            "controls": bucket["controls"],
+            "reviewed_by": reviewed_by,
+        })
+    return rows
 
 
 def _version_ref(version: SystemVersion | None) -> dict | None:
@@ -94,15 +211,24 @@ def _version_ref(version: SystemVersion | None) -> dict | None:
     }
 
 
-async def _latest_card(project: Project) -> dict | None:
-    """The AI card of the latest saved qualification, if any. Also carries the
-    JSON-LD graph (what the webapp's card graph is drawn from), so the report
+async def _card_for(project: Project, version: SystemVersion | None) -> dict | None:
+    """The AI card of the report's version, if any. Prefers the qualification
+    that produced that version; falls back to the latest saved card. Also carries
+    the JSON-LD graph (what the webapp's card graph is drawn from), so the report
     can render the AI-card graph, not just its summary."""
-    q = (
-        await Qualification.objects.filter(project=project)
-        .order_by("-created_at")
-        .afirst()
-    )
+    q = None
+    if version is not None:
+        q = (
+            await Qualification.objects.filter(project=project, system_version=version)
+            .order_by("-created_at")
+            .afirst()
+        )
+    if q is None or not q.system_card:
+        q = (
+            await Qualification.objects.filter(project=project)
+            .order_by("-created_at")
+            .afirst()
+        )
     if q is None or not q.system_card:
         return None
     card = dict(q.system_card)

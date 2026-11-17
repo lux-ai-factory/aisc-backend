@@ -232,11 +232,20 @@ class ReportSettingsTest(TestCase):
         project = await _project()
         resp = await report_client.put(
             f"/{project.pid}/report-settings",
-            json={"default_format": "docx", "default_sections": ["system", "nope"]},
+            json={"default_format": "rtf", "default_sections": ["system", "nope"]},
         )
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(resp.json()["default_format"], "pdf")
         self.assertEqual(resp.json()["default_sections"], ["system"])
+
+    async def test_settings_accept_docx_default(self):
+        project = await _project()
+        resp = await report_client.put(
+            f"/{project.pid}/report-settings",
+            json={"default_format": "docx", "default_sections": ["system"]},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["default_format"], "docx")
 
     async def test_stranger_cannot_read_or_write_settings(self):
         project = await Project.objects.acreate(name="s", description="", status="Ready")

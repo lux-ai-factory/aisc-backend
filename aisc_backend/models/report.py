@@ -1,11 +1,13 @@
 """
-Reports — a project's generated assessment report.
+Reports — a project's generated assessment report and its layouts.
 
-The backend is the single door for reporting: it owns the `Report` row (project
-FK, the card-version ref it snapshots, the period, format and the stored file)
-and calls the headless report service to render the PDF/HTML. The report
-service is stateless (snapshot in -> document out, with its own service-token
-door); it keeps no UI, no layout editor and no database of its own.
+The backend is the single door for reporting: it owns the `ReportLayout` rows
+(ordered blocks) and the `Report` row (project FK, the card-version ref it
+snapshots, the layout + revision, the period, format and the stored document).
+Rendering happens in this app (`services.report_render`) and produces a real PDF
+or DOCX; the optional external renderer (`services.report_service`) is kept for
+deployments that configure one, but it is no longer the only path and an HTML
+page is never served as a PDF.
 """
 import uuid
 
@@ -13,6 +15,42 @@ from django.db import models
 
 from .project import Project
 from .qualification import SystemVersion
+
+
+class ReportLayout(models.Model):
+    """A project's report layout: an ordered list of blocks, an index and
+    numbering (the pilot's composer layout, folded into this app).
+
+    A layout holds no project data: the AI-card version, period and comparison
+    are chosen when a report is generated and recorded on the `Report`. The
+    five built-in layouts are code, not rows (`services.report_blocks`), so they
+    are shared read-only by every project and can only be duplicated.
+    """
+
+    pid = models.UUIDField(default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="report_layouts"
+    )
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    #: Ordered blocks: [{"instance_id": "<uuid>", "block_type": "<id>", "options": {...}}].
+    blocks = models.JSONField(default=list)
+    show_index = models.BooleanField(default=True)
+    numbering = models.BooleanField(default=True)
+    #: Bumped on every save so a generate call can refuse a layout that changed
+    #: while the composer was looking at it.
+    revision = models.PositiveIntegerField(default=1)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "aisc_backend"
+        ordering = ["name", "created_at"]
+
+    def __str__(self):  # pragma: no cover - debug helper
+        return f"report layout {self.name} of {self.project.name}"
 
 
 class Report(models.Model):
@@ -36,16 +74,36 @@ class Report(models.Model):
         blank=True,
         related_name="reports",
     )
+    # The layout (and its revision) this report was generated from. SET_NULL so a
+    # deleted layout does not delete its historical reports; the snapshot keeps
+    # the blocks, so an old report still renders.
+    layout = models.ForeignKey(
+        ReportLayout,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
+    )
+    layout_revision = models.PositiveIntegerField(null=True, blank=True)
     period = models.CharField(max_length=255, blank=True, default="")
-    format = models.CharField(max_length=16, default="pdf")     # pdf | html
+    format = models.CharField(max_length=16, default="pdf")     # pdf | docx | html
     # Where the rendered file lives (a storage reference; the backend holds the
     # bytes of `document` and `file_ref` names the key for a future object store).
     file_ref = models.CharField(max_length=255, blank=True, default="")
+    # The immutable generation snapshot: the project's ORM data (version ref,
+    # controls coverage, objectives matrix, evaluations, layout + blocks) frozen
+    # at generation time. Reads never recompute it, so an old report does not
+    # change when the project does.
     snapshot = models.JSONField(default=dict)
-    # The rendered document bytes (PDF, or the HTML page); stored by the backend
-    # when the headless service answers. Null while generation has not produced
-    # a document (e.g. the service is absent in dev/tests -> the HTML fallback).
+    #: sha256 of the canonical snapshot, so tampering/a drift is detectable.
+    snapshot_checksum = models.CharField(max_length=64, blank=True, default="")
+    # The rendered document bytes (a real PDF or DOCX); null while generation has
+    # not produced a document. `document_pdf` holds the PDF companion of a Word
+    # report (the pilot's "a Word report also gets a PDF copy").
     document = models.BinaryField(null=True, blank=True)
+    document_pdf = models.BinaryField(null=True, blank=True)
+    #: sha256 of the primary document bytes.
+    document_checksum = models.CharField(max_length=64, blank=True, default="")
     status = models.CharField(max_length=32, default="generated")
     generated_by = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -66,7 +124,7 @@ class ProjectReportSettings(models.Model):
     project = models.OneToOneField(
         Project, on_delete=models.CASCADE, related_name="report_settings"
     )
-    default_format = models.CharField(max_length=16, default="pdf")  # pdf | html
+    default_format = models.CharField(max_length=16, default="pdf")  # pdf | docx | html
     default_sections = models.JSONField(default=list)  # subset of REPORT_SECTIONS, [] = all
     updated_by = models.CharField(max_length=255, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
