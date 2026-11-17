@@ -17,7 +17,8 @@ import uuid
 
 from asgiref.sync import sync_to_async
 from django.db import models
-from ninja import Router
+from ninja import File, Router
+from ninja.files import UploadedFile
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
@@ -28,6 +29,11 @@ from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.repositories.system_repository import SystemRepository
 from aisc_backend.routers.questionnaire import _latest_number
 from aisc_backend.schemas.qualification import (
+    CardAgentMessageIn,
+    CardComponentLinkOut,
+    CardAgentTurnOut,
+    PrefillOut,
+    PrefillSuggestionOut,
     QualificationCardIn,
     QualificationDetailOut,
     QualificationIn,
@@ -37,7 +43,13 @@ from aisc_backend.schemas.qualification import (
     SystemVersionIn,
     SystemVersionOut,
 )
-from aisc_backend.services import qualification_service
+from aisc_backend.services import (
+    ai_assistant,
+    card_agent,
+    card_components,
+    qualification_service,
+)
+from aisc_backend.services import qualification_prefill
 
 router = Router(tags=["qualification"])
 
@@ -172,6 +184,98 @@ async def select_questionnaire(request, pid: uuid.UUID, data: QuestionnaireSelec
 # --- Qualification orchestration -------------------------------------------------
 
 
+async def _active_questionnaire_definition(project, questionnaire_id: str) -> dict:
+    """The definition prefill reads questions from: the named one, else the project's."""
+    qid = (questionnaire_id or "").strip()
+    if not qid:
+        system = await system_repository.get_or_create(project)
+        qid = system.questionnaire_id or ""
+    if not qid or qid == qualification_service.DEFAULT_QUESTIONNAIRE_ID:
+        return await qualification_service.get_default_questionnaire()
+    row = await _find_questionnaire(project, qid)
+    if row is None:
+        raise HttpError(404, "no such questionnaire")
+    return row.definition or {}
+
+
+@router.post("/{pid}/qualification/prefill", response=PrefillOut)
+async def prefill_qualification(request, pid: uuid.UUID, file: File[UploadedFile],
+                                questionnaire_id: str = ""):
+    """Propose answers from an uploaded document (PDF, Word or plain text).
+
+    Text rules only — no model: the document's lines are matched against the
+    questionnaire's questions and the values found are **proposed**. Nothing is
+    stored; the person accepts, edits or rejects every suggestion.
+    """
+    project = await _project_for(request, pid, needed="editor")
+    # reading the upload is a sync file hit: never do it on the event loop
+    aread = getattr(file, "aread", None)
+    blob = await aread() if aread is not None else await sync_to_async(file.read)()
+    filename = getattr(file, "name", "") or ""
+    try:
+        text = qualification_prefill.extract_text(filename, blob)
+    except qualification_prefill.UnsupportedDocument as exc:
+        raise HttpError(415, str(exc))
+    except Exception as exc:  # noqa: BLE001 - a broken document is the caller's problem
+        raise HttpError(415, f"{filename} could not be read: {exc}")
+
+    definition = await _active_questionnaire_definition(project, questionnaire_id)
+    questions = definition.get("questions") if isinstance(definition, dict) else None
+    if not isinstance(questions, list):
+        # an opaque definition (no per-question fields): nothing to match against
+        return PrefillOut(
+            filename=filename,
+            characters=len(text),
+            note="this questionnaire has no answerable questions to pre-fill",
+        )
+    proposals = qualification_prefill.propose(definition, text)
+    matched = {p["field"] for p in proposals}
+    unmatched = [
+        str(q.get("field"))
+        for q in questions
+        if isinstance(q, dict) and str(q.get("field") or "") not in matched
+    ]
+    await sync_to_async(log_action)(
+        request,
+        action="create",
+        resource_type="qualification_prefill",
+        resource_id=str(pid),
+        metadata={"filename": filename, "proposals": len(proposals)},
+    )
+    return PrefillOut(
+        filename=filename,
+        characters=len(text),
+        proposals=[PrefillSuggestionOut(**p) for p in proposals],
+        unmatched=unmatched,
+    )
+
+
+@router.get(
+    "/{pid}/qualification/{qualification_pid}/card-components",
+    response=list[CardComponentLinkOut],
+)
+async def qualification_card_components(
+    request, pid: uuid.UUID, qualification_pid: uuid.UUID
+):
+    """The card's components and the engine components they stand for.
+
+    Recorded on every save with a snapshot of each, so this reports what changed
+    in the engine since (`changed`) and which card component has no engine
+    counterpart (`missing`).
+    """
+    project = await _project_for(request, pid)
+    qualification = await Qualification.objects.filter(
+        project=project, pid=qualification_pid
+    ).afirst()
+    if qualification is None:
+        raise HttpError(404, "no such qualification")
+    rows = await card_components.read(project, qualification)
+    return [CardComponentLinkOut(**row) for row in rows]
+
+
+# NOTE: declared before the `/{pid}/qualification/{qualification_pid}` routes on
+# purpose — Ninja matches in registration order and would otherwise read `prefill`
+# as a qualification id.
 @router.get("/{pid}/qualification", response=list[QualificationDetailOut])
 async def list_qualifications(request, pid: uuid.UUID):
     project = await _project_for(request, pid)
@@ -199,6 +303,7 @@ async def save_qualification(request, pid: uuid.UUID, data: QualificationIn):
         system_card=None,
         status="draft",
     )
+    await card_components.link(project, qualification)
     await sync_to_async(log_action)(
         request,
         action="create",
@@ -263,6 +368,7 @@ async def complete_qualification(request, pid: uuid.UUID, qualification_pid: uui
             project, qualification.questionnaire_id, None
         )
     await qualification.asave()
+    await card_components.link(project, qualification)
     await sync_to_async(log_action)(
         request,
         action="complete",
@@ -380,6 +486,7 @@ async def edit_qualification_card(
         system_card=data.system_card,
         status="completed",
     )
+    await card_components.link(project, edited)
     await sync_to_async(log_action)(
         request,
         action="update",
@@ -498,6 +605,7 @@ async def _store_corrected_version(
         system_card=card,
         status="completed",
     )
+    await card_components.link(project, edited)
     await sync_to_async(log_action)(
         request,
         action="update",
@@ -585,3 +693,55 @@ async def _qualification_detail(
         system_version=version,
         system_card_jsonld=qualification_service.card_jsonld(qualification.system_card),
     )
+
+
+@router.post(
+    "/{pid}/qualification/{qualification_pid}/agent",
+    response=CardAgentTurnOut,
+)
+async def card_agent_turn(
+    request, pid: uuid.UUID, qualification_pid: uuid.UUID, data: CardAgentMessageIn
+):
+    """Talk to the card agent about a completed qualification's card.
+
+    The agent answers and **proposes** corrections — each one quoting the
+    person's words or the card — but writes nothing: the client applies the
+    accepted ones through `PUT .../nodes/{node_id}`, the single write path,
+    which rebuilds the card and stores it as a new version. 503 when the project
+    has no model configured.
+    """
+    project = await _project_for(request, pid, needed="editor")
+    qualification = await Qualification.objects.filter(
+        project=project, pid=qualification_pid
+    ).afirst()
+    if qualification is None:
+        raise HttpError(404, "no such qualification")
+    if qualification.status != "completed":
+        raise HttpError(400, "only a completed qualification has a card to talk about")
+    message = (data.message or "").strip()
+    if not message:
+        raise HttpError(400, "say something to the agent")
+
+    try:
+        ask = await card_agent.resolve_agent(project)
+    except ai_assistant.NoModelConfigured as exc:
+        raise HttpError(503, str(exc))
+
+    patch = (qualification.answers or {}).get("__patch")
+    patch = patch if isinstance(patch, dict) else None
+    reply = await ask(qualification.system_card or {}, message, patch)
+    turn = card_agent.review(
+        card=qualification.system_card or {}, message=message, reply=reply, patch=patch
+    )
+    await sync_to_async(log_action)(
+        request,
+        action="create",
+        resource_type="qualification_agent",
+        resource_id=str(qualification.pid),
+        metadata={
+            "projectPid": str(pid),
+            "proposals": len(turn["proposals"]),
+            "dropped": len(turn["dropped"]),
+        },
+    )
+    return CardAgentTurnOut(**turn)

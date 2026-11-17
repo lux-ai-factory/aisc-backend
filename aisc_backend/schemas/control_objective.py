@@ -118,6 +118,9 @@ class MatrixOut(Schema):
 
 class ObjectiveProfileIn(Schema):
     name: str = ""
+    #: Which built-in profile to switch to; when given, `objectives` is filled
+    #: from it (`full-ai-act` / `fairness-oversight`).
+    profile_key: str = ""
     objectives: list[str] = []
     key_objectives: list[str] = []
     objective_ratings: dict = {}
@@ -126,7 +129,95 @@ class ObjectiveProfileIn(Schema):
 class ObjectiveProfileOut(Schema):
     pid: uuid.UUID
     name: str
+    profile_key: str = ""
     objectives: list[str]
     key_objectives: list[str]
     catalogue_digest: str = ""
     objective_ratings: dict = {}
+
+
+class BuiltinProfileOut(Schema):
+    """One of the two built-in profiles a project can start from."""
+
+    key: str
+    name: str
+    description: str = ""
+    objectives: list[str]
+
+
+class BuiltinProfilesOut(Schema):
+    """The built-in profiles plus the one this project is on."""
+
+    profiles: list[BuiltinProfileOut]
+    current: str
+    current_name: str = ""
+    selected: list[str] = []
+
+
+class MappingSuggestionIn(Schema):
+    """Ask the risk mapper for the objectives of the profile that mitigate each risk."""
+
+    #: Replace links a person made by hand too (off by default, as in the pilot).
+    also_replace_manual: bool = False
+
+
+class MappingSuggestionOut(Schema):
+    """One mapping run: what it linked, what it dropped, how many tries it took."""
+
+    attempts: int
+    created: list[RiskObjectiveMappingOut]
+    dropped: list[dict]
+
+
+class ObjectiveSetRowIn(Schema):
+    """One row of a custom objective set's draft."""
+
+    objective_id: str
+    macro_requirement: str = ""
+    text: str = ""
+    legal_basis: str = ""
+    sub_requirement_label: str = ""
+    assessment_mode: str = ""
+    target: str = ""
+    standards_grounding: str = ""
+    grounding_tier_flag: str = ""
+    notes: str = ""
+
+
+class ObjectiveSetIn(Schema):
+    """A project's own objective set."""
+
+    name: str
+    code_prefix: str = ""
+    draft: list[ObjectiveSetRowIn] = []
+
+
+class ObjectiveSetVersionOut(Schema):
+    number: int
+    objectives: list[ObjectiveSetRowIn] = []
+    created_by: str = ""
+    created_at: str = ""
+
+
+class ObjectiveSetOut(Schema):
+    pid: uuid.UUID
+    name: str
+    code_prefix: str = ""
+    draft: list[ObjectiveSetRowIn] = []
+    published_version: int | None = None
+    versions: list[ObjectiveSetVersionOut] = []
+
+
+class ObjectiveSetApplyIn(Schema):
+    """Apply a published version to the project: its rows become local objectives."""
+
+    number: int | None = None      # latest published version when omitted
+
+
+class ObjectiveSetApplyOut(Schema):
+    """What applying a version did."""
+
+    version: int
+    objectives: list[str] = []
+    created: list[str] = []
+    updated: list[str] = []

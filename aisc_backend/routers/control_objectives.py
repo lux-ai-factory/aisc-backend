@@ -18,6 +18,8 @@ from aisc_backend.auth.access import caller_of, role_or_404
 from aisc_backend.models.control_objective import (
     ControlObjective,
     ObjectiveProfile,
+    ObjectiveSet,
+    ObjectiveSetVersion,
     Risk,
     RiskObjectiveMapping,
     RiskVersion,
@@ -26,13 +28,23 @@ from aisc_backend.models.project import Project
 from aisc_backend.models.qualification import Qualification
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.control_objective import (
+    BuiltinProfileOut,
+    BuiltinProfilesOut,
     ControlObjectiveIn,
     ControlObjectiveOut,
+    MappingSuggestionIn,
+    MappingSuggestionOut,
     MatrixOut,
     ObjectivePriorityOut,
     ObjectiveProfileIn,
     ObjectiveProfileOut,
     ObjectiveRatingsIn,
+    ObjectiveSetApplyIn,
+    ObjectiveSetApplyOut,
+    ObjectiveSetIn,
+    ObjectiveSetOut,
+    ObjectiveSetRowIn,
+    ObjectiveSetVersionOut,
     RiskObjectiveMappingIn,
     RiskObjectiveMappingOut,
     RiskOut,
@@ -40,6 +52,7 @@ from aisc_backend.schemas.control_objective import (
     RiskVersionOut,
 )
 from aisc_backend.services import control_objectives as priorities
+from aisc_backend.services import objective_profiles, risk_mapper
 
 router = Router(tags=["control-objectives"])
 
@@ -418,6 +431,88 @@ async def add_mapping(request, pid: uuid.UUID, risk_pid: uuid.UUID, data: RiskOb
     return _mapping_out(mapping)
 
 
+@router.post("/{pid}/control-objectives/risks/mappings/suggest",
+             response=MappingSuggestionOut)
+async def suggest_mappings(request, pid: uuid.UUID, data: MappingSuggestionIn):
+    """Ask the project's model which profile objectives mitigate each unlinked risk.
+
+    Every proposal must quote the risk's chain; unknown/repeated objectives and
+    wrong quotes are sent back, for at most three attempts in all. Hand-made
+    links are kept unless `also_replace_manual` is set. With no model configured
+    the answer is 503 — no links are invented.
+    """
+    project = await _project_for(request, pid, needed="editor")
+
+    visible = [o async for o in _visible_objectives(project)]
+    profile = await ObjectiveProfile.objects.filter(project=project).afirst()
+    selected = (
+        set(profile.objectives) if profile is not None and profile.objectives
+        else set(objective_profiles.default_ids(visible))
+    )
+    offered = [
+        {"id": o.objective_id, "text": o.text or o.macro_requirement}
+        for o in visible
+        if o.objective_id in selected
+    ]
+    by_id = {o.objective_id: o for o in visible}
+
+    risks = [r async for r in Risk.objects.filter(project=project)]
+    existing: dict[str, list[dict]] = {str(r.pid): [] for r in risks}
+    async for m in RiskObjectiveMapping.objects.filter(project=project).select_related(
+        "risk", "objective"
+    ):
+        existing.setdefault(str(m.risk.pid), []).append(
+            {"objective_id": m.objective.objective_id, "source": m.source}
+        )
+
+    try:
+        propose = await risk_mapper.resolve_proposer(project)
+    except risk_mapper.NoModelConfigured as exc:
+        raise HttpError(503, str(exc))
+
+    result = await risk_mapper.suggest(
+        risks=[{"pid": str(r.pid), "chain": risk_mapper.risk_chain_text(r)} for r in risks],
+        offered=offered,
+        existing=existing,
+        propose=propose,
+        also_replace_manual=data.also_replace_manual,
+    )
+
+    # A run replaces the AI links it made earlier (hand links are kept unless the
+    # caller asked to replace those too).
+    relinked = {link["risk"] for link in result["created"]}
+    for risk in risks:
+        if str(risk.pid) not in relinked:
+            continue
+        stale = RiskObjectiveMapping.objects.filter(project=project, risk=risk)
+        if not data.also_replace_manual:
+            stale = stale.filter(source="ai")
+        await stale.adelete()
+
+    created: list[RiskObjectiveMappingOut] = []
+    for link in result["created"]:
+        objective = by_id.get(link["objective_id"])
+        risk = next((r for r in risks if str(r.pid) == link["risk"]), None)
+        if objective is None or risk is None:
+            continue
+        mapping, _ = await RiskObjectiveMapping.objects.aupdate_or_create(
+            project=project, risk=risk, objective=objective,
+            defaults={"quote": link["quote"], "rationale": "", "source": "ai"},
+        )
+        await sync_to_async(log_action)(
+            request, action="create", resource_type="risk_objective_mapping",
+            resource_id=str(mapping.pid),
+            metadata={"projectPid": str(pid), "risk": risk.name,
+                      "objective": objective.objective_id, "source": "ai"})
+        fresh = await RiskObjectiveMapping.objects.filter(pid=mapping.pid)\
+            .select_related("risk", "objective").afirst()
+        created.append(_mapping_out(fresh))
+
+    return MappingSuggestionOut(
+        attempts=result["attempts"], created=created, dropped=result["dropped"],
+    )
+
+
 @router.delete("/{pid}/control-objectives/mappings/{mapping_pid}", response={204: None})
 async def remove_mapping(request, pid: uuid.UUID, mapping_pid: uuid.UUID):
     project = await _project_for(request, pid, needed="editor")
@@ -499,6 +594,31 @@ async def control_objectives_matrix(request, pid: uuid.UUID):
 # --- objectives profile ----------------------------------------------------------
 
 
+@router.get("/{pid}/control-objectives/profiles", response=BuiltinProfilesOut)
+async def control_objective_profiles(request, pid: uuid.UUID):
+    """The two built-in profiles and the one this project is on.
+
+    A project that has not chosen yet is on the default ("Fairness and
+    oversight": the 10 objectives of REQ1/REQ5/REQ7), as the pilot's first
+    assessment is.
+    """
+    project = await _project_for(request, pid)
+    objectives = [o async for o in _visible_objectives(project)]
+    profile = await ObjectiveProfile.objects.filter(project=project).afirst()
+    current = (profile.profile_key if profile and profile.profile_key
+               else objective_profiles.DEFAULT_PROFILE)
+    selected = (
+        list(profile.objectives) if profile is not None
+        else objective_profiles.default_ids(objectives)
+    )
+    return BuiltinProfilesOut(
+        profiles=[BuiltinProfileOut(**p) for p in objective_profiles.builtin_profiles(objectives)],
+        current=current,
+        current_name=objective_profiles.NAMES.get(current, ""),
+        selected=selected,
+    )
+
+
 @router.get("/{pid}/control-objectives/profile", response=ObjectiveProfileOut | None)
 async def get_profile(request, pid: uuid.UUID):
     project = await _project_for(request, pid)
@@ -507,6 +627,7 @@ async def get_profile(request, pid: uuid.UUID):
         return None
     return ObjectiveProfileOut(
         pid=profile.pid, name=profile.name,
+        profile_key=profile.profile_key,
         objectives=profile.objectives,
         key_objectives=profile.key_objectives,
         catalogue_digest=profile.catalogue_digest,
@@ -517,10 +638,18 @@ async def get_profile(request, pid: uuid.UUID):
 @router.put("/{pid}/control-objectives/profile", response=ObjectiveProfileOut)
 async def set_profile(request, pid: uuid.UUID, data: ObjectiveProfileIn):
     project = await _project_for(request, pid, needed="editor")
+    objectives = data.objectives
+    profile_key = data.profile_key.strip()
+    if profile_key:
+        if profile_key not in objective_profiles.BUILTIN_KEYS:
+            raise HttpError(400, f"unknown profile {profile_key}")
+        visible = [o async for o in _visible_objectives(project)]
+        objectives = objective_profiles.profile_ids(profile_key, visible)
     profile, _ = await ObjectiveProfile.objects.aupdate_or_create(
         project=project, defaults={
             "name": data.name,
-            "objectives": data.objectives,
+            "profile_key": profile_key,
+            "objectives": objectives,
             "key_objectives": data.key_objectives,
         },
     )
@@ -528,9 +657,10 @@ async def set_profile(request, pid: uuid.UUID, data: ObjectiveProfileIn):
         request, action="update", resource_type="objective_profile",
         resource_id=str(profile.pid),
         metadata={"projectPid": str(pid), "name": data.name,
-                  "key_objectives": data.key_objectives})
+                  "profile": profile_key, "key_objectives": data.key_objectives})
     return ObjectiveProfileOut(
-        pid=profile.pid, name=profile.name, objectives=profile.objectives,
+        pid=profile.pid, name=profile.name, profile_key=profile.profile_key,
+        objectives=profile.objectives,
         key_objectives=profile.key_objectives, catalogue_digest=profile.catalogue_digest,
         objective_ratings=profile.objective_ratings or {},
     )
@@ -589,3 +719,223 @@ async def set_objective_ratings(request, pid: uuid.UUID, data: ObjectiveRatingsI
         key_objectives=profile.key_objectives, catalogue_digest=profile.catalogue_digest,
         objective_ratings=profile.objective_ratings,
     )
+
+
+# --- a project's own objective sets ----------------------------------------------
+
+
+def _set_row_out(row: dict) -> ObjectiveSetRowIn:
+    return ObjectiveSetRowIn(**{k: row.get(k, "") for k in (
+        "objective_id", "macro_requirement", "text", "legal_basis",
+        "sub_requirement_label", "assessment_mode", "target",
+        "standards_grounding", "grounding_tier_flag", "notes",
+    )})
+
+
+async def _set_out(row: ObjectiveSet, *, versions: bool = False) -> ObjectiveSetOut:
+    out_versions: list[ObjectiveSetVersionOut] = []
+    if versions:
+        out_versions = [
+            ObjectiveSetVersionOut(
+                number=v.number,
+                objectives=[_set_row_out(r) for r in (v.objectives or [])],
+                created_by=v.created_by,
+                created_at=v.created_at.isoformat(),
+            )
+            async for v in ObjectiveSetVersion.objects.filter(objective_set=row).order_by("number")
+        ]
+    return ObjectiveSetOut(
+        pid=row.pid, name=row.name, code_prefix=row.code_prefix,
+        draft=[_set_row_out(r) for r in (row.draft or [])],
+        published_version=row.published_version, versions=out_versions,
+    )
+
+
+def _clean_draft(rows: list[ObjectiveSetRowIn]) -> list[dict]:
+    """The draft rows, validated: a code is required and unique inside the set."""
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        code = (row.objective_id or "").strip()
+        if not code:
+            raise HttpError(400, "every draft row needs an objective id")
+        if code in seen:
+            raise HttpError(400, f"objective {code} is in the draft twice")
+        seen.add(code)
+        cleaned.append({
+            "objective_id": code,
+            "macro_requirement": row.macro_requirement or "",
+            "text": row.text or "",
+            "legal_basis": row.legal_basis or "",
+            "sub_requirement_label": row.sub_requirement_label or "",
+            "assessment_mode": row.assessment_mode or "",
+            "target": row.target or "",
+            "standards_grounding": row.standards_grounding or "",
+            "grounding_tier_flag": row.grounding_tier_flag or "",
+            "notes": row.notes or "",
+        })
+    return cleaned
+
+
+async def _set_for(request, pid: uuid.UUID, set_pid: uuid.UUID, needed: str = "viewer"):
+    project = await _project_for(request, pid, needed=needed)
+    row = await ObjectiveSet.objects.filter(project=project, pid=set_pid).afirst()
+    if row is None:
+        raise HttpError(404, "no such objective set")
+    return project, row
+
+
+@router.get("/{pid}/objective-sets", response=list[ObjectiveSetOut])
+async def list_objective_sets(request, pid: uuid.UUID):
+    project = await _project_for(request, pid)
+    return [
+        await _set_out(row)
+        async for row in ObjectiveSet.objects.filter(project=project).order_by("name")
+    ]
+
+
+@router.post("/{pid}/objective-sets", response=ObjectiveSetOut)
+async def create_objective_set(request, pid: uuid.UUID, data: ObjectiveSetIn):
+    """A project's own set, starting as an editable draft (nothing published)."""
+    project = await _project_for(request, pid, needed="editor")
+    name = data.name.strip()
+    if not name:
+        raise HttpError(400, "a set needs a name")
+    if await ObjectiveSet.objects.filter(project=project, name=name).aexists():
+        raise HttpError(409, f"an objective set named {name!r} already exists")
+    row = await ObjectiveSet.objects.acreate(
+        project=project, name=name, code_prefix=(data.code_prefix or "").strip(),
+        draft=_clean_draft(data.draft), published_version=None,
+    )
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="objective_set",
+        resource_id=str(row.pid), metadata={"projectPid": str(pid), "name": name})
+    return await _set_out(row)
+
+
+@router.get("/{pid}/objective-sets/{set_pid}", response=ObjectiveSetOut)
+async def get_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID):
+    _project, row = await _set_for(request, pid, set_pid)
+    return await _set_out(row, versions=True)
+
+
+@router.put("/{pid}/objective-sets/{set_pid}", response=ObjectiveSetOut)
+async def update_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID, data: ObjectiveSetIn):
+    """Edit the draft. A published version is frozen and is never touched here."""
+    project, row = await _set_for(request, pid, set_pid, needed="editor")
+    name = data.name.strip() or row.name
+    if name != row.name and await ObjectiveSet.objects.filter(
+        project=project, name=name
+    ).aexists():
+        raise HttpError(409, f"an objective set named {name!r} already exists")
+    row.name = name
+    row.code_prefix = (data.code_prefix or "").strip()
+    row.draft = _clean_draft(data.draft)
+    await row.asave()
+    await sync_to_async(log_action)(
+        request, action="update", resource_type="objective_set",
+        resource_id=str(row.pid),
+        metadata={"projectPid": str(pid), "name": row.name, "draft": len(row.draft)})
+    return await _set_out(row)
+
+
+@router.post("/{pid}/objective-sets/{set_pid}/publish", response=ObjectiveSetOut)
+async def publish_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID):
+    """Freeze the draft as the next numbered version (1..n). Never edits an old one."""
+    project, row = await _set_for(request, pid, set_pid, needed="editor")
+    draft = row.draft or []
+    if not draft:
+        raise HttpError(400, "the draft is empty; nothing to publish")
+    number = (row.published_version or 0) + 1
+    caller = caller_of(request)
+    await ObjectiveSetVersion.objects.acreate(
+        objective_set=row, number=number, objectives=draft,
+        created_by=getattr(caller, "subject", "") or "",
+    )
+    row.published_version = number
+    await row.asave()
+    await sync_to_async(log_action)(
+        request, action="create", resource_type="objective_set_version",
+        resource_id=f"{row.pid}:{number}",
+        metadata={"projectPid": str(pid), "name": row.name, "version": number})
+    return await _set_out(row, versions=True)
+
+
+@router.post("/{pid}/objective-sets/{set_pid}/apply", response=ObjectiveSetApplyOut)
+async def apply_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID,
+                              data: ObjectiveSetApplyIn):
+    """Copy a published version into the project's own catalogue rows.
+
+    The rows become local objectives (read by the matrix, the evidence map and
+    the report) and are selected in the project's profile. Applying the same
+    version twice updates the rows instead of duplicating them.
+    """
+    project, row = await _set_for(request, pid, set_pid, needed="editor")
+    number = data.number if data.number is not None else row.published_version
+    if number is None:
+        raise HttpError(400, "nothing is published yet")
+    version = await ObjectiveSetVersion.objects.filter(
+        objective_set=row, number=number
+    ).afirst()
+    if version is None:
+        raise HttpError(404, f"no published version {number}")
+
+    created: list[str] = []
+    updated: list[str] = []
+    for item in version.objectives or []:
+        code = (item.get("objective_id") or "").strip()
+        if not code:
+            continue
+        seeded = await ControlObjective.objects.filter(
+            project__isnull=True, objective_id=code
+        ).aexists()
+        if seeded:
+            raise HttpError(
+                409, f"objective {code} is a catalogue objective; a set may not shadow it"
+            )
+        existing = await ControlObjective.objects.filter(
+            project=project, objective_id=code
+        ).afirst()
+        fields = {k: item.get(k, "") or "" for k in (
+            "macro_requirement", "legal_basis", "sub_requirement_label", "text",
+            "assessment_mode", "target", "standards_grounding", "grounding_tier_flag",
+            "notes",
+        )}
+        if existing is None:
+            await ControlObjective.objects.acreate(
+                project=project, objective_id=code, **fields
+            )
+            created.append(code)
+        else:
+            for key, value in fields.items():
+                setattr(existing, key, value)
+            await existing.asave()
+            updated.append(code)
+
+    applied = [r.get("objective_id") for r in (version.objectives or []) if r.get("objective_id")]
+    profile, _ = await ObjectiveProfile.objects.aget_or_create(project=project)
+    selection = list(profile.objectives or [])
+    for code in applied:
+        if code not in selection:
+            selection.append(code)
+    profile.objectives = selection
+    await profile.asave()
+    await sync_to_async(log_action)(
+        request, action="update", resource_type="objective_set",
+        resource_id=str(row.pid),
+        metadata={"projectPid": str(pid), "applied_version": number,
+                  "created": created, "updated": updated})
+    return ObjectiveSetApplyOut(
+        version=number, objectives=applied, created=created, updated=updated,
+    )
+
+
+@router.delete("/{pid}/objective-sets/{set_pid}", response={204: None})
+async def delete_objective_set(request, pid: uuid.UUID, set_pid: uuid.UUID):
+    """Drop the set with its draft and its published versions (its local rows stay)."""
+    _project, row = await _set_for(request, pid, set_pid, needed="editor")
+    await row.adelete()
+    await sync_to_async(log_action)(
+        request, action="delete", resource_type="objective_set",
+        resource_id=str(set_pid), metadata={"projectPid": str(pid)})
+    return 204, None

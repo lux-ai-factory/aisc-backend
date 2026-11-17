@@ -37,6 +37,7 @@ from aisc_backend.models.project import Project
 from aisc_backend.models.qualification import System, SystemVersion
 from aisc_backend.services import control_objectives as priorities
 from aisc_backend.services import controls_scoring
+from aisc_backend.services import objective_profiles
 
 KINDS = ("test", "control")
 
@@ -366,7 +367,11 @@ async def build_map(
         return tests_by_key.get(key) if kind == "test" else controls_by_key.get(key)
 
     # The objectives shown: step 2's selection plus any objective a saved link names.
-    selected = set(profile.objectives) if profile else set()
+    # A project that has not chosen a profile yet is on the default one
+    # ("Fairness and oversight"), as the pilot's first assessment is.
+    selected = (
+        set(profile.objectives) if profile is not None and profile.objectives else set()
+    )
     saved_by_objective: dict[str, list[EvidenceLink]] = {}
     for link in own_links:
         saved_by_objective.setdefault(link.objective.objective_id, []).append(link)
@@ -375,6 +380,8 @@ async def build_map(
     ordered_ids += [o.objective_id async for o in ControlObjective.objects.filter(project=project)]
     visible = {o.objective_id: o async for o in ControlObjective.objects.filter(project__isnull=True)}
     visible.update({o.objective_id: o async for o in ControlObjective.objects.filter(project=project)})
+    if not selected:
+        selected = set(objective_profiles.default_ids(visible.values()))
     linked_ids = set(saved_by_objective)
     shown_ids = [oid for oid in ordered_ids if oid in selected or oid in linked_ids]
 

@@ -128,3 +128,69 @@ class NodesPatchIn(Schema):
     that node's correction."""
 
     nodes: dict[str, NodePatchIn]
+
+
+class PrefillSuggestionOut(Schema):
+    """One suggested answer, with where in the document it was found."""
+
+    field: str
+    value: str
+    line: int = 0
+    matched: str = ""
+
+
+class PrefillOut(Schema):
+    """What a prefill read out of an uploaded document.
+
+    Nothing is stored: the client shows the suggestions and the person accepts,
+    edits or rejects each one.
+    """
+
+    filename: str = ""
+    characters: int = 0
+    proposals: list[PrefillSuggestionOut] = []
+    unmatched: list[str] = []
+    note: str = ""
+
+
+class CardAgentMessageIn(Schema):
+    """One turn of the card agent: what the person asked or said."""
+
+    message: str = ""
+
+
+class CardAgentProposalOut(Schema):
+    """A correction the agent proposes, quoting what justifies it."""
+
+    node_id: str
+    property: str
+    value: str
+    quote: str = ""
+    reason: str = ""
+
+
+class CardAgentTurnOut(Schema):
+    """An agent turn: what it says, what it proposes, and the card as proposed.
+
+    Nothing is stored: the client applies what the person accepts through the
+    node-correction endpoint.
+    """
+
+    text: str = ""
+    proposals: list[CardAgentProposalOut] = []
+    dropped: list[dict] = []
+    card: dict = {}
+
+
+class CardComponentLinkOut(Schema):
+    """One card component, the engine component it stands for, and what changed."""
+
+    component_key: str
+    name: str = ""
+    component_type: str = ""
+    role: str = ""
+    engine_component_pid: str = ""
+    snapshot: dict = {}
+    changed: bool = False
+    missing: bool = False
+    captured_at: str = ""

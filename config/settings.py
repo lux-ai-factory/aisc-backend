@@ -277,6 +277,20 @@ APP_CATALOG_URL = env("APP_CATALOG_URL",
 # the results page shows the scoped run summary with no chart link. The bridge
 # only builds links — it never queries a third-party table or a second DB.
 RESULTS_DASHBOARD_URL = env("RESULTS_DASHBOARD_URL", default="")
+# --- The risk mapper's model (read by services.risk_mapper) ---
+# "Suggest with AI" on step 2. The project's own helper model (Manage > AI
+# assistants) wins; this stack setting is the fallback. With neither set the
+# endpoint answers 503 rather than inventing links. The default is a local Ollama
+# `mistral`, which needs no key.
+CONTROL_OBJECTIVES_LLM_BASE_URL = env("CONTROL_OBJECTIVES_LLM_BASE_URL", default="")
+CONTROL_OBJECTIVES_LLM_MODEL = env("CONTROL_OBJECTIVES_LLM_MODEL", default="mistral")
+CONTROL_OBJECTIVES_LLM_API_KEY = env("CONTROL_OBJECTIVES_LLM_API_KEY", default="")
+# --- The card agent's model (read by services.card_agent) ---
+# The assistant on the AI card page. Same rule: the project's helper model wins,
+# this stack setting is the fallback, and with neither the endpoint answers 503.
+CARD_AGENT_LLM_BASE_URL = env("CARD_AGENT_LLM_BASE_URL", default="")
+CARD_AGENT_LLM_MODEL = env("CARD_AGENT_LLM_MODEL", default="mistral")
+CARD_AGENT_LLM_API_KEY = env("CARD_AGENT_LLM_API_KEY", default="")
 ## .env vars
 
 APP_NAME = env("APP_NAME","aisc-backend")

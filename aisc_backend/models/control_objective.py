@@ -209,6 +209,10 @@ class ObjectiveProfile(Base):
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name="objective_profiles"
     )
+    #: Which built-in profile the selection came from ("full-ai-act" /
+    #: "fairness-oversight"), or "" for a hand-picked selection. See
+    #: `services.objective_profiles`.
+    profile_key = models.CharField(max_length=32, blank=True, default="")
     objectives = models.JSONField(default=list)      # [objective_id, ...]
     key_objectives = models.JSONField(default=list)  # [objective_id, ...]
     #: Assessor-set per-objective values: {objective_id: {"score": float, "likelihood": int}}.
@@ -225,3 +229,68 @@ class ObjectiveProfile(Base):
 
     def __str__(self):  # pragma: no cover - debug helper
         return f"profile {self.name} of {self.project.name}"
+
+
+class ObjectiveSet(Base):
+    """A project's own objective set: a draft, and published numbered versions.
+
+    The pilot lets a project keep objectives of its own (a code prefix, e.g.
+    `CX`) that do not belong to the AI Act catalogue. The draft is editable;
+    **publishing** freezes it as the next numbered version, and a published
+    version never changes. `apply` copies a published version into the project's
+    own catalogue rows so the rest of the app (matrix, evidence map, report)
+    reads it like any other objective.
+    """
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="objective_sets"
+    )
+    name = models.CharField(max_length=255)
+    #: The code the set's objectives are numbered under (`CX` -> CX-1, CX-2, ...).
+    code_prefix = models.CharField(max_length=16, blank=True, default="")
+    #: The editable draft: [{"objective_id", "macro_requirement", "text", ...}, ...]
+    draft = models.JSONField(default=list)
+    #: The last published version number, or None while nothing is published.
+    published_version = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        app_label = "aisc_backend"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("project", "name"), name="objective_set_project_name_uniq"
+            ),
+        ]
+        ordering = ["name"]
+
+    def __str__(self):  # pragma: no cover - debug helper
+        return f"objective set {self.name} of {self.project.name}"
+
+
+class ObjectiveSetVersion(Base):
+    """One published, frozen version of an objective set, numbered 1..n.
+
+    Append-only (like QuestionnaireVersion / SystemVersion): publishing creates
+    a new row; the ObjectiveSet columns stay the CURRENT head. A published
+    version is never edited, so a report or an assessment that cites it stays
+    true.
+    """
+
+    objective_set = models.ForeignKey(
+        ObjectiveSet, on_delete=models.CASCADE, related_name="versions"
+    )
+    number = models.PositiveIntegerField()
+    objectives = models.JSONField(default=list)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        app_label = "aisc_backend"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("objective_set", "number"),
+                name="objective_set_version_set_number_uniq",
+            ),
+        ]
+        ordering = ["number"]
+
+    def __str__(self):  # pragma: no cover - debug helper
+        return f"{self.objective_set} v{self.number}"

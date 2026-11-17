@@ -161,3 +161,50 @@ class Qualification(Base):
 
     def __str__(self):  # pragma: no cover - debug helper
         return f"qualification of {self.project.name}"
+
+
+class CardComponentLink(Base):
+    """Which of the engine's components an AI card's component is (pilot parity).
+
+    Every save records, per card component, the engine component it stands for
+    together with a **snapshot** of that component as it was then — so the
+    system page can flag a component that changed in the engine since, and say
+    which card component has no engine counterpart. The card component keeps a
+    stable key from one version to the next (`component_key`), so a test on a
+    component can be followed across versions.
+    """
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="card_component_links"
+    )
+    qualification = models.ForeignKey(
+        Qualification, on_delete=models.CASCADE, related_name="component_links"
+    )
+    #: The card component's stable key inside the card (name when it has none).
+    component_key = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, blank=True, default="")
+    component_type = models.CharField(max_length=64, blank=True, default="")
+    role = models.CharField(max_length=255, blank=True, default="")
+    engine_component = models.ForeignKey(
+        "AIComponent",
+        related_name="card_links",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    #: The engine component as it was when the link was made.
+    snapshot = models.JSONField(default=dict)
+    snapshot_digest = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        app_label = "aisc_backend"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("qualification", "component_key"),
+                name="card_component_link_qualification_key_uniq",
+            ),
+        ]
+        ordering = ["name", "component_key"]
+
+    def __str__(self):  # pragma: no cover - debug helper
+        return f"card component {self.component_key} of {self.qualification.pid}"
