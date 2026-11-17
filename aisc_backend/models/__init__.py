@@ -1,6 +1,7 @@
 from .project import *
 from .project_member import *
 from .qualification import *
+from .evidence import *
 from .report import *
 from .control_objective import *
 from .control import *
