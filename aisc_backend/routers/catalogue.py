@@ -40,6 +40,7 @@ from aisc_backend.schemas.control import (
     CatalogueDimensionOut,
     CatalogueOut,
     CataloguePluginOut,
+    CatalogueSubdimensionOut,
 )
 from aisc_backend.services import controls_catalogue, dimensions
 
@@ -48,6 +49,25 @@ logger = logging.getLogger(__name__)
 router = Router(tags=["catalogue"])
 
 project_repository = ProjectRepository()
+
+
+def _plugin_dimensions(tests: list[dict]) -> dict[str, list[str]]:
+    """Plugin package -> the catalogue's test item dimensions, for the filter.
+
+    The catalogue's test items name their package in `package_name` (e.g.
+    `aisc-plugin-langbite`); a package the catalogue lists under its slug
+    instead is indexed by slug too, and the historical `aisc-plugin-` prefix is
+    folded so a loader package matches either spelling. A package the catalogue
+    does not list keeps no dimension (nothing to judge it by).
+    """
+    index: dict[str, list[str]] = {}
+    for test in tests:
+        dims = list(test.get("dimensions") or [])
+        for key in (test.get("package_name"), test.get("catalogue_id")):
+            if key:
+                index.setdefault(str(key).lower(), dims)
+                index.setdefault(str(key).lower().removeprefix("aisc-plugin-"), dims)
+    return index
 
 
 async def _project_for(request, pid: uuid.UUID, needed: str = "viewer") -> Project:
@@ -78,10 +98,28 @@ async def catalogue(request, kind: str = "all"):
             ]
         except controls_catalogue.CatalogueUnavailable as exc:
             logger.warning("controls catalogue unreachable; listing plugins only: %s", exc)
+    # The catalogue's own tree of sub-dimensions (the pilot's sidebar children)
+    # and its test tags, which are the only dimension a plugin package has.
+    subdimensions: list[CatalogueSubdimensionOut] = []
+    plugin_dimensions: dict[str, list[str]] = {}
+    if kind in ("all", "plugin"):
+        try:
+            plugin_dimensions = _plugin_dimensions(await controls_catalogue.list_tests())
+        except controls_catalogue.CatalogueUnavailable as exc:
+            logger.warning("controls catalogue unreachable; listing plugins untagged: %s", exc)
+    try:
+        subdimensions = [
+            CatalogueSubdimensionOut(**tag) for tag in await controls_catalogue.dimension_tree()
+        ]
+    except controls_catalogue.CatalogueUnavailable as exc:
+        logger.warning("controls catalogue unreachable; no sub-dimension tree: %s", exc)
     plugins = []
     if kind in ("all", "plugin"):
         packages_dict = plugin_loader.list_packages(refresh=True)
         for pkg_name, versions_dict in packages_dict.items():
+            dims = plugin_dimensions.get(pkg_name.lower()) or plugin_dimensions.get(
+                pkg_name.lower().removeprefix("aisc-plugin-")
+            ) or []
             for version, meta in versions_dict.items():
                 source = meta.get("source", "unknown")
                 if source == "local":
@@ -95,17 +133,18 @@ async def catalogue(request, kind: str = "all"):
                                 package_name=pkg_name, plugin_name=cls_name,
                                 display_name=getattr(inst, "display_name", None) or cls_name,
                                 display_icon=getattr(inst, "display_icon", "") or "",
-                                version=version, source=source,
+                                version=version, source=source, dimensions=dims,
                             ))
                         continue
                 plugins.append(CataloguePluginOut(
                     package_name=pkg_name, plugin_name="", display_name="",
-                    version=version, source=source,
+                    version=version, source=source, dimensions=dims,
                 ))
     return CatalogueOut(
         plugins=plugins,
         controls=controls,
         dimensions=[CatalogueDimensionOut(**d) for d in dimensions.vocabulary()],
+        subdimensions=subdimensions,
         app_catalog_url=getattr(settings, "APP_CATALOG_URL", "") or "",
     )
 

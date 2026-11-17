@@ -36,6 +36,17 @@ TOOLS = [
                "parent_dimension_slug": "technical-robustness-safety"}]},
 ]
 
+#: A checklist and a test, as the catalogue lists both: the test names the
+#: plugin package it belongs to and carries its own dimension and sub-dimension.
+TOOLS_WITH_A_TEST = TOOLS + [
+    {"id": 3, "slug": "langbite", "name": "LangBiTe", "package_name": "aisc-plugin-langbite",
+     "tags": [{"section": "type", "slug": "test"},
+              {"section": "dimension", "slug": "diversity-non-discrimination-fairness"},
+              {"section": "testing_subdim", "slug": "bias-auditing",
+               "label": "Bias auditing",
+               "parent_dimension_slug": "diversity-non-discrimination-fairness"}]},
+]
+
 
 def _export(slug, title, q1="question one", source_name="AESIA"):
     return {
@@ -346,3 +357,70 @@ class CatalogueReadThroughTest(TestCase):
         self.assertTrue(resp.json()["questions"])
         # export must not store either
         self.assertEqual(await ControlTemplate.objects.acount(), 0)
+
+    async def test_the_listing_carries_the_catalogue_s_subdimension_tree(self):
+        """CAT-01: the chips can nest the catalogue's own children (its sidebar
+        tree), read from the catalogue rather than invented here."""
+        controls_catalogue._list_cache = None
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock, side_effect=[TOOLS_WITH_A_TEST],
+        ):
+            body = (await catalogue_client.get("/catalogue")).json()
+
+        tree = {t["slug"]: t for t in body["subdimensions"]}
+        self.assertEqual(
+            tree["human-fallback"],
+            {"slug": "human-fallback", "label": "human-fallback",
+             "parent": "technical-robustness-safety"},
+        )
+        self.assertEqual(tree["bias-auditing"]["label"], "Bias auditing")
+        self.assertEqual(tree["bias-auditing"]["parent"],
+                         "diversity-non-discrimination-fairness")
+        # and the item carries its own children, so a chip on one narrows to it
+        controls = {c["catalogue_id"]: c for c in body["controls"]}
+        self.assertEqual(controls["accuracy-checklist"]["subdimensions"], ["human-fallback"])
+
+    async def test_a_test_item_tags_its_plugin_package_with_dimensions(self):
+        """CAT-01: the plugin side is narrowed by the same dimensions. The
+        loader carries none, so the package's catalogue test item supplies them."""
+        controls_catalogue._list_cache = None
+        loader = {
+            "list_packages": lambda refresh=False: {
+                "aisc-plugin-langbite": {"0.1.1": {"source": "local"}},
+            },
+            "load_package": lambda pkg, version: {
+                "LangBiTe": type("P", (), {"display_name": "LangBiTe", "display_icon": ""})(),
+            },
+        }
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock, side_effect=[TOOLS_WITH_A_TEST],
+        ), mock.patch("aisc_backend.routers.catalogue.plugin_loader", **loader):
+            body = (await catalogue_client.get("/catalogue?kind=plugin")).json()
+
+        self.assertEqual(len(body["plugins"]), 1)
+        plugin = body["plugins"][0]
+        self.assertEqual(plugin["package_name"], "aisc-plugin-langbite")
+        self.assertEqual(
+            set(plugin["dimensions"]),
+            {"diversity-non-discrimination-fairness", "bias-auditing"},
+        )
+
+    async def test_a_plugin_the_catalogue_does_not_list_keeps_no_dimension(self):
+        """Nothing to judge an unlisted local package by, so it carries none."""
+        controls_catalogue._list_cache = None
+        loader = {
+            "list_packages": lambda refresh=False: {
+                "our-own-plugin": {"1.0": {"source": "local"}},
+            },
+            "load_package": lambda pkg, version: {},
+        }
+        with mock.patch.object(
+            controls_catalogue, "_get_json",
+            new_callable=mock.AsyncMock, side_effect=[TOOLS_WITH_A_TEST],
+        ), mock.patch("aisc_backend.routers.catalogue.plugin_loader", **loader):
+            body = (await catalogue_client.get("/catalogue?kind=plugin")).json()
+
+        self.assertEqual(len(body["plugins"]), 1)
+        self.assertEqual(body["plugins"][0]["dimensions"], [])

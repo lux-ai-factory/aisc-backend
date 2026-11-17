@@ -85,6 +85,28 @@ def _is_control(item: dict) -> bool:
 #: checklist, `testing_subdim` for a test), which name their dimension in
 #: `parent_dimension_slug`.
 _DIMENSION_SECTIONS = ("dimension", "controls_subdim", "testing_subdim")
+#: The sub-dimension sections alone: the catalogue's tree's children.
+_SUBDIMENSION_SECTIONS = ("controls_subdim", "testing_subdim")
+
+
+def _subdimension_tags(item: dict) -> list[dict]:
+    """The item's own sub-dimensions, `{slug, label, parent}`, in tag order.
+
+    The catalogue's tree's children; the parent dimension is the one the tag
+    names in `parent_dimension_slug`. Deduplicated by slug (a test and a
+    checklist may share one).
+    """
+    found: dict[str, dict] = {}
+    for tag in item.get("tags") or []:
+        tag = tag or {}
+        if tag.get("section") not in _SUBDIMENSION_SECTIONS or not tag.get("slug"):
+            continue
+        found.setdefault(tag["slug"], {
+            "slug": tag["slug"],
+            "label": tag.get("label") or tag["slug"],
+            "parent": tag.get("parent_dimension_slug") or "",
+        })
+    return list(found.values())
 
 
 def _dimension_slugs(item: dict) -> list[str]:
@@ -92,7 +114,8 @@ def _dimension_slugs(item: dict) -> list[str]:
 
     Exactly the catalogue's own rule (its site folds a tag's `slug` and its
     `parent_dimension_slug` together), so an item tagged only under
-    `purpose-limitation` is still a `privacy-data-governance` item.
+    `purpose-limitation` is still a `privacy-data-governance` item. The
+    sub-dimension's own slug is kept too, so a chip on the child narrows to it.
     """
     slugs: list[str] = []
     for tag in item.get("tags") or []:
@@ -128,11 +151,18 @@ def _mapped(item: dict) -> dict:
         "tags": tags,
         # the catalogue's own dimension tags: what "for this project" filters on
         "dimensions": _dimension_slugs(item),
+        # the item's own sub-dimensions (the tree's children), for the chips
+        "subdimensions": [t["slug"] for t in _subdimension_tags(item)],
     }
 
 
-async def list_controls() -> list[dict]:
-    """The hosted checklist catalogue, mapped for the surface, cached briefly."""
+async def _all_items() -> list[dict]:
+    """The hosted catalogue's whole list (checklists and tests), cached briefly.
+
+    One fetch feeds every read below — the checklist listing, the test tags the
+    plugin listing filters by, and the sub-dimension tree — so opening the
+    catalogue is one call however much of it is asked for.
+    """
     global _list_cache
     now = time.monotonic()
     if _list_cache is not None and now < _list_cache[0]:
@@ -140,13 +170,54 @@ async def list_controls() -> list[dict]:
     listings = await _get_json(f"{_CATALOG_ROOT}/tool/?detailed=true")
     if not isinstance(listings, list):
         raise CatalogueUnavailable("the catalogue list is not a list")
-    mapped = [
+    _list_cache = (now + _LIST_TTL_SECONDS, listings)
+    return listings
+
+
+async def list_controls() -> list[dict]:
+    """The hosted checklist catalogue, mapped for the surface, cached briefly."""
+    return [
         _mapped(item)
-        for item in listings
+        for item in await _all_items()
         if (item or {}).get("slug") and _is_control(item or {})
     ]
-    _list_cache = (now + _LIST_TTL_SECONDS, mapped)
-    return mapped
+
+
+async def list_tests() -> list[dict]:
+    """The hosted test/benchmark items: what tags a plugin package with dimensions.
+
+    The plugin listing comes from this installation's loader, which carries no
+    dimension; the catalogue's own `type: test` items do, and name the package
+    they belong to in `package_name`, so a plugin can be narrowed by the same
+    dimensions a checklist is. Metadata only; nothing is stored.
+    """
+    tests: list[dict] = []
+    for item in await _all_items():
+        item = item or {}
+        if not item.get("slug") or _is_control(item):
+            continue
+        tests.append({
+            "catalogue_id": item.get("slug"),
+            "title": item.get("name") or item.get("slug"),
+            "package_name": item.get("package_name") or "",
+            "dimensions": _dimension_slugs(item),
+            "subdimensions": [t["slug"] for t in _subdimension_tags(item)],
+        })
+    return tests
+
+
+async def dimension_tree() -> list[dict]:
+    """The catalogue's sub-dimensions, `{slug, label, parent}`, one entry each.
+
+    The children of the dimensions, read from the catalogue itself rather than
+    invented here, so the chips can nest a dimension's own sub-dimensions under
+    it (the pilot's sidebar tree).
+    """
+    found: dict[str, dict] = {}
+    for item in await _all_items():
+        for tag in _subdimension_tags(item or {}):
+            found.setdefault(tag["slug"], tag)
+    return sorted(found.values(), key=lambda tag: (tag["parent"], tag["slug"]))
 
 
 async def export_control(slug: str) -> dict:
