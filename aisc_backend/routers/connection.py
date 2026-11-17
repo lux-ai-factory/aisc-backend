@@ -41,6 +41,7 @@ from aisc_backend.schemas.connection import (
     RunBindingListOut,
     RunBindingOut,
 )
+from aisc_backend.services import allowed_hosts as hosts
 from aisc_backend.services import connection_secrets as secrets
 from aisc_backend.services import connections as service
 
@@ -112,6 +113,9 @@ async def put_connection(request, pid: uuid.UUID, name: str, data: ConnectionIn)
         raise HttpError(400, f"unknown protocol {data.kind!r}")
     if data.kind == "a2a" and data.protocol_version and data.protocol_version not in A2A_VERSIONS:
         raise HttpError(400, f"unknown A2A version {data.protocol_version!r}")
+    # an address that can never work is refused where it is typed; an internal host
+    # that is merely not listed yet is allowed here and refused at call time
+    hosts.refuse_never_allowed(data.base_url)
 
     connection = await Connection.objects.filter(
         project=project, name=name
@@ -196,6 +200,14 @@ async def test_connection(request, pid: uuid.UUID, name: str, data: ConnectionTr
     what a test gets: the extracted answer, or the system's refusal."""
     project = await _project_for(request, pid)
     connection = await _connection_or_404(project, name)
+    # the door: the allowlist is read here, immediately before the call out, so a
+    # change to it applies to the next call with no restart
+    refusal = await hosts.guard_url(project, connection.base_url)
+    if refusal is not None:
+        connection.last_test_at = timezone.now()
+        connection.last_test_ok = False
+        await connection.asave(update_fields=["last_test_at", "last_test_ok"])
+        return refusal
     secret = await _secret_for(connection)
     outcome = await adapters.try_connection(
         connection, secret,
@@ -217,6 +229,9 @@ async def discover_connection(request, pid: uuid.UUID, name: str):
     connection = await _connection_or_404(project, name)
     if connection.kind != "a2a":
         raise HttpError(400, "only an A2A connection has an agent card")
+    refusal = await hosts.guard_url(project, connection.base_url)
+    if refusal is not None:
+        raise HttpError(403, refusal["detail"])
     try:
         card = await adapters.discover_agent_card(connection)
     except httpx.HTTPError as exc:

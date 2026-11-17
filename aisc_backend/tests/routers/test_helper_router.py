@@ -4,9 +4,7 @@ validation, the key in the project's encrypted store, and the one small call the
 `/test` endpoint makes with it (the status only).
 """
 import json
-import threading
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
@@ -16,6 +14,7 @@ from aisc_backend.models.project import Project
 from aisc_backend.models.project_config import ProjectConfig, ProjectConfigCategory
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.helper import router as helper_router
+from aisc_backend.tests.local_target import allow, local_target
 from aisc_backend.utils.encryption import decrypt_value
 
 client = TestAsyncClient(helper_router)
@@ -36,17 +35,11 @@ class _Llm(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-@contextmanager
 def _llm():
-    server = HTTPServer(("127.0.0.1", 0), _Llm)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}/v1"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+    """A helper endpoint reached the way the deployment reaches one: by this
+    machine's own address, listed for the project first (a helper is held to the
+    same allowed-hosts rule as a connection)."""
+    return local_target(_Llm, suffix="/v1")
 
 
 async def _project(name="helpers-project", role=MembershipRole.Owner):
@@ -113,10 +106,14 @@ class HelperRouterTest(TestCase):
 
     async def test_test_calls_the_helper_with_its_key_and_reports_the_status_only(self):
         project = await _project()
-        with _llm() as endpoint:
+        with _llm() as target:
             await client.put(f"/{project.pid}/helpers/judge-1", json={
-                "label": "Judge", "endpoint_url": endpoint, "roles": ["judge"], "key": "k",
+                "label": "Judge", "endpoint_url": target.url, "roles": ["judge"], "key": "k",
             })
+            # the same allowed-hosts rule as a connection: refused until listed
+            blocked = await client.post(f"/{project.pid}/helpers/judge-1/test", json={"model": "m1"})
+            self.assertEqual(blocked.json()["status"], "blocked", blocked.text)
+            await allow(project, target, note="the judge")
             tried = await client.post(f"/{project.pid}/helpers/judge-1/test", json={"model": "m1"})
         self.assertEqual(tried.status_code, 200, tried.text)
         self.assertTrue(tried.json()["ok"], tried.text)

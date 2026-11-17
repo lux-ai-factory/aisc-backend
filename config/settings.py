@@ -234,6 +234,14 @@ IMMUDB_PASSWORD = env("IMMUDB_PASSWORD", default=env("IMMUDB_ADMIN_PASSWORD", de
 # The dedicated audit database (separate from immudb's defaultdb).
 IMMUDB_DATABASE = env("IMMUDB_DATABASE", default="auditdb")
 
+# --- Connections (CON-01): which addresses a connection may call ---
+# An internal host is refused unless the project lists it (Allowed internal hosts)
+# or it is listed here for every project (the pilot's CONNECTIONS_ALLOWED_HOSTS).
+CONNECTIONS_ALLOWED_HOSTS = env.list("CONNECTIONS_ALLOWED_HOSTS", default=[])
+# This deployment's own service names: a connection never reaches the platform
+# itself (docker-compose service names by default).
+CONNECTIONS_STACK_HOSTS = env.list("CONNECTIONS_STACK_HOSTS", default=[])
+
 # --- Service tokens (read by aisc_backend.auth.service_token) ---
 # The shared secret that accepts a service-to-service call at the backend's own
 # service door (an isolated app calling back), and the one the backend sends

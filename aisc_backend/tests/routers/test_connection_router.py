@@ -6,20 +6,19 @@ the snapshot a run records so a later edit does not rewrite it.
 """
 import base64
 import json
-import threading
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.connection import Connection, Helper, RunBinding
+from aisc_backend.models.connection import AllowedHost, Connection, Helper, RunBinding
 from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
 from aisc_backend.models.plugin import Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_config import ProjectConfig, ProjectConfigCategory
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.connection import router as connection_router
+from aisc_backend.tests.local_target import allow, local_address, local_target
 from aisc_backend.utils.encryption import decrypt_value
 
 client = TestAsyncClient(connection_router)
@@ -71,17 +70,13 @@ class _Endpoint(BaseHTTPRequestHandler):
             self._reply(404, {"detail": "no such path"})
 
 
-@contextmanager
 def _endpoint():
-    server = HTTPServer(("127.0.0.1", 0), _Endpoint)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+    """The pilot's mock-target reach: a local server addressed by this machine's own
+    address, which the test lists for the project before the call.
+
+    Not loopback: a connection may not call the platform itself, so a test may not
+    either."""
+    return local_target(_Endpoint)
 
 
 async def _project(name="connections-project", role=MembershipRole.Owner):
@@ -224,7 +219,9 @@ class ConnectionRouterTest(TestCase):
 
     async def test_try_runs_every_protocol_against_a_real_endpoint(self):
         project = await _project()
-        with _endpoint() as base:
+        with _endpoint() as target:
+            base = target.url
+            await allow(project, target)
             cases = [
                 ("rest-c", {"kind": "rest", "base_url": base, "path": "/chat",
                             "method": "POST", "body_template": {"q": "{{input}}"},
@@ -250,7 +247,9 @@ class ConnectionRouterTest(TestCase):
 
     async def test_try_reads_the_refusal_body(self):
         project = await _project()
-        with _endpoint() as base:
+        with _endpoint() as target:
+            base = target.url
+            await allow(project, target)
             await client.put(f"/{project.pid}/connections/c1", json={
                 "kind": "rest", "base_url": base, "path": "/grounded", "method": "POST",
                 "response_path": "detail.reason",
@@ -264,9 +263,21 @@ class ConnectionRouterTest(TestCase):
 
     async def test_try_reports_an_unreachable_endpoint(self):
         project = await _project()
+        address = local_address()
+        if not address:
+            self.skipTest("no non-loopback address to reach a target on")
         await client.put(f"/{project.pid}/connections/c1", json={
-            "kind": "openai", "base_url": "http://127.0.0.1:1/v1", "model": "m", "timeout_s": 2,
+            "kind": "openai", "base_url": f"http://{address}:1/v1", "model": "m", "timeout_s": 2,
         })
+        # nothing internal is reachable until it is listed...
+        blocked = await client.post(f"/{project.pid}/connections/c1/test", json={})
+        self.assertEqual(blocked.status_code, 200, blocked.text)
+        self.assertFalse(blocked.json()["ok"])
+        self.assertEqual(blocked.json()["error"], "internal_not_allowed")
+        # ...and once it is, the failure is the network's, not the guard's
+        await AllowedHost.objects.acreate(
+            project=project, name=f"{address}:1", description="", host=f"{address}:1",
+        )
         tried = await client.post(f"/{project.pid}/connections/c1/test", json={})
         self.assertEqual(tried.status_code, 200, tried.text)
         self.assertFalse(tried.json()["ok"])
@@ -274,7 +285,9 @@ class ConnectionRouterTest(TestCase):
 
     async def test_discover_reads_the_a2a_agent_card(self):
         project = await _project()
-        with _endpoint() as base:
+        with _endpoint() as target:
+            base = target.url
+            await allow(project, target)
             await client.put(f"/{project.pid}/connections/agent", json={
                 "kind": "a2a", "base_url": base, "path": "/a2a", "protocol_version": "1.0",
             })

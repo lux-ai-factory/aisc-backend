@@ -1,0 +1,3 @@
+id,question,label
+1,"is the model fair?",yes
+2,"does it leak?",no

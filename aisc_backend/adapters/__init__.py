@@ -36,6 +36,10 @@ __all__ = [
     "try_connection",
 ]
 
+#: The revision of the built-in adapters. A run records this alongside the kind, so
+#: "which adapter reached the system" is answered by the run, not by today's code.
+BUILTIN_VERSION = "1"
+
 _ADAPTERS: tuple[Adapter, ...] = (RestAdapter(), OpenAiAdapter(), A2aAdapter(), OipAdapter())
 #: kind -> the adapter that serves it.
 ADAPTERS: dict[str, Adapter] = {a.kind: a for a in _ADAPTERS}

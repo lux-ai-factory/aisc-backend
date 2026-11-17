@@ -27,6 +27,7 @@ from aisc_backend.schemas.connection import (
     HelperOut,
     HelperTryIn,
 )
+from aisc_backend.services import allowed_hosts as hosts
 from aisc_backend.services import connection_secrets as secrets
 from aisc_backend.services import connections as service
 
@@ -73,6 +74,8 @@ async def put_helper(request, pid: uuid.UUID, name: str, data: HelperIn):
         raise HttpError(400, f"unknown role(s): {', '.join(unknown)}")
     if not data.endpoint_url:
         raise HttpError(400, "a helper needs an endpoint URL")
+    # a helper's endpoint is held to the same rule as a connection's
+    hosts.refuse_never_allowed(data.endpoint_url)
 
     helper = await Helper.objects.filter(project=project, name=name).afirst()
     if helper is None:
@@ -116,6 +119,14 @@ async def test_helper(request, pid: uuid.UUID, name: str, data: HelperTryIn):
     helper = await _helper_or_404(project, name)
     if not data.model:
         raise HttpError(400, "name the model to call")
+    refusal = await hosts.guard_url(project, helper.endpoint_url)
+    if refusal is not None:
+        return {
+            "ok": False,
+            "status": "blocked",
+            "detail": refusal["detail"],
+            "latency_ms": 0,
+        }
     key = await secrets.get_secret(project.pk, secrets.helper_key_name(name))
     # a helper is reached as an OpenAI-compatible endpoint; the adapter is the same one
     probe = Connection(

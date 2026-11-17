@@ -88,6 +88,17 @@ async def target_for(project: Project, key: str) -> AIComponent | None:
     return await AIComponent.objects.filter(pid=component_pid, system__project=project).afirst()
 
 
+def adapter_version_of(connection: Connection | None) -> str:
+    """The revision of the adapter a run used: the built-in revision for one of the
+    four protocols, or the installed adapter's own version, which its connection
+    carries in `settings`."""
+    if connection is None:
+        return ""
+    if connection.kind in adapters.ADAPTERS:
+        return adapters.BUILTIN_VERSION
+    return str((connection.settings or {}).get("adapter_version") or "")
+
+
 async def bind(
     plugin: EvaluationPlugin,
     *,
@@ -101,7 +112,7 @@ async def bind(
         "connection": connection,
         "helper": helper,
         "kind": connection.kind if connection else "openai",
-        "adapter_version": "",
+        "adapter_version": adapter_version_of(connection),
         "base_url": connection.base_url if connection else (helper.endpoint_url if helper else ""),
         "model": connection.model if connection else "",
         "name": f"{plugin.name}:{role or 'assessed'}",
