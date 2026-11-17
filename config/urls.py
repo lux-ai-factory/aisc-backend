@@ -37,6 +37,7 @@ from aisc_backend.routers.control import router as control_router
 from aisc_backend.routers.control_objectives import router as control_objectives_router
 from aisc_backend.routers.evidence import router as evidence_router
 from aisc_backend.routers.connection import router as connection_router
+from aisc_backend.routers.helper import router as helper_router
 from aisc_backend.routers.qualification import router as qualification_router
 from aisc_backend.routers.questionnaire import router as questionnaire_router
 from aisc_backend.routers.report import router as report_router
@@ -64,7 +65,8 @@ v1_router.add_router("/projects", project_router)
 v1_router.add_router("/projects", qualification_router)  # /{pid}/system-versions, /questionnaire, /qualification
 v1_router.add_router("/projects", control_objectives_router)  # /{pid}/control-objectives/*
 v1_router.add_router("/projects", evidence_router)  # /{pid}/evidence/* (versioned evidence map)
-v1_router.add_router("/projects", connection_router)  # /{pid}/connections/* (adapters, helper roles)
+v1_router.add_router("/projects", connection_router)  # /{pid}/connections/*, /{pid}/runs/{plugin}/bindings
+v1_router.add_router("/projects", helper_router)  # /{pid}/helpers/* (helper models per role)
 v1_router.add_router("/projects", control_router)  # /{pid}/controls/* (library, submissions)
 v1_router.add_router("/projects", report_router)  # /{pid}/reports/* (generate, pdf)
 v1_router.add_router("/projects", assessment_router)  # /{pid}/assessment-coverage (B4)

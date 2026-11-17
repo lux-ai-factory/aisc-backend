@@ -57,15 +57,6 @@ class AIComponent(HasData):
     # resource).
     json_value = models.JSONField(blank=True, default=dict)
 
-    #: How a test reaches this connection (CON-01): the adapter kind and the
-    #: version of its contract. Empty means the default for the component type
-    #: (llm -> openai, resource -> builtin); see services.connections.
-    adapter = models.CharField(max_length=32, blank=True, default="")
-    adapter_version = models.CharField(max_length=32, blank=True, default="")
-    #: When this component stands in for a helper a test asks for (a judge, an
-    #: embedder), the role it fills; else empty.
-    helper_role = models.CharField(max_length=64, blank=True, default="")
-
     @property
     def is_file_backed(self) -> bool:
         return self.component_type in {

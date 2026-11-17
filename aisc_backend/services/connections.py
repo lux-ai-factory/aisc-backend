@@ -1,57 +1,113 @@
 """
-Connections and adapters (CON-01), read from the one connection/adapter model
-(`AIComponent`).
+Connections, helpers and run bindings (CON-01) as the API reports them.
 
-A "connection" is an `AIComponent` a test can reach: an LLM endpoint, a model
-file, a dataset or a generic resource. How a test reaches it is the component's
-`adapter` (openai / a2a / rest / builtin); an unset adapter falls back to the
-type's default. `helper_role` marks a component that stands in for a helper a
-test asks for (a judge, an embedder).
-
-The secret is not mirrored here: it stays in the component's configuration and
-only its presence is reported, so a listing can never leak a value.
+A `Connection` is the pilot's connection record: a protocol the adapter registry
+can dispatch on, an endpoint, and the protocol's own fields. The secret is never
+mirrored here; only its presence and the *names* of the secret headers are, so a
+listing can never leak a value.
 """
 from __future__ import annotations
 
-from aisc_backend.models.ai_system import AIComponent, AIComponentType
+import uuid
 
-#: The adapters a connection may use (the pilot's connection kinds).
-ADAPTERS = ("builtin", "openai", "a2a", "rest")
+from aisc_backend import adapters
+from aisc_backend.models.ai_system import AIComponent
+from aisc_backend.models.connection import Connection, Helper, RunBinding
+from aisc_backend.models.plugin import EvaluationPlugin
+from aisc_backend.models.project import Project
+from aisc_backend.services import connection_secrets as secrets
 
-#: The adapter a connection uses when none is chosen, by component type.
-DEFAULT_ADAPTER = {
-    AIComponentType.LLM: "openai",
-    AIComponentType.MODEL: "builtin",
-    AIComponentType.DATASET: "builtin",
-    AIComponentType.RESOURCE: "builtin",
-}
-
-#: The keys a component's configuration may carry a secret under.
-_SECRET_KEYS = ("secret_key", "api_key", "key")
+#: The helper roles a test may ask for.
+HELPER_ROLES = ("judge", "attacker", "grader", "embedder", "generator")
 
 
-def adapter_of(component: AIComponent) -> str:
-    return component.adapter or DEFAULT_ADAPTER.get(component.component_type, "builtin")
-
-
-def endpoint_of(component: AIComponent) -> str:
-    value = component.json_value or {}
-    return str(value.get("endpoint_url") or value.get("value") or "")
-
-
-def key_set(component: AIComponent) -> bool:
-    value = component.json_value or {}
-    return any(bool(value.get(name)) for name in _SECRET_KEYS)
-
-
-def connection_row(component: AIComponent) -> dict:
+def target_row(component: AIComponent | None) -> dict | None:
+    if component is None:
+        return None
     return {
-        "pid": component.pid,
+        "key": str(component.pid),
         "name": component.name,
         "component_type": component.component_type,
-        "adapter": adapter_of(component),
-        "adapter_version": component.adapter_version,
-        "helper_role": component.helper_role,
-        "endpoint": endpoint_of(component),
-        "key_set": key_set(component),
     }
+
+
+async def connection_row(connection: Connection) -> dict:
+    return {
+        "name": connection.name,
+        "label": connection.label or connection.name,
+        "kind": connection.kind,
+        "protocol": adapters.describe(connection),
+        "base_url": connection.base_url,
+        "model": connection.model,
+        "supports_tools": connection.supports_tools,
+        "supports_logprobs": connection.supports_logprobs,
+        "protocol_version": connection.protocol_version,
+        "path": connection.path,
+        "method": connection.method,
+        "body_template": connection.body_template,
+        "response_path": connection.response_path,
+        "headers": connection.headers or {},
+        "secret_header": connection.secret_header,
+        "timeout_s": connection.timeout_s,
+        "settings": connection.settings or {},
+        "target": target_row(connection.target_component),
+        "has_secret": await secrets.connection_key_set(connection),
+        "secret_headers": await secrets.secret_header_names(connection),
+        "last_test_at": connection.last_test_at,
+        "last_test_ok": connection.last_test_ok,
+    }
+
+
+async def helper_row(helper: Helper) -> dict:
+    return {
+        "name": helper.name,
+        "label": helper.label or helper.name,
+        "endpoint_url": helper.endpoint_url,
+        "roles": list(helper.roles or []),
+        "has_key": await secrets.helper_key_set(helper),
+    }
+
+
+def binding_row(binding: RunBinding) -> dict:
+    return {
+        "role": binding.role,
+        "kind": binding.kind,
+        "adapter_version": binding.adapter_version,
+        "base_url": binding.base_url,
+        "model": binding.model,
+        "connection": binding.connection.name if binding.connection else None,
+        "helper": binding.helper.name if binding.helper else None,
+    }
+
+
+async def target_for(project: Project, key: str) -> AIComponent | None:
+    try:
+        component_pid = uuid.UUID(str(key))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return await AIComponent.objects.filter(pid=component_pid, system__project=project).afirst()
+
+
+async def bind(
+    plugin: EvaluationPlugin,
+    *,
+    role: str = "",
+    connection: Connection | None = None,
+    helper: Helper | None = None,
+) -> RunBinding:
+    """Record what this run used, as a snapshot: the adapter/version and endpoint
+    are copied here, so editing the connection later does not rewrite the run."""
+    defaults = {
+        "connection": connection,
+        "helper": helper,
+        "kind": connection.kind if connection else "openai",
+        "adapter_version": "",
+        "base_url": connection.base_url if connection else (helper.endpoint_url if helper else ""),
+        "model": connection.model if connection else "",
+        "name": f"{plugin.name}:{role or 'assessed'}",
+        "description": "",
+    }
+    binding, _ = await RunBinding.objects.aupdate_or_create(
+        evaluation_plugin=plugin, role=role, defaults=defaults,
+    )
+    return binding
