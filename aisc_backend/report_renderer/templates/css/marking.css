@@ -1,0 +1,2 @@
+/* the confidentiality marking on the cover */
+.cover .marking { font-weight: bold; text-transform: uppercase; letter-spacing: 0.08em; color: var(--l-aif-accent, #FF007E); }

@@ -1,0 +1,6 @@
+/* key figures */
+.key-figures { display: flex; flex-wrap: wrap; gap: 0.6em; margin: 0.4em 0 0.8em 0; }
+.key-figures .figure { flex: 1 1 30%; border: 1px solid #ccc; border-top: 3px solid var(--l-aif-primary, #000FDF); padding: 0.4em 0.6em; box-sizing: border-box; break-inside: avoid; }
+.key-figures .figure-label { font-size: 0.8em; color: #555; margin: 0; }
+.key-figures .figure-value { font-size: 1.4em; font-weight: bold; margin: 0.1em 0; }
+.key-figures .figure-note { font-size: 0.8em; color: #555; margin: 0; }

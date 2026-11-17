@@ -325,7 +325,7 @@ async def preview_report_layout(
     snapshot = await report_snapshot.build_snapshot(
         project, layout=layout, version_pid=data.version_pid or None, period=data.period,
     )
-    document, _ = report_render.render_document(snapshot, "html")
+    document, _ = await report_render.render_document(snapshot, "html")
     return {
         "html": document.decode("utf-8"),
         "outline": report_blocks.outline(layout["blocks"]),
@@ -434,7 +434,7 @@ async def generate_report(request, pid: uuid.UUID, data: ReportIn):
     document, _ = await report_service.generate(str(pid), snapshot, fmt)
     document_pdf = None
     if fmt == "docx":
-        document_pdf, _ = report_render.render_document(snapshot, "pdf")
+        document_pdf, _ = await report_render.render_document(snapshot, "pdf")
 
     version_ref = snapshot.get("system", {}).get("version") or {}
     version = None
@@ -567,7 +567,7 @@ async def report_pdf(request, pid: uuid.UUID, report_pid: uuid.UUID):
     elif report.format == "pdf":
         content = _document_bytes(report)
     else:
-        content, _ = report_render.render_document(report.snapshot or {}, "pdf")
+        content, _ = await report_render.render_document(report.snapshot or {}, "pdf")
     filename = f"report-{report.file_ref.split('/')[-1] or report.pid}.pdf"
     return HttpResponse(
         content=content,

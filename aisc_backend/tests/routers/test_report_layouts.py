@@ -17,6 +17,7 @@ from aisc_backend.models.qualification import System
 from aisc_backend.models.report import Report, ReportLayout
 from aisc_backend.repositories.system_repository import SystemRepository
 from aisc_backend.routers.report import router as report_router
+from aisc_backend.report_renderer import document as renderer_document
 from aisc_backend.services import report_blocks, report_render
 
 report_client = TestAsyncClient(report_router)
@@ -107,30 +108,30 @@ class ReportRenderTest(TestCase):
             "generated_at": "2026-11-17T00:00:00+00:00",
         }
 
-    def test_pdf_is_a_real_pdf(self):
-        document, ctype = report_render.render_document(self._snapshot(), "pdf")
-        self.assertTrue(document.startswith(b"%PDF-"))
+    async def test_pdf_is_a_real_pdf(self):
+        blob, ctype = await report_render.render_document(self._snapshot(), "pdf")
+        self.assertTrue(blob.startswith(b"%PDF-"))
         self.assertEqual(ctype, "application/pdf")
 
-    def test_docx_is_a_real_zip(self):
-        document, ctype = report_render.render_document(self._snapshot(), "docx")
-        self.assertTrue(document.startswith(b"PK\x03\x04"))
+    async def test_docx_is_a_real_zip(self):
+        blob, ctype = await report_render.render_document(self._snapshot(), "docx")
+        self.assertTrue(blob.startswith(b"PK\x03\x04"))
         self.assertIn("wordprocessingml", ctype)
 
-    def test_html_carries_block_content(self):
-        document, ctype = report_render.render_document(self._snapshot(), "html")
+    async def test_html_carries_block_content(self):
+        blob, ctype = await report_render.render_document(self._snapshot(), "html")
         self.assertIn("text/html", ctype)
-        text = document.decode("utf-8")
+        text = blob.decode("utf-8")
         self.assertIn("Demo", text)
         self.assertIn("Do the thing", text)
 
-    def test_block_order_is_the_layout_order(self):
+    async def test_block_order_is_the_layout_order(self):
         snap = self._snapshot()
         snap["blocks"] = _blocks("chapter", "test_results", "cover")
-        model = report_render.build_document(snap)
-        kinds = [el[0] for el in model]
-        self.assertEqual(kinds[0], "heading")
-        self.assertEqual(kinds[-1], "pagebreak")  # the cover ends with a break
+        sections = await renderer_document.build_sections(snap)
+        self.assertEqual([s["type_id"] for s in sections], ["chapter", "test_results", "cover"])
+        self.assertEqual(sections[0]["kind"], "chapter")
+        self.assertEqual(sections[-1]["kind"], "cover")
 
 
 # --- layout endpoints -----------------------------------------------------------
@@ -236,7 +237,7 @@ class ReportLayoutEndpointsTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200, resp.text)
         body = resp.json()
-        self.assertIn("<!doctype html>", body["html"])
+        self.assertIn("<!doctype html>", body["html"].lower())
         self.assertGreater(len(body["outline"]), 0)
         self.assertEqual(await Report.objects.acount(), 0)
 

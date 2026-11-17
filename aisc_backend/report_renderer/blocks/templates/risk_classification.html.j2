@@ -1,0 +1,21 @@
+{% if show_classification %}<dl class="card">
+  <dt>{{ t("Operators") }}</dt>
+  <dd>{% if operators %}{% for role, name in operators %}{{ name }} ({{ t(role) }}){% if not loop.last %}; {% endif %}{% endfor %}{% else %}{{ t("None named in the AI card") }}{% endif %}</dd>
+  <dt>{{ t("AI Act risk class") }}</dt><dd>{{ risk_class }}</dd>
+</dl>
+{% endif %}{% if no_card %}<p class="placeholder">{{ no_card }}</p>{% endif %}
+{% if show_chains and chains %}
+<h3 class="risks-title">{{ t("Risks") }}</h3>
+{% for r in chains %}
+<section class="risk">
+  <h3>{{ r.risk }}</h3>
+  <dl class="card">
+    {% if r.source %}<dt>{{ t("Source") }}</dt><dd>{{ r.source }}{% if r.source_label %} ({{ t("VAIR") }}: {{ r.source_label }}){% endif %}</dd>{% endif %}
+    {% if r.vulnerability %}<dt>{{ t("Vulnerability") }}</dt><dd>{{ r.vulnerability }}</dd>{% endif %}
+    {% if r.consequence %}<dt>{{ t("Consequence") }}</dt><dd>{{ r.consequence }}{% if r.consequence_label %} ({{ t("VAIR") }}: {{ r.consequence_label }}){% endif %}</dd>{% endif %}{% if r.impact_label %}<dt>{{ t("Kind of harm") }}</dt><dd>{{ r.impact_label }}</dd>{% endif %}
+    {% if r.affected_label %}<dt>{{ t("Affected") }}</dt><dd>{{ r.affected_label }}</dd>{% endif %}
+    {% if show_impact_areas and r.impact_labels %}<dt>{{ t("Impact areas") }}</dt><dd>{{ r.impact_labels | join(", ") }}</dd>{% endif %}
+  </dl>
+</section>
+{% endfor %}
+{% endif %}

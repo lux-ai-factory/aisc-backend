@@ -1,0 +1,4 @@
+/* charts drawn by the renderer */
+figure.chart { margin: 0.6em 0; break-inside: avoid; }
+figure.chart svg { max-width: 100%; height: auto; }
+figure.chart figcaption { font-size: 0.85em; color: #555; }

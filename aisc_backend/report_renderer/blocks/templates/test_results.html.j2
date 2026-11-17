@@ -1,0 +1,17 @@
+{% for e in evaluations %}
+<div class="evaluation">
+  <h3>{{ e.name }}</h3>
+  <p class="meta">{{ t("Status: {status} | Date: {date} UTC | Reference: {reference}", status=t(e.status), date=e.date, reference=e.short) }}</p>
+  {% for r in e.runs %}
+  <div class="run">
+    <h4>{{ r.tool }}</h4>
+    <p class="meta target">{{ r.target }}</p>
+    <p class="meta">{% if r.components %}{{ t("Components: {components}", components=r.components) }} | {% endif %}{{ t("Run status: {status}", status=t(r.status)) }}</p>
+    {% if r.no_metrics %}<p class="placeholder">{{ t("No selected metrics in this run.") }}</p>{% endif %}
+    {% if r.section %}{{ r.section }}{% endif %}
+    {% if r.artifacts %}<p>{{ t("Artifacts:") }}</p><ul class="artifacts">{% for a in r.artifacts %}<li>{% if a.file_size is not none %}{{ t("{name} ({size} bytes)", name=a.name, size=a.file_size) }}{% else %}{{ a.name }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+  {% if e.unmatched %}<h4>{{ t("Observations not tied to a tool") }}</h4>{{ e.unmatched }}{% endif %}
+</div>
+{% endfor %}

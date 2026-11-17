@@ -1,0 +1,13 @@
+{% if note %}<p class="meta">{{ t("Plots as saved on the dashboards, whatever version or period they show.") }}</p>
+{% endif %}<div class="export-block">
+  {% for p in block.plots %}
+  <div class="export-plot" style="break-inside: avoid; page-break-inside: avoid">
+    <h4>{{ p.chart }}</h4>
+    <p class="export-tags">{% for tag in p.tags %}<span class="tag" style="display:inline-block;border:1px solid #888;border-radius:3px;padding:1px 6px;margin:0 4px 4px 0;font-size:90%">{{ tag }}</span>{% else %}<span class="meta">{{ t("No filters: all the data") }}</span>{% endfor %}</p>
+    <p class="chart"><img alt="{{ p.chart }}" src="{{ p.image }}" style="max-width:100%"></p>
+    {% if p.rows %}<p class="meta export-rows">{{ p.rows }}</p>{% endif %}
+    <p class="meta">{{ t("Saved by {author} on {date}", author=p.author, date=p.date) }}</p>
+    {% if p.comment %}<p class="commentary">{{ p.comment }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>

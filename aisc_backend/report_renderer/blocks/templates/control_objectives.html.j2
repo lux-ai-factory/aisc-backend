@@ -1,0 +1,24 @@
+{% if nothing %}<p class="placeholder">{{ t("No objective matches the filters of this section.") }}</p>
+{% endif %}{% if group_by == "risk" %}
+{% for r in risks %}
+<div class="risk" data-risk="{{ r.risk_id }}">
+  <h3>{{ t("{label}: {value}", label=t("Risk {number}", number=loop.index), value=r.text) }}</h3>
+{% if show_severity %}  <p class="meta">{{ r.rating_text }}</p>
+{% endif %}  {% if r.objectives %}<ul>{% for o in r.objectives %}<li>{{ o.id }}{% if o.label %} {{ o.label }}{% endif %}{% if o.priority %} <span class="priority">({{ o.priority }})</span>{% endif %}</li>{% endfor %}</ul>{% else %}<p class="placeholder">{{ t("No objective is mapped to this risk.") }}</p>{% endif %}
+</div>
+{% endfor %}
+{% else %}
+{% for o in objectives %}
+<div class="objective" data-objective="{{ o.id }}">
+  <h3>{{ o.id }}{% if o.info.label %} {{ o.info.label }}{% endif %}</h3>
+{% if o.priority %}  <p class="priority">{{ o.priority }}</p>
+{% endif %}  {% if o.info.objective %}<p>{{ o.info.objective }}</p>{% endif %}
+  <p class="meta">{% if o.info.legal_basis %}{{ o.info.legal_basis }}{% endif %}{% if o.info.legal_basis and o.info.macro %} | {% endif %}{% if o.info.macro %}{{ o.info.macro }}{% endif %}</p>
+  <ul class="mapped-risks">
+  {% for r in o.risks %}<li>{{ r.text }}{% if show_severity %} ({{ r.rating_text }}){% endif %}{% if show_rationale and r.rationale %}{{ t("{label}: {value}", label="", value=r.rationale) }}{% endif %}{% if show_quotes and r.quote %} <q>{{ r.quote }}</q>{% endif %}</li>
+  {% endfor %}
+  </ul>
+  {% if show_status and o.status %}<p class="coverage">{{ t("Coverage: {status}", status=t(o.status)) }}</p>{% endif %}
+</div>
+{% endfor %}
+{% endif %}

@@ -1,0 +1,23 @@
+{%- macro comment_list(items) -%}
+<ul>
+{% for c in items %}<li><span class="author">{{ c.author }}</span>, <span class="when">{{ c.when }}</span>{% if c.version %} <span class="version">{{ c.version }}</span>{% endif %}: <span class="body">{{ c.body }}</span>{% if c.replies %}{{ comment_list(c.replies) }}{% endif %}</li>
+{% endfor %}
+</ul>
+{%- endmacro -%}
+<h3>{{ chart.slice_name }}</h3>
+{% if link %}<p><a href="{{ link }}">{{ t("Open in the dashboard") }}</a></p>{% endif %}
+{% if image %}<p class="chart"><img alt="{{ chart.slice_name }}" src="{{ image }}"></p>{% endif %}
+{% if error_ref %}<p class="error-box">{{ t("Chart image unavailable (ref {ref}).", ref=error_ref) }}</p>{% endif %}
+{% if disabled %}<p class="note">{{ t("Chart images need Superset screenshots, which are not enabled on this platform.") }}</p>{% endif %}
+{% if not image and table %}
+<table class="chart-data">
+  <thead><tr>{% for col in table.columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for row in table.rows %}<tr>{% for v in row %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+{% if show_comments %}
+<div class="comments">
+<h4>{{ t("Review comments") }}</h4>
+{% if comments %}{{ comment_list(comments) }}{% else %}<p class="placeholder">{{ t("No comments on this chart.") }}</p>{% endif %}
+</div>
+{% endif %}

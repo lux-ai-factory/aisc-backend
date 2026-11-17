@@ -1,0 +1,16 @@
+<div class="cover">
+  {% if logo %}<p class="logo"><img alt="{{ t("Logo") }}" src="{{ logo }}" style="max-height: 20mm"></p>{% endif %}
+  <h1>{{ options.report_title }}</h1>
+  {% if options.subtitle %}<p class="subtitle">{{ options.subtitle }}</p>{% endif %}
+{% if marking %}  <p class="marking">{{ marking }}</p>
+{% endif %}  <dl class="card">
+    <dt>{{ t("Project") }}</dt><dd>{{ project.name }}</dd>
+    <dt>{{ t("AI system") }}</dt><dd>{{ system.name }}</dd>
+    <dt>{{ t("Version") }}</dt><dd>{% if card_revision > 1 %}{{ t("Version {number}, revision {revision}", number=system.number, revision=card_revision) }}{% else %}{{ t("Version {number}", number=system.number) }}{% endif %}{% if system.version %} ({{ system.version }}){% endif %}</dd>
+    {% if system.provider %}<dt>{{ t("Provider") }}</dt><dd>{{ t("Provider: {name}", name=system.provider) }}</dd>{% endif %}
+    <dt>{{ t("Date") }}</dt><dd>{{ t("Generated {date}", date=generated) }}</dd>
+    <dt>{{ t("Layout") }}</dt><dd>{{ t("Layout: {name}, revision {revision}", name=report.layout_name, revision=report.revision) }}</dd>
+    {% if generated_by %}<dt>{{ t("Author") }}</dt><dd>{{ generated_by }}</dd>{% endif %}
+  </dl>
+  {% if banner %}<p class="banner">{{ banner }}</p>{% endif %}
+</div>

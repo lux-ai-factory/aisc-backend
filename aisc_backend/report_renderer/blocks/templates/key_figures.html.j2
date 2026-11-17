@@ -1,0 +1,3 @@
+<div class="key-figures">
+{% for f in tiles %}  <div class="figure" data-figure="{{ f.id }}"><p class="figure-label">{{ f.label }}</p><p class="figure-value">{{ f.value }}</p>{% if f.note %}<p class="figure-note">{{ f.note }}</p>{% endif %}</div>
+{% endfor %}</div>

@@ -1,0 +1,17 @@
+{% if merge_label %}<table class="coverage" style="table-layout:fixed;width:100%">
+  <colgroup><col style="width:16.6%"><col style="width:33.2%"><col style="width:16.6%"><col style="width:16.6%"><col style="width:16.6%"></colgroup>
+  <thead><tr><th>{{ t("Objective") }}</th><th>{{ t("Description") }}</th><th>{{ t("Tests") }}</th><th>{{ t("Checklists") }}</th><th>{{ t("Coverage") }}</th></tr></thead>
+  <tbody>
+  {% for r in rows %}<tr data-objective="{{ r.id }}"><td>{{ r.id }}{% if r.label %} - {{ r.label }}{% endif %}</td><td>{{ r.description }}</td><td>{{ r.tests | join(", ") }}</td><td>{{ r.checklists | join(", ") }}</td><td data-coverage="{{ r.status }}">{{ t(r.status) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<table class="coverage">
+  <thead><tr><th>{{ t("Objective") }}</th><th>{{ t("Label") }}</th><th>{{ t("Description") }}</th><th>{{ t("Tests") }}</th><th>{{ t("Checklists") }}</th><th>{{ t("Coverage") }}</th></tr></thead>
+  <tbody>
+  {% for r in rows %}<tr data-objective="{{ r.id }}"><td>{{ r.id }}</td><td>{{ r.label }}</td><td>{{ r.description }}</td><td>{{ r.tests | join(", ") }}</td><td>{{ r.checklists | join(", ") }}</td><td data-coverage="{{ r.status }}">{{ t(r.status) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>{% endif %}
+{% if review %}<p class="coverage-review" data-review="{{ review[0] }}">{{ review[1] }}</p>
+{% endif %}

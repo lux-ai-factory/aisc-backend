@@ -1,0 +1,9 @@
+<figure class="chart" data-kind="{{ kind }}">{{ svg }}<figcaption>{{ title }}</figcaption></figure>
+{% if show_table %}<table class="chart-table">
+  <thead><tr><th>{{ t("Label") }}</th><th>{{ t("Value") }}</th></tr></thead>
+  <tbody>
+  {% for label, value in rows %}<tr><td>{{ label }}</td><td>{{ value }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

@@ -1,0 +1,38 @@
+<dl class="card">
+  <dt>{{ t("System") }}</dt><dd>{{ card.system_name }}</dd>
+  <dt>{{ t("Company") }}</dt><dd>{{ card.company }}</dd>{% if vair and vair.system_type %}<dt>{{ t("Type of AI system") }}</dt><dd>{{ vair.system_type }}</dd>{% endif %}{% if vair and vair.purpose %}<dt>{{ t("Intended purpose") }}</dt><dd>{{ vair.purpose }}</dd>{% endif %}
+  <dt>{{ t("Description") }}</dt><dd>{{ card.description }}</dd>
+  <dt>{{ t("Target use case") }}</dt><dd>{{ card.target_use_case }}</dd>
+  <dt>{{ t("Target users") }}</dt><dd>{{ card.target_users }}</dd>
+  {% if card.intended_deployers %}<dt>{{ t("Intended deployers") }}</dt><dd>{{ card.intended_deployers }}</dd>{% endif %}
+  {% if version_description %}<dt>{{ t("Version description") }}</dt><dd>{{ version_description }}</dd>{% endif %}
+</dl>
+{% if tags %}
+<h3>{{ t("Tags") }}</h3>
+<dl class="card tags">
+  {% for label, values in tags %}<dt>{{ label }}</dt><dd>{{ values | join(", ") }}</dd>{% endfor %}
+</dl>
+{% endif %}
+{% if show_components %}
+<h3>{{ t("Components") }}</h3>
+{% if components %}
+<table class="components">
+  <thead><tr><th>{{ t("Name") }}</th><th>{{ t("Type") }}</th><th>{{ t("AIRO property") }}</th><th>{{ t("Object") }}</th></tr></thead>
+  <tbody>
+  {% for c in components %}<tr><td>{{ c.name }}</td><td>{{ c.component_type }}</td><td>{{ c.airo_property }}</td><td>{{ c.object_name }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="placeholder">{{ t("No components are linked to this card.") }}</p>{% endif %}
+{% endif %}
+{% if graph %}
+<h3>{{ t("Knowledge graph") }}</h3>
+<table class="graph-stats">
+  <tbody>
+    <tr><th>{{ t("Nodes") }}</th><td>{{ graph.nodes }}</td></tr>
+    <tr><th>{{ t("Triples") }}</th><td>{{ graph.triples }}</td></tr>
+    <tr><th>{{ t("Digest") }}</th><td>{{ graph.digest[:12] }}</td></tr>
+    <tr><th>{{ t("Built") }}</th><td>{{ graph_built }}</td></tr>
+  </tbody>
+</table>
+{% endif %}

@@ -43,9 +43,9 @@ def _service_headers() -> dict[str, str]:
     return headers
 
 
-def render_locally(snapshot: dict, fmt: str) -> tuple[bytes, str]:
+async def render_locally(snapshot: dict, fmt: str) -> tuple[bytes, str]:
     """Render with the in-process renderer (real PDF/DOCX/HTML)."""
-    return report_render.render_document(snapshot, fmt)
+    return await report_render.render_document(snapshot, fmt)
 
 
 async def generate(project_pid: str, snapshot: dict, fmt: str = "pdf") -> tuple[bytes, str]:
@@ -59,9 +59,9 @@ async def generate(project_pid: str, snapshot: dict, fmt: str = "pdf") -> tuple[
     if fmt not in report_render.FORMATS:
         fmt = "pdf"
     if not REPORT_SERVICE_URL:
-        return render_locally(snapshot, fmt)
+        return await render_locally(snapshot, fmt)
     if httpx is None:
-        return render_locally(snapshot, fmt)
+        return await render_locally(snapshot, fmt)
     payload = {"project_pid": str(project_pid), "format": fmt, "snapshot": snapshot or {}}
     try:
         resp = await httpx.AsyncClient(timeout=120).post(
@@ -71,7 +71,7 @@ async def generate(project_pid: str, snapshot: dict, fmt: str = "pdf") -> tuple[
         )
     except Exception as exc:  # noqa: BLE001 - the caller decides how to degrade
         logger.warning("report service unreachable: %s", exc)
-        return render_locally(snapshot, fmt)
+        return await render_locally(snapshot, fmt)
     if resp.status_code != 200:
         raise ReportServiceError(f"report service answered {resp.status_code}")
     content_type = CONTENT_TYPE_BY_FORMAT.get(fmt, "application/octet-stream")

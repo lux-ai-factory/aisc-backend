@@ -1,0 +1,24 @@
+{% if options.detail == "summary" %}
+<table class="test-runs">
+  <thead><tr><th>{{ t("Date") }}</th><th>{{ t("Version") }}</th><th>{{ t("Status") }}</th><th>{{ t("Tools") }}</th><th>{{ t("Reference") }}</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr><td>{{ r.date }} UTC</td><td>{{ r.version }}</td><td>{{ t(r.status) }}</td><td>{{ r.tools | map(attribute="name") | join(", ") }}</td><td>{{ r.short }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if options.detail == "full" %}
+{% for r in runs %}
+<div class="test-run">
+  <h3>{{ t("Run of {date} UTC", date=r.date) }}</h3>
+  <p class="meta">{{ t("{version} | Status: {status} | Reference: {reference}", version=r.version, status=t(r.status), reference=r.short) }}</p>
+  {% for tool in r.tools %}
+  <div class="run">
+    <h4>{{ tool.name }}{% if tool.config_name %} <span class="meta">({{ tool.config_name }})</span>{% endif %}</h4>
+    <p class="meta">{{ t("Started {started} | Finished {finished} | Status: {status}", started=tool.started, finished=tool.finished, status=t(tool.status)) }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}

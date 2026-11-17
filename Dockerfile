@@ -40,6 +40,10 @@ COPY . .
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/staticfiles /app/staticfiles
 
+# 2. The report renderer (REP-02): WeasyPrint draws CSS itself and cairosvg draws SVG,
+#    both through pango/cairo/gdk-pixbuf; ttf-dejavu gives the CSS font stacks a fallback.
+RUN apk add --no-cache pango cairo gdk-pixbuf libffi fontconfig harfbuzz ttf-dejavu
+
 EXPOSE 8000
 
 # Default command:

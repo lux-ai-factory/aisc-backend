@@ -1,0 +1,32 @@
+{%- macro commentary(body) -%}
+<div class="commentary"><p class="commentary-caption">{{ t("Commentary") }}</p>{{ body }}</div>
+{%- endmacro -%}
+{%- macro section(s) -%}
+<section class="block block-{{ s.type_id }}{% if s.kind %} {{ s.kind }}{% endif %}" id="block-{{ s.instance_id }}" data-status="{{ s.status }}"{% if s.page_break %} style="break-before: page"{% endif %}>
+  {% if s.lead %}{{ commentary(s.lead) }}{% endif %}{% if s.kind %}<h1 class="chapter-title">{% if s.number %}{{ s.number }} {% endif %}{{ s.title }}</h1>{% else %}<h2>{% if s.number %}{{ s.number }} {% endif %}{{ s.title }}</h2>{% endif %}
+  {% if s.notices %}<ul class="notices">{% for n in s.notices %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+  {% if s.commentary and s.commentary_position == "before" %}{{ commentary(s.commentary) }}{% endif %}{{ s.html }}{% if s.commentary and s.commentary_position != "before" %}{{ commentary(s.commentary) }}{% endif %}
+</section>
+{%- endmacro -%}
+{%- macro entry_list(entries) -%}
+<ol>{% for s in entries %}<li><a href="#block-{{ s.instance_id }}">{% if s.number %}{{ s.number }} {% endif %}{{ s.title }}</a>{% if s.children %}{{ entry_list(s.children) }}{% endif %}</li>{% endfor %}</ol>
+{%- endmacro -%}
+{%- macro contents(entries) -%}
+<nav id="toc"><h2>{{ t("Contents") }}</h2>{{ entry_list(entries) }}</nav>
+{%- endmacro -%}
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>{{ css }}</style>
+</head>
+<body>
+{% if banner %}<div class="banner">{{ banner }}</div>{% endif %}
+{% if toc is not none and toc_after is none %}{{ contents(toc) }}{% endif %}
+{% for s in sections %}
+{{ section(s) }}
+{% if toc is not none and toc_after == loop.index0 %}{{ contents(toc) }}{% endif %}
+{% endfor %}
+</body>
+</html>
