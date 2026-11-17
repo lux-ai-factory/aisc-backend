@@ -1,0 +1,1603 @@
+{
+  "_comment": "Generated from services/ontology/airo/vair.ttl by `python -m airo_min.vair_vocab --write`; do not edit. services/ontology/tests/test_vair_vocab.py fails when it drifts.",
+  "classes": {
+    "AISystem": [
+      {
+        "id": "AGI",
+        "label": "Artificial General Intelligence",
+        "definition": "Type of AI system that addresses a broad range of tasks with a satisfactory level of performance."
+      },
+      {
+        "id": "CognitiveComputing",
+        "label": "Cognitive Computing",
+        "definition": "Category of AI systems that enables people and machines to interact more naturally."
+      },
+      {
+        "id": "ExpertSystem",
+        "label": "Expert System",
+        "definition": "AI system that accumulates, combines and encapsulates knowledge provided by a human expert or experts in a specific domain to infer solutions to problems."
+      },
+      {
+        "id": "GeneralAI",
+        "label": "General AI",
+        "definition": "Type of AI system that addresses a broad range of tasks with a satisfactory level of performance."
+      },
+      {
+        "id": "IndustrialRobot",
+        "label": "Industrial Robot",
+        "definition": "A robot for use in industrial automation applications."
+      },
+      {
+        "id": "IntelligentControlSystem",
+        "label": "Intelligent Control System",
+        "definition": "An AI-based control system"
+      },
+      {
+        "id": "IoTSystem",
+        "label": "IoT System",
+        "definition": "A system providing functionalities of IoT."
+      },
+      {
+        "id": "MultiAgentSystem",
+        "label": "Multi Agent System",
+        "definition": "A system consisting of multiple AI agents."
+      },
+      {
+        "id": "NarrowAI",
+        "label": "Narrow AI",
+        "definition": "Type of AI system that is focused on defined tasks to address a specific problem."
+      },
+      {
+        "id": "NaturalLanguageProcessingSystem",
+        "label": "Natural Language Processing System",
+        "definition": "Information processing based upon natural language understanding or natural language generation."
+      },
+      {
+        "id": "Robot",
+        "label": "Robot",
+        "definition": "An automation system with actuators that performs intended tasks in the physical world, by means of sensing its environment and a software control system."
+      },
+      {
+        "id": "ServiceRobot",
+        "label": "Service Robot",
+        "definition": "A robot in personal use or professional use that performs useful tasks for humans or equipment."
+      },
+      {
+        "id": "SocialRobot",
+        "label": "Social Robot",
+        "definition": "Robots with social interaction functions."
+      }
+    ],
+    "Purpose": [
+      {
+        "id": "AllocatingTasks",
+        "label": "Allocating Tasks",
+        "definition": "Assignment of tasks to persons"
+      },
+      {
+        "id": "ApplyingTheLawToFacts",
+        "label": "Applying The Law To Facts",
+        "definition": "Applying the law to a concrete set of facts"
+      },
+      {
+        "id": "AssessingAccessibleLevelOfEducation",
+        "label": "Assessing Accessible Level Of Education",
+        "definition": "Assessing the appropriate level of education that an individual will be able to access"
+      },
+      {
+        "id": "AssessingCreditworthiness",
+        "label": "Assessing Creditworthiness",
+        "definition": "Evaluation the creditworthiness of natural persons or establishing their credit score"
+      },
+      {
+        "id": "AssessingHealthRisk",
+        "label": "Assessing Health Risk",
+        "definition": "Assessing health risk posed by a person"
+      },
+      {
+        "id": "AssessingLevelOfEducation",
+        "label": "Assessing Level Of Education",
+        "definition": "Assessing the appropriate level of education that an individual will receive"
+      },
+      {
+        "id": "AssessingPastCriminalBehaviour",
+        "label": "Assessing Past Criminal Behaviour",
+        "definition": "Assessing past criminal behaviour of natural persons or groups"
+      },
+      {
+        "id": "AssessingPeopleRelatedRisk",
+        "label": "Assessing People Related Risk",
+        "definition": "Assessing a risk, e.g. a security risk, a risk of irregular migration, or a health risk, posed by a natural person"
+      },
+      {
+        "id": "AssessingPersonalityTraits",
+        "label": "Assessing Personality Traits",
+        "definition": "Assessing personality of natural persons or groups"
+      },
+      {
+        "id": "AssessingRiskOfBecomingVictimOfCrime",
+        "label": "Assessing Risk For Potential Victims Of Criminal Offences",
+        "definition": "Assessing risk of a natural person becoming the victim of criminal offences"
+      },
+      {
+        "id": "AssessingRiskOfIrregularImmigration",
+        "label": "Assessing Risk Of Irregular Immigration",
+        "definition": "Assessing risk of irregular immigration posed by a person"
+      },
+      {
+        "id": "AssessingRiskOfOffending",
+        "label": "Assessing Risk Of Offending",
+        "definition": "Assessing the risk of a natural person offending"
+      },
+      {
+        "id": "AssessingRiskOfReoffending",
+        "label": "Assessing Risk Of Reoffending",
+        "definition": "Assessing the risk of a natural person re-offending"
+      },
+      {
+        "id": "AssessingSecurityRisk",
+        "label": "Assessing Security Risk",
+        "definition": "Assess security risk posed by a person"
+      },
+      {
+        "id": "Assessment",
+        "label": "Assessment",
+        "definition": "Assessment and evaluation"
+      },
+      {
+        "id": "AssigningPersonsToEducationalInstitutions",
+        "label": "Assigning Persons To Educational Institutions",
+        "definition": "Assigning natural persons to educational institutions at all levels."
+      },
+      {
+        "id": "AssigningPersonsToVocationalTrainingInstitutions",
+        "label": "Assigning Persons To Vocational Training Institutions",
+        "definition": "Assigning natural persons to vocational training institutions at all levels."
+      },
+      {
+        "id": "Categorisation",
+        "label": "Categorisation",
+        "definition": "Assigning natural persons to specific categories"
+      },
+      {
+        "id": "ClassificationOfPeople",
+        "label": "Classification Of People",
+        "definition": "The classification of natural persons or groups of persons over a certain period of time"
+      },
+      {
+        "id": "ClassifyingEmergencyCall",
+        "label": "Classifying Emergency Call",
+        "definition": "Classifying emergency calls by natural persons"
+      },
+      {
+        "id": "ContentGeneration",
+        "label": "Content Generation",
+        "definition": "Generation or manipulation of audio content"
+      },
+      {
+        "id": "CreatingFacialRecognitionDatabase",
+        "label": "Creating Facial Recognition Database",
+        "definition": "Creating facial recognition databases"
+      },
+      {
+        "id": "DecisionMaking",
+        "label": "Decision Making",
+        "definition": "Generation of decisions"
+      },
+      {
+        "id": "DeepFakeDetection",
+        "label": "Deep Fake Detection",
+        "definition": "Dectection of content that is generated using deep fake"
+      },
+      {
+        "id": "DetectingCriminalOffences",
+        "label": "Detecting Criminal Offences",
+        "definition": "Detection of criminal offences"
+      },
+      {
+        "id": "DetectingEmotionalState",
+        "label": "Detecting Emotional State",
+        "definition": "Detection of the emotional state of a natural person"
+      },
+      {
+        "id": "DetectingIndividuals",
+        "label": "Detecting Individuals",
+        "definition": "Detecting natural persons"
+      },
+      {
+        "id": "DetectingLies",
+        "label": "Detecting Lies",
+        "definition": "Dectecting lies"
+      },
+      {
+        "id": "DetectingNon-AuthenticDocument",
+        "label": "Detecting Non Authentic Document",
+        "definition": "Detection of non-authentic documents"
+      },
+      {
+        "id": "DetectingProhibitedBehaviourDuringTest",
+        "label": "Detecting Prohibited Behaviour During Test",
+        "definition": "Detecting prohibited behaviour during tests"
+      },
+      {
+        "id": "Detection",
+        "label": "Detection",
+        "definition": "Purposes related to detecting"
+      },
+      {
+        "id": "DeterminingAccessToEducationalInstitutions",
+        "label": "Determining Access To Educational Institutions",
+        "definition": "Determining access to educational institutions all levels."
+      },
+      {
+        "id": "DeterminingAccessToVocationalTrainingInstitutions",
+        "label": "Determining Access To Vocational Training Institutions",
+        "definition": "Determining access to vocational training institutions all levels."
+      },
+      {
+        "id": "DeterminingAdmissionToEducationalInstitutions",
+        "label": "Determining Admission To Educational Institutions",
+        "definition": "Determining admission to educational institutions at all levels."
+      },
+      {
+        "id": "DeterminingAdmissionToVocationalTrainingInstitutions",
+        "label": "Determining Admission To Vocational Training Institutions",
+        "definition": "Determining admission to vocational training institutions at all levels."
+      },
+      {
+        "id": "DeterminingCreditScore",
+        "label": "Determining Credit Score",
+        "definition": "Determining credit score of a person"
+      },
+      {
+        "id": "DiscoveringCrimePatterns",
+        "label": "Discovering Crime Patterns",
+        "definition": "Identifying unkown patterns of crime"
+      },
+      {
+        "id": "DiscoveringCrimeRelationships",
+        "label": "Discovering Crime Relationships",
+        "definition": "Discovering hidden relationships related to crime"
+      },
+      {
+        "id": "EmergencyTriage",
+        "label": "Emergency Triage",
+        "definition": "Emergency triaging"
+      },
+      {
+        "id": "EvaluatingEligibilityforHealthCareServices",
+        "label": "Evaluating Eligibility For Healthcare Services",
+        "definition": "Evaluating the eligibility of natural persons for healthcare services"
+      },
+      {
+        "id": "EvaluatingEligibilityForPublicAssistanceServices",
+        "label": "Evaluating Eligibility For Public Assistance Services",
+        "definition": "Evaluating the eligibility of natural persons for essential public assistance benefits and services, including healthcare services,"
+      },
+      {
+        "id": "EvaluatingEmergencyCall",
+        "label": "Evaluating Emergency Call",
+        "definition": "Evaluating emergency calls by natural persons"
+      },
+      {
+        "id": "EvaluatingEmployeeBehaviour",
+        "label": "Evaluating Employee Behaviour",
+        "definition": "Evaluating the behaviour of persons in work-related relationships."
+      },
+      {
+        "id": "EvaluatingEmployeePerformance",
+        "label": "Evaluating Employee Performance",
+        "definition": "Evaluating the performance of persons in work-related relationships."
+      },
+      {
+        "id": "EvaluatingJobCandidates",
+        "label": "Evaluating Job Candidates",
+        "definition": "Evaluation of job candidates"
+      },
+      {
+        "id": "EvaluatingJobInterview",
+        "label": "Evaluating Job Interview",
+        "definition": "Evaluation of job interviews"
+      },
+      {
+        "id": "EvaluatingLearningOutcomes",
+        "label": "Evaluating Learning Outcomes",
+        "definition": "Evaluating learning outcomes, including when those outcomes are used to steer the learning process of natural persons in educational and vocational training institutions or programmes at all levels."
+      },
+      {
+        "id": "EvaluatingReliabilityOfEvidenceInInvestigationOfCriminalOffences",
+        "label": "Evaluating Reliability Of Evidence In Investigation Of Criminal Offences",
+        "definition": "Evaluation of the reliability of evidence in the course of investigation of criminal offences"
+      },
+      {
+        "id": "EvaluatingReliabilityOfEvidenceInMigrationRelatedApplications",
+        "label": "Evaluating Reliability Of Evidence In Migration Related Applications",
+        "definition": "Assessments of the reliability of evidence in the examination of applications for asylum, visa or residence permits and for associated complaints with regard to the eligibility of the natural persons applying for a status"
+      },
+      {
+        "id": "EvaluatingReliabilityOfEvidenceInProsecutionOfCriminalOffences",
+        "label": "Evaluating Reliability Of Evidence In Prosecution Of Criminal Offences",
+        "definition": "Evaluation of the reliability of evidence in the course of prosecution of criminal offences"
+      },
+      {
+        "id": "EvaluationOfPeople",
+        "label": "Evaluation Of People",
+        "definition": "The evaluation of natural persons or groups of persons over a certain period of time"
+      },
+      {
+        "id": "ExaminingApplication",
+        "label": "Examining Application",
+        "definition": "Purposes related to examining an application"
+      },
+      {
+        "id": "ExaminingAsylumApplication",
+        "label": "Examining Asylum Application",
+        "definition": "Examining asylum application"
+      },
+      {
+        "id": "ExaminingMigrationRelatedComplaints",
+        "label": "Examining Migration Related Complaints",
+        "definition": "Examining compliats related to migration"
+      },
+      {
+        "id": "ExaminingResidencePermitsApplication",
+        "label": "Examining Residence Permits Application",
+        "definition": "Examining residence permit application"
+      },
+      {
+        "id": "ExaminingVisaApplication",
+        "label": "Examining Visa Application",
+        "definition": "Examining visa application"
+      },
+      {
+        "id": "ExpandingFacialRecognitionDatabase",
+        "label": "Expanding Facial Recognition Database",
+        "definition": "Expanding facial recognition databases"
+      },
+      {
+        "id": "GeneratingAudioContent",
+        "label": "Generating Audio Content",
+        "definition": "Generation or manipulation of audio content"
+      },
+      {
+        "id": "GeneratingImageContent",
+        "label": "Generating Image Content",
+        "definition": "Generation or manipulation of image content"
+      },
+      {
+        "id": "GeneratingVideoContent",
+        "label": "Generating Video Content",
+        "definition": "Generation or manipulation of video content"
+      },
+      {
+        "id": "GrantingHealthCareServices",
+        "label": "Granting Health Care Services",
+        "definition": "Granting natural persons healthcare services"
+      },
+      {
+        "id": "GrantingPublicAssistanceServices",
+        "label": "Granting Public Assistance Services",
+        "definition": "Granting natural persons essential public assistance benefits and services"
+      },
+      {
+        "id": "HealthInsurancePricing",
+        "label": "Health Insurance Pricing",
+        "definition": "Pricing in relation to natural persons in the case of health insurance"
+      },
+      {
+        "id": "HealthInsuranceRiskAssessment",
+        "label": "Health Insurance Risk Assessment",
+        "definition": "Risk assessment in relation to natural persons in the case of health insurance"
+      },
+      {
+        "id": "IdentiftyingIndividuals",
+        "label": "Identiftying Individuals",
+        "definition": "Identifying natural persons"
+      },
+      {
+        "id": "IndividualRiskAssessment",
+        "label": "Individual Risk Assessment",
+        "definition": "Assessing the risk of a natural person for offending or reoffending or the risk for potential victims of criminal offences"
+      },
+      {
+        "id": "Influencing",
+        "label": "Influencing",
+        "definition": "Purpose of influencing"
+      },
+      {
+        "id": "InfluencingElectionOutcome",
+        "label": "Influencing Election Outcome",
+        "definition": "Influencing the outcome of an election."
+      },
+      {
+        "id": "InfluencingReferendumOutcome",
+        "label": "Influencing Referendum Outcome",
+        "definition": "Influencing the outcome of a referendum."
+      },
+      {
+        "id": "InfluencingVotingBehaviour",
+        "label": "Influencing Voting Behaviour",
+        "definition": "Purpose of influencing voting behaviour of people"
+      },
+      {
+        "id": "InterpretingFacts",
+        "label": "Interpreting Facts",
+        "definition": "Interpreting facts"
+      },
+      {
+        "id": "InterpretingLaw",
+        "label": "Interpreting Law",
+        "definition": "Interpreting the law"
+      },
+      {
+        "id": "InvestigatingCriminalOffences",
+        "label": "Investigating Criminal Offences",
+        "definition": "Investigation of criminal offences"
+      },
+      {
+        "id": "JobApplicationAnalysis",
+        "label": "Job Application Analysis",
+        "definition": "Analysis of job applications"
+      },
+      {
+        "id": "JobApplicationFiltering",
+        "label": "Job Application Filtering",
+        "definition": "Filtering applications for recruitment or selection of natural persons"
+      },
+      {
+        "id": "JobApplicationScreening",
+        "label": "Job Application Screening",
+        "definition": "Screening job applications"
+      },
+      {
+        "id": "KnowledgeReasoning",
+        "label": "Knowledge Reasoning",
+        "definition": "Capturing knowledge and acquiring new knowledge"
+      },
+      {
+        "id": "LifeInsurancePricing",
+        "label": "Life Insurance Pricing",
+        "definition": "Pricing in relation to natural persons in the case of life insurance"
+      },
+      {
+        "id": "LifeInsuranceRiskAssessment",
+        "label": "Life Insurance Risk Assessment",
+        "definition": "Risk assessment in relation to natural persons in the case of life insurance"
+      },
+      {
+        "id": "MakingContractTerminationDecision",
+        "label": "Making Contract Termination Decision",
+        "definition": "Making Contract Termination Decision"
+      },
+      {
+        "id": "MakingDecisionOnTermsOfWorkRelatedRelations",
+        "label": "Making Decision On Terms Of Work-Related Relations",
+        "definition": "Making decisions affecting terms of work-related relationships"
+      },
+      {
+        "id": "MakingPromotionDecision",
+        "label": "Making Promotion Decision",
+        "definition": "Making decisions on promotion"
+      },
+      {
+        "id": "Monitoring",
+        "label": "Monitoring",
+        "definition": "Observing and keeping track of something"
+      },
+      {
+        "id": "MonitoringEmployeeBehaviour",
+        "label": "Monitoring Employee Behaviour",
+        "definition": "Monitoring the behaviour of persons in work-related relationships."
+      },
+      {
+        "id": "MonitoringEmployeePerformance",
+        "label": "Monitoring Employee Performance",
+        "definition": "Monitoring the performance of persons in work-related relationships"
+      },
+      {
+        "id": "MonitoringProhibitedBehaviourDuringTest",
+        "label": "Monitoring Prohibited Behaviour During Test",
+        "definition": "Monitoring prohibited behaviour during tests"
+      },
+      {
+        "id": "PerformingBackgroundCheck",
+        "label": "Performing Background Check",
+        "definition": "Performing background checks"
+      },
+      {
+        "id": "PlacingTargetedJobAdvert",
+        "label": "Placing Targeted Job Advert",
+        "definition": "Placing targeted job advertisments"
+      },
+      {
+        "id": "Planning",
+        "label": "Planning",
+        "definition": "Planning purposes"
+      },
+      {
+        "id": "PredictingRiskOfOffending",
+        "label": "Predicting Risk Of Offending",
+        "definition": "Predicting Risk of Committing a Criminal Offence"
+      },
+      {
+        "id": "PrioritisationOfEmergencyService",
+        "label": "Prioritisation Of Emergency Service",
+        "definition": "Establishing priority in the dispatching of emergency first response services, including by firefighters and medical aid"
+      },
+      {
+        "id": "ProducingRecommendation",
+        "label": "Producing Recommendation",
+        "definition": "Producing meaningful recommendations to users of the system"
+      },
+      {
+        "id": "ProsecutingCriminalOffences",
+        "label": "Prosecuting Criminal Offences",
+        "definition": "Prosecution of criminal offences"
+      },
+      {
+        "id": "ReclaimingHealthCareServices",
+        "label": "Reclaiming Health Care Services",
+        "definition": "Reclaiming natural persons healthcare services"
+      },
+      {
+        "id": "ReclaimingPublicAssistanceServices",
+        "label": "Reclaiming Public Assistance Services",
+        "definition": "Reclaiming essential public assistance benefits and services"
+      },
+      {
+        "id": "RecognisingEmotions",
+        "label": "Recognising Emotions",
+        "definition": "Recognising emotions of a natural person"
+      },
+      {
+        "id": "RecognisingIndividuals",
+        "label": "Recognising Individuals",
+        "definition": "Recognising natural persons"
+      },
+      {
+        "id": "Recruiting",
+        "label": "Recruiting",
+        "definition": "Recruiting people for a job"
+      },
+      {
+        "id": "ReducingHealthCareServices",
+        "label": "Reducing Health Care Services",
+        "definition": "Reducing natural persons healthcare services"
+      },
+      {
+        "id": "ReducingPublicAssistanceServices",
+        "label": "Reducing Public Assistance Services",
+        "definition": "Reducing essential public assistance benefits and services"
+      },
+      {
+        "id": "RemoteIdentification",
+        "label": "Remote Identification",
+        "definition": "Refers to the identification of natural persons without their active involvement, typically at a distance"
+      },
+      {
+        "id": "ResearchingFacts",
+        "label": "Researching Facts",
+        "definition": "Researching facts"
+      },
+      {
+        "id": "ResearchingLaw",
+        "label": "Researching Law",
+        "definition": "Researching the law"
+      },
+      {
+        "id": "RevokingHealthCareServices",
+        "label": "Revoking Health Care Services",
+        "definition": "Revoking natural persons healthcare services"
+      },
+      {
+        "id": "RevokingPublicAssistanceServices",
+        "label": "Revoking Public Assistance Services",
+        "definition": "Revoking essential public assistance benefits and services"
+      },
+      {
+        "id": "ServingSafetyFunction",
+        "label": "Serving Safety Function",
+        "definition": "Purpose of providing safety function"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagement",
+        "label": "Serving Safety Function In Management",
+        "definition": "Purpose of providing safety function in management of services"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagementOfCriticalDigitalInfrastructure",
+        "label": "Serving Safety Function In Management Of Critical Digital Infrastructure",
+        "definition": "Purpose of providing safety function in management of critical digital infrastructure"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagementOfRoadTraffic",
+        "label": "Serving Safety Function In Management Of Road Traffic",
+        "definition": "Purpose of providing safety function in management of road traffic"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagementOfTheSupplyOfElectricity",
+        "label": "Serving Safety Function In Management Of The Supply Of Electricity",
+        "definition": "Purpose of providing safety function in management of the supply of electricity"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagementOfTheSupplyOfGas",
+        "label": "Serving Safety Function In Management Of The Supply Of Gas",
+        "definition": "Purpose of providing safety function in management of the supply of gas"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagementOfTheSupplyOfHeating",
+        "label": "Serving Safety Function In Management Of The Supply Of Heating",
+        "definition": "Purpose of providing safety function in management of the supply of heating"
+      },
+      {
+        "id": "ServingSafetyFunctionInManagementOfTheSupplyOfWater",
+        "label": "Serving Safety Function In Management Of The Supply Of Water",
+        "definition": "Purpose of providing safety function in management of the supply of water"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperation",
+        "label": "Serving Safety Function In Operation",
+        "definition": "Purpose of providing safety function in operation of services"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperationOfCriticalDigitalInfrastructure",
+        "label": "Serving Safety Function In Operation Of Critical Digital Infrastructure",
+        "definition": "Purpose of providing safety function in operation of critical digital infrastructure"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperationOfRoadTraffic",
+        "label": "Serving Safety Function In Operation Of Road Traffic",
+        "definition": "Purpose of providing safety function in operation of road traffic"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperationOfTheSupplyOfElectricity",
+        "label": "Serving Safety Function In Operation Of The Supply Of Electricity",
+        "definition": "Purpose of providing safety function in operation of the supply of electricity"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperationOfTheSupplyOfGas",
+        "label": "Serving Safety Function In Operation Of The Supply Of Gas",
+        "definition": "Purpose of providing safety function in operation of the supply of gas"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperationOfTheSupplyOfHeating",
+        "label": "Serving Safety Function In Operation Of The Supply Of Heating",
+        "definition": "Purpose of providing safety function in operation of the supply of heating"
+      },
+      {
+        "id": "ServingSafetyFunctionInOperationOfTheSupplyOfWater",
+        "label": "Serving Safety Function In Operation Of The Supply Of Water",
+        "definition": "Purpose of providing safety function in operation of the supply of water"
+      },
+      {
+        "id": "SettlingDispute",
+        "label": "Settling Dispute",
+        "definition": "Alternative dispute resolution"
+      },
+      {
+        "id": "VerifyingAuthenticityOfTravelDocument",
+        "label": "Verifying Authenticity Of Travel Document",
+        "definition": "Verifying of the authenticity of travel documents and supporting documentation of natural persons and detection of non-authentic documents by checking their security features."
+      }
+    ],
+    "AICapability": [
+      {
+        "id": "ActionRecognition",
+        "label": "Action Recognition",
+        "definition": "The capability to recognise actions"
+      },
+      {
+        "id": "AudioProcessing",
+        "label": "Audio Processing",
+        "definition": "The capability to process audio recordings."
+      },
+      {
+        "id": "AutomaticSummarisation",
+        "label": "Automatic Summarisation",
+        "definition": "Shortening a portion of natural language content or text while retaining important semantic information."
+      },
+      {
+        "id": "BehaviourAnalysis",
+        "label": "Behaviour Analysis",
+        "definition": "Capability of a system in analysing people's behaviour"
+      },
+      {
+        "id": "BiometricCategorisation",
+        "label": "Biometric Categorisation",
+        "definition": "The capability of the system is assigning natural persons to specific categories based on their biometric data"
+      },
+      {
+        "id": "BiometricIdentification",
+        "label": "Biometric Identification",
+        "definition": "Automated recognition of physical, physiological and behavioural human features such as the face, eye movement, body shape, voice, prosody, gait, posture, heart rate, blood pressure, odour, keystrokes characteristics, for the purpose of establishing an individual’s identity by comparing biometric data of that individual to stored biometric data of individuals in a reference database, irrespective of whether the individual has given its consent or not."
+      },
+      {
+        "id": "BiometricsBasedEmotionRecognition",
+        "label": "Biometrics Based Emotion Recognition",
+        "definition": "Refers to recognisting emtions based on biometrics information"
+      },
+      {
+        "id": "ComputerVision",
+        "label": "Computer Vision",
+        "definition": "Capability of a functional unit to acquire, process and interpret data representing images or video."
+      },
+      {
+        "id": "DialogueManagement",
+        "label": "Dialogue Management",
+        "definition": "Choosing the appropriate next move in a dialogue based on user input, the dialogue history and other contextual knowledge to meet a desired goal"
+      },
+      {
+        "id": "EmotionRecognition",
+        "label": "Emotion Recognition",
+        "definition": "Computationally identifying and categorizing emotions expressed in a piece of text, speech, video or image or combination thereof."
+      },
+      {
+        "id": "FaceRecognition",
+        "label": "Face Recognition",
+        "definition": "Automatic pattern recognition comparing stored images of human faces with the image of an actual face, indicating any matching, if it exists, and any data, if they exist, identifying the person to whom the face belongs."
+      },
+      {
+        "id": "GestureRecognition",
+        "label": "Gesture Recognition",
+        "definition": "The capability of AI system to recognise human gestures."
+      },
+      {
+        "id": "ImageRecognition",
+        "label": "Image Recognition",
+        "definition": "Image classification process that classifies object(s), pattern(s) or concept(s) in an image."
+      },
+      {
+        "id": "InformationRetrieval",
+        "label": "Information Retrieval",
+        "definition": "Retrieving relevant documents or parts of documents from a dataset, typically based on keyword or natural language queries."
+      },
+      {
+        "id": "LieDetection",
+        "label": "Lie Detection",
+        "definition": "Detecting lies"
+      },
+      {
+        "id": "MachineTranslation",
+        "label": "Machine Translation",
+        "definition": "Automated translation of text or speech from one natural language to another using a computer system."
+      },
+      {
+        "id": "MusicInformationRetrieval",
+        "label": "Music Information Retrieval",
+        "definition": "Retrieving information from music."
+      },
+      {
+        "id": "NamedEntityRecognition",
+        "label": "Named Entity Recognition",
+        "definition": "Recognizing and labelling the denotational names of entities and their categories for sequences of words in a stream of text or speech."
+      },
+      {
+        "id": "NaturalLanguageGeneration",
+        "label": "Natural Language Generation",
+        "definition": "Converting data carrying semantics into natural language."
+      },
+      {
+        "id": "ObjectRecognition",
+        "label": "Object Recognition",
+        "definition": "The capability to recognise objects"
+      },
+      {
+        "id": "PartOfSpeechTagging",
+        "label": "Part Of Speech Tagging",
+        "definition": "Assigning a category (e.g. verb, noun, adjective) to a word based on its grammatical properties."
+      },
+      {
+        "id": "PersonalityTraitsAnalysis",
+        "label": "Personality Traits Analysis",
+        "definition": "Capability of a system in determining and analysing people's personality traits"
+      },
+      {
+        "id": "Profiling",
+        "label": "Profiling",
+        "definition": "Any form of automated processing of personal data consisting of the use of personal data to evaluate certain personal aspects relating to a natural person, in particular to analyse or predict aspects concerning that natural person’s performance at work, economic situation, health, personal preferences, interests, reliability, behaviour, location or movements."
+      },
+      {
+        "id": "QuestionAnswering",
+        "label": "Question Answering",
+        "definition": "Determining the most appropriate answer to a question provided in natural language."
+      },
+      {
+        "id": "RealTimeRemoteBiometricIdentification",
+        "label": "Real Time Remote Biometric Identification",
+        "definition": "Capability of capturing of biometric data, the comparison and the identification all occur without a significant delay, comprising not only instant identification, but also limited short delays in order to avoid circumvention"
+      },
+      {
+        "id": "RelationshipExtraction",
+        "label": "Relationship Extraction",
+        "definition": "Identifying relationships among entities mentioned in a text."
+      },
+      {
+        "id": "SensitiveAttributeInference",
+        "label": "Sensitive Attribute Inference",
+        "definition": "The capability of infering sensitive or protected attributes or characteristics"
+      },
+      {
+        "id": "SentimentAnalysis",
+        "label": "Sentiment Analysis",
+        "definition": "Computationally identifying and categorizing opinions expressed in a piece of text, speech or image, to determine a range of feeling such as from positive to negative."
+      },
+      {
+        "id": "SocialScoring",
+        "label": "Social Scoring",
+        "definition": "Capability of an AI system to assign a social score to natural persons or groups of persons over a certain period of time based on their social behaviour or known, inferred or predicted personal or personality characteristics."
+      },
+      {
+        "id": "SoundSourceSeparation",
+        "label": "Sound Source Separation",
+        "definition": "Extracting individual sound from audio recordings."
+      },
+      {
+        "id": "SoundSynthesis",
+        "label": "Sound Synthesis",
+        "definition": "Generation of artificial sound."
+      },
+      {
+        "id": "SpeakerRecognition",
+        "label": "Speaker Recognition",
+        "definition": "Recognising speaker in audio recordings."
+      },
+      {
+        "id": "SpeechRecognition",
+        "label": "Speech Recognition",
+        "definition": "Converting a speech signal to a representation of the content of the speech."
+      },
+      {
+        "id": "SpeechSynthesis",
+        "label": "Speech Synthesis",
+        "definition": "Generation of artificial speech."
+      },
+      {
+        "id": "WebScraping",
+        "label": "Web Scraping",
+        "definition": "Capability of an AI system to extract data from the web."
+      }
+    ],
+    "Domain": [
+      {
+        "id": "AdministrationOfDemocraticProcesses",
+        "label": "Administration Of Democratic Processes",
+        "definition": "Activities related to administration of democratic processes"
+      },
+      {
+        "id": "AdministrationOfJustice",
+        "label": "Administration Of Justice",
+        "definition": "Activities related to administration of justice."
+      },
+      {
+        "id": "AsylumManagement",
+        "label": "Asylum Management",
+        "definition": "Activities related to asylum management"
+      },
+      {
+        "id": "BorderControlManagement",
+        "label": "Border Control Management",
+        "definition": "Activities related to border control management."
+      },
+      {
+        "id": "CriticalInfrastructure",
+        "label": "Critical Infrastructure",
+        "definition": "Refers to the sector or activities that aim at provision and maintainance of critical services."
+      },
+      {
+        "id": "Education",
+        "label": "Education",
+        "definition": "Indicates the sector that offers education or vocational training at any level or for any profession."
+      },
+      {
+        "id": "Employment",
+        "label": "Employment",
+        "definition": "Refers to employment, workers’ management and access to self-employment."
+      },
+      {
+        "id": "LawEnforcement",
+        "label": "Law Enforcement",
+        "definition": "Activities related to enforcing the law."
+      },
+      {
+        "id": "MigrationManagement",
+        "label": "Migration Management",
+        "definition": "Activities related to managing migration."
+      },
+      {
+        "id": "PrivateService",
+        "label": "Private Service",
+        "definition": "Business of supplying a service by a private body."
+      },
+      {
+        "id": "PublicService",
+        "label": "Public Service",
+        "definition": "Business of supplying a commodity or a service by a govermental or public body."
+      }
+    ],
+    "Modality": [
+      {
+        "id": "Product",
+        "label": "Product",
+        "definition": "Refers to physical products."
+      },
+      {
+        "id": "SafetyComponent",
+        "label": "Safety Component",
+        "definition": "Component of a product or of an AI system which fulfils a safety function for that product or AI system, or the failure or malfunctioning of which endangers the health and safety of persons or property"
+      },
+      {
+        "id": "Service",
+        "label": "Service",
+        "definition": "Refers to system provided as a service"
+      },
+      {
+        "id": "Software",
+        "label": "Software",
+        "definition": "Refers to a stand alone software system"
+      }
+    ],
+    "LocalityOfUse": [
+      {
+        "id": "EducationalSetting",
+        "label": "Educational Setting",
+        "definition": "Environment where educational activities occur, including education institutions."
+      },
+      {
+        "id": "PubliclyAccessibleSpace",
+        "label": "Publicly Accessible Space",
+        "definition": "Any publicly or privately owned physical place accessible to an undetermined number of natural persons, regardless of whether certain conditions for access may apply, and regardless of the potential capacity restrictions."
+      },
+      {
+        "id": "Workplace",
+        "label": "Workplace",
+        "definition": "Place of work"
+      }
+    ],
+    "AIOperator": [
+      {
+        "id": "EducationalInstitution",
+        "label": "Educational Institution",
+        "definition": "Educational institution at any level"
+      },
+      {
+        "id": "EmergencyHealthCareProvider",
+        "label": "Emergency Healthcare Provider",
+        "definition": "Refer to emergency healthcare providers"
+      },
+      {
+        "id": "EmergencyServiceProvider",
+        "label": "Emergency Service Provider",
+        "definition": "Provider of emergency first response services"
+      },
+      {
+        "id": "EUAgency",
+        "label": "EU Agency",
+        "definition": "Union agency"
+      },
+      {
+        "id": "EUBody",
+        "label": "EU Body",
+        "definition": "Union body"
+      },
+      {
+        "id": "EUInstitution",
+        "label": "EU Institution",
+        "definition": "Union institution"
+      },
+      {
+        "id": "EUOffice",
+        "label": "EU Office",
+        "definition": "EU office"
+      },
+      {
+        "id": "FireBrigade",
+        "label": "Fire Brigade",
+        "definition": "Refers to fire department"
+      },
+      {
+        "id": "JudicialAuthority",
+        "label": "Judicial Authority",
+        "definition": "An authority to administer justice"
+      },
+      {
+        "id": "JudicialAuthorityAgent",
+        "label": "Judicial Authority Agent",
+        "definition": "An entity that acts on behalf on judicial authorities"
+      },
+      {
+        "id": "LawEnforcementAuthority",
+        "label": "Law Enforcement Authority",
+        "definition": "Law enforcement authority means: (a) any public authority competent for the prevention, investigation, detection or prosecution of criminal offences or the execution of criminal penalties, including the safeguarding against and the prevention of threats to public security; or (b) any other body or entity entrusted by Member State law to exercise public authority and public powers for the purposes of the prevention, investigation, detection or prosecution of criminal offences or the execution of criminal penalties, including the safeguarding against and the prevention of threats to public security."
+      },
+      {
+        "id": "LawEnforcementAuthorityAgent",
+        "label": "Law Enforcement Authority Agent",
+        "definition": "An entity that acts on behalf of law enforcement authorities."
+      },
+      {
+        "id": "MedicalAidProvider",
+        "label": "Medical Aid Provider",
+        "definition": "Entity that provides medical aid"
+      },
+      {
+        "id": "Police",
+        "label": "Police",
+        "definition": "Police"
+      },
+      {
+        "id": "PublicAuthority",
+        "label": "Public Authority",
+        "definition": "Refers to public authorities and bodies."
+      },
+      {
+        "id": "PublicAuthorityAgent",
+        "label": "Public Authority Agent",
+        "definition": "An entity that acts on behalf of public authorities."
+      },
+      {
+        "id": "VocationalTrainingInstitution",
+        "label": "Vocational Training Institution",
+        "definition": "Vocational training institution at any level"
+      }
+    ],
+    "AISubject": [
+      {
+        "id": "AsylumSeeker",
+        "label": "Asylum Seeker",
+        "definition": "A person who has applied for asylum"
+      },
+      {
+        "id": "CourseAttendee",
+        "label": "Course Attendee",
+        "definition": "A person who attends a course."
+      },
+      {
+        "id": "Employee",
+        "label": "Employee",
+        "definition": "A person in work-related contractual relationships"
+      },
+      {
+        "id": "Family",
+        "label": "Family",
+        "definition": "A group of people related to each other by blood or marraige"
+      },
+      {
+        "id": "Group",
+        "label": "Group",
+        "definition": "A group of persons such as citizens, marginsalised groups, etc."
+      },
+      {
+        "id": "IndividualEnteredState",
+        "label": "Individual Entered State",
+        "definition": "A person who has entered into the territory of a State"
+      },
+      {
+        "id": "IndividualIntendsToEnterState",
+        "label": "Individual Intends To Enter State",
+        "definition": "A person who intends to enter into the territory of a State"
+      },
+      {
+        "id": "JobApplicant",
+        "label": "Job Applicant",
+        "definition": "A person who has made an application for employment"
+      },
+      {
+        "id": "JobCandidate",
+        "label": "Job Candidate",
+        "definition": "A person who is considered for employment."
+      },
+      {
+        "id": "NaturalPerson",
+        "label": "Natural Person",
+        "definition": "An individual human being"
+      },
+      {
+        "id": "PotentialJobApplicant",
+        "label": "Potential Job Applicant",
+        "definition": "A person who may have applied for employment."
+      },
+      {
+        "id": "PotentialPublicServicesApplicant",
+        "label": "Potential Public Services Applicant",
+        "definition": "A person who may have applied for public services."
+      },
+      {
+        "id": "PublicServicesApplicant",
+        "label": "Public Services Applicant",
+        "definition": "A person who has applied for public services and benefits"
+      },
+      {
+        "id": "PublicServicesRecipient",
+        "label": "Public Services Recipient",
+        "definition": "Person who is recipient of public services and benefits"
+      },
+      {
+        "id": "ResidencePermitApplicant",
+        "label": "Residence Permit Applicant",
+        "definition": "A person who has applied for a residence permit"
+      },
+      {
+        "id": "Student",
+        "label": "Student",
+        "definition": "Refers to students at all levels"
+      },
+      {
+        "id": "VisaApplicant",
+        "label": "Visa Applicant",
+        "definition": "A person who has applied for a visa"
+      },
+      {
+        "id": "VulnerableGroup",
+        "label": "Vulnerable Group",
+        "definition": "A group of persons that is in a vulnerable state due to their age, disability or a specific social or economic situation."
+      },
+      {
+        "id": "VulnerablePerson",
+        "label": "Vulnerable Person",
+        "definition": "An individual human being who is in a vulnerable state due to their age, disability or a specific social or economic situation."
+      }
+    ],
+    "AIComponent": [
+      {
+        "id": "Algorithm",
+        "label": "Algorithm",
+        "definition": "Defines a set of instructions"
+      },
+      {
+        "id": "ApplicationPlatform",
+        "label": "Application Platform",
+        "definition": "Resource on which an application runs."
+      },
+      {
+        "id": "ApplicationSpecificIntegratedCircuit",
+        "label": "Application Specific Integrated Circuit",
+        "definition": "An integrated circuit chip customized for a particular use."
+      },
+      {
+        "id": "BayesianNetwork",
+        "label": "Bayesian Network",
+        "definition": "Probabilistic model that uses Bayesian inference for probability computations using a directed acyclic graph."
+      },
+      {
+        "id": "ConvolutionalNeuralNetwork",
+        "label": "Convolutional Neural Network",
+        "definition": "Feed forward neural network using convolution in at least one of its layers."
+      },
+      {
+        "id": "DecisionTree",
+        "label": "Decision Tree",
+        "definition": "Model for which inference is encoded as paths from the root to a leaf node in a tree structure."
+      },
+      {
+        "id": "FeedForwardNeuralNetwork",
+        "label": "Feed Forward Neural Network",
+        "definition": "Neural network where information is fed from the input layer to the output layer in one direction only."
+      },
+      {
+        "id": "GeneticAlgorithm",
+        "label": "Genetic Algorithm",
+        "definition": "Algorithm which simulates natural selection by creating and evolving a population of individuals (solutions) for optimization problems"
+      },
+      {
+        "id": "Hardware",
+        "label": "Hardware",
+        "definition": "Physical equipment/components"
+      },
+      {
+        "id": "Library",
+        "label": "Library",
+        "definition": "A collection of pre-written code"
+      },
+      {
+        "id": "LongShortTermMemory",
+        "label": "Long ShortTerm Memory",
+        "definition": "type of recurrent neural network that processes sequential data with a satisfactory performance for both long and short span dependencies."
+      },
+      {
+        "id": "MachineLearningAlgorithm",
+        "label": "Machine Learning Algorithm",
+        "definition": "An algorithm to determine parameters of a machine learning model from data according to given criteria."
+      },
+      {
+        "id": "MachineLearningLibrary",
+        "label": "Machine Learning Library",
+        "definition": "Refers to liberaries for machine learning"
+      },
+      {
+        "id": "MachineLearningModel",
+        "label": "Machine Learning Model",
+        "definition": "Mathematical construct that generates an inference or prediction based on input data or information."
+      },
+      {
+        "id": "MachineLearningPlatform",
+        "label": "Machine Learning Platform",
+        "definition": "Resource on which a ML model runs."
+      },
+      {
+        "id": "Model",
+        "label": "Model",
+        "definition": "physical, mathematical or otherwise logical representation of a system, entity, phenomenon, process or data."
+      },
+      {
+        "id": "NeuralNetwork",
+        "label": "Neural Network",
+        "definition": "Network of one or more layers of neurons connected by weighted links with adjustable weights, which takes input data and produces an output."
+      },
+      {
+        "id": "RecurrentNeuralNetwork",
+        "label": "Recurrent Neural Network",
+        "definition": "neural network in which outputs from both the previous layer and the previous processing step are fed into the current layer."
+      },
+      {
+        "id": "SupportVectorMachine",
+        "label": "Support Vector Machine",
+        "definition": "a machine learning algorithm that finds decision boundaries with maximal margins."
+      },
+      {
+        "id": "TensorProcessingUnit",
+        "label": "Tensor Processing Unit",
+        "definition": "An AI application-specific integrated circuit developed by Google."
+      },
+      {
+        "id": "Tool",
+        "label": "Tool",
+        "definition": "Refers to a software tool"
+      },
+      {
+        "id": "TrainedModel",
+        "label": "Trained Model",
+        "definition": "Model resulted from model training."
+      }
+    ],
+    "RiskSource": [
+      {
+        "id": "AdversarialAttack",
+        "label": "Adversarial Attack",
+        "definition": "Inputs designed to cause the model to make a mistake"
+      },
+      {
+        "id": "Attack",
+        "label": "Attack",
+        "definition": "Malicious attempts to exploit vulnerabilities"
+      },
+      {
+        "id": "BiasedTestData",
+        "label": "Biased Test Data",
+        "definition": "Bias in test data"
+      },
+      {
+        "id": "BiasedTrainingData",
+        "label": "Biased Training Data",
+        "definition": "Bias in training data"
+      },
+      {
+        "id": "BiasedValidationData",
+        "label": "Biased Validation Data",
+        "definition": "Bias in validation data"
+      },
+      {
+        "id": "DataPoisoning",
+        "label": "Data Poisoning",
+        "definition": "Attack trying to manipulate the training dataset."
+      },
+      {
+        "id": "DataRiskSource",
+        "label": "Data Risk Source",
+        "definition": "Risk sources related to data"
+      },
+      {
+        "id": "ErroneousInputData",
+        "label": "Erroneous Input Data",
+        "definition": "Error in data used as input"
+      },
+      {
+        "id": "ErroneousTestData",
+        "label": "Erroneous Test Data",
+        "definition": "Error in test data"
+      },
+      {
+        "id": "ErroneousTrainingData",
+        "label": "Erroneous Training Data",
+        "definition": "Error in training data"
+      },
+      {
+        "id": "ErroneousValidationData",
+        "label": "Erroneous Validation Data",
+        "definition": "Error in validation data"
+      },
+      {
+        "id": "ErrorInDataCollection",
+        "label": "Error In Data Collection",
+        "definition": "Refers to errors in data collection process"
+      },
+      {
+        "id": "ErrorInDataPrepration",
+        "label": "Error In Data Prepration",
+        "definition": "Refers to errors in data prepration process"
+      },
+      {
+        "id": "InaccurateDecision",
+        "label": "Inaccurate Decision",
+        "definition": "Inaccurate decision generated by the system."
+      },
+      {
+        "id": "InaccuratePrediction",
+        "label": "Inaccurate Prediction",
+        "definition": "Inaccurate prediction generated by the system."
+      },
+      {
+        "id": "InaccurateRecommendation",
+        "label": "Inaccurate Recommendation",
+        "definition": "Inaccurate recommendation generated by the system."
+      },
+      {
+        "id": "IncompleteTestData",
+        "label": "Incomplete Test Data",
+        "definition": "Incompleteness of testing data set"
+      },
+      {
+        "id": "IncompleteTrainingData",
+        "label": "Incomplete Training Data",
+        "definition": "Incompleteness of training data set"
+      },
+      {
+        "id": "IncompleteValidationData",
+        "label": "Incomplete Validation Data",
+        "definition": "Incompleteness of validation data set"
+      },
+      {
+        "id": "InputDataRiskSource",
+        "label": "Input Data Risk Source",
+        "definition": "Risk sources related to input data"
+      },
+      {
+        "id": "InsufficientHumanOversightMeasure",
+        "label": "Insufficient Human Oversight Measure",
+        "definition": "Lack of appropriate human oversight measures"
+      },
+      {
+        "id": "InsufficientInstruction",
+        "label": "Insufficient Instruction",
+        "definition": "Lack of appropriate instruction for use"
+      },
+      {
+        "id": "IrrelevantTestData",
+        "label": "Irrelevant Test Data",
+        "definition": "Use of irrelevant data for testing"
+      },
+      {
+        "id": "IrrelevantTrainingData",
+        "label": "Irrelevant Training Data",
+        "definition": "Use of irrelevant data for training"
+      },
+      {
+        "id": "IrrelevantValidationData",
+        "label": "Irrelevant Validation Data",
+        "definition": "Use of irrelevant data for validation"
+      },
+      {
+        "id": "LackOfTransparency",
+        "label": "Lack Of Transparency",
+        "definition": "Refers to lack transparency regarding AI, its development, deployement, or use"
+      },
+      {
+        "id": "LowAccuracy",
+        "label": "Low Accuracy",
+        "definition": "Inacurracy of the predictions, recommondations, or decisions produced by the system."
+      },
+      {
+        "id": "LowRobustness",
+        "label": "Low Robustness",
+        "definition": "Lack of appropriate level of robustness"
+      },
+      {
+        "id": "LowSecurity",
+        "label": "Low Security",
+        "definition": "Lack of appropriate level of security."
+      },
+      {
+        "id": "ModelEvasion",
+        "label": "Model Evasion",
+        "definition": "An input, which seems normal for a human but is wrongly classified by ML models."
+      },
+      {
+        "id": "ModelInversion",
+        "label": "Model Inversion",
+        "definition": "A type of attack to AI models, in which the access to a model is abused to infer information about the training data."
+      },
+      {
+        "id": "ModelRiskSource",
+        "label": "Model Risk Source",
+        "definition": "Risk sources related to the AI model"
+      },
+      {
+        "id": "OrganisationalRiskSource",
+        "label": "Organisational Risk Source",
+        "definition": "Risk sources related with the organisation developing, deploying, or using AI."
+      },
+      {
+        "id": "PerfomanceRiskSource",
+        "label": "Perfomance Risk Source",
+        "definition": "Risk sources related to performance"
+      },
+      {
+        "id": "StaffIncompetence",
+        "label": "Staff Incompetence",
+        "definition": "Incompetence of staff such as human oversight actors"
+      },
+      {
+        "id": "SystemRiskSource",
+        "label": "System Risk Source",
+        "definition": "Risk sources related to the AI system"
+      },
+      {
+        "id": "TestDataRiskSource",
+        "label": "Test Data Risk Source",
+        "definition": "Risk sources related to test data"
+      },
+      {
+        "id": "TrainingDataRiskSource",
+        "label": "Training Data Risk Source",
+        "definition": "Risk sources related to training data"
+      },
+      {
+        "id": "UnavailabilityOfData",
+        "label": "Unavailability Of Data",
+        "definition": "Use of datasets that are not available"
+      },
+      {
+        "id": "UnrepresentativeTestData",
+        "label": "Unrepresentative Test Data",
+        "definition": "Use of unrepresentative data for testing"
+      },
+      {
+        "id": "UnrepresentativeTrainingData",
+        "label": "Unrepresentative Training Data",
+        "definition": "Use of unrepresentative data for training"
+      },
+      {
+        "id": "UnrepresentativeValidationData",
+        "label": "Unrepresentative Validation Data",
+        "definition": "Use of unrepresentative data for validation"
+      },
+      {
+        "id": "ValidationDataRiskSource",
+        "label": "Validation Data Risk Source",
+        "definition": "Risk sources related to validation data"
+      },
+      {
+        "id": "WrongDataDesignChoice",
+        "label": "Wrong Data Design Choice",
+        "definition": "Refers to the wrong choice made in the selecting datasets."
+      }
+    ],
+    "Consequence": [
+      {
+        "id": "Bias",
+        "label": "Bias",
+        "definition": "Systematic difference in treatment of certain objects, people or groups in comparison to others."
+      },
+      {
+        "id": "DecreasedRobustness",
+        "label": "Decreased Robustness",
+        "definition": "Decreased level of system's robustness resulted from materialisation of a risk."
+      },
+      {
+        "id": "DecreasedSecurity",
+        "label": "Decreased Security",
+        "definition": "Decreased level of security of system resulted from materialisation of a risk."
+      },
+      {
+        "id": "DegradedAccuracy",
+        "label": "Degraded Accuracy",
+        "definition": "Decreased level of system's accuracy resulted from materialisation of a risk."
+      },
+      {
+        "id": "ExploitationOfVulnerability",
+        "label": "Exploitation Of Vulnerability",
+        "definition": "Exploitation of individual vulnerabilities."
+      },
+      {
+        "id": "ImpairedDecisionMaking",
+        "label": "Impaired Decision Making",
+        "definition": "Impairing the ability to make an informed decision."
+      },
+      {
+        "id": "MaterialDistortionOfBehaviour",
+        "label": "Material Distortion Of Behaviour",
+        "definition": "Materially distorting the behaviour of a person or a group of persons."
+      }
+    ],
+    "Impact": [
+      {
+        "id": "DetrimentalTreatment",
+        "label": "Detrimental Treatment",
+        "definition": "Detrimental treatment of persons."
+      },
+      {
+        "id": "DiscriminatoryTreatment",
+        "label": "Discriminatory Treatment",
+        "definition": "Discriminatory and unfair outcomes for certain individuals and groups."
+      },
+      {
+        "id": "DistortionInHumanBehaviour",
+        "label": "Distortion In Human Behaviour",
+        "definition": "Represent distortion of human behaviour caused by AI"
+      },
+      {
+        "id": "Harm",
+        "label": "Harm",
+        "definition": "Harmful impacts associated with an AI system. The types of harms include physical, psychological, financial, and economic harms that may be compound with broader societal harms in certain cases."
+      },
+      {
+        "id": "Overreliance",
+        "label": "Overreliance",
+        "definition": "Tendency of automatically relying or over-relying on the output produced by an AI system"
+      },
+      {
+        "id": "PhysicalInjury",
+        "label": "Physical Injury",
+        "definition": "Represent physical injuries caused by AI"
+      },
+      {
+        "id": "PsychologicalHarm",
+        "label": "Psychological Harm",
+        "definition": "Represents negative impacts of AI on psychological health"
+      },
+      {
+        "id": "UnfavourableTreatment",
+        "label": "Unfavourable Treatment",
+        "definition": "Unfavourable treatment of persons."
+      },
+      {
+        "id": "WellbeingImpact",
+        "label": "Wellbeing Impact",
+        "definition": "Refers to impacts that affect wellbeing"
+      }
+    ],
+    "AreaOfImpact": [
+      {
+        "id": "Freedom",
+        "label": "Freedom",
+        "definition": "Refers to freedoms given to individuals"
+      },
+      {
+        "id": "Health",
+        "label": "Health",
+        "definition": "Refers to an individuals' health."
+      },
+      {
+        "id": "PhysicalHealth",
+        "label": "Physical Health",
+        "definition": "Refers to physical health."
+      },
+      {
+        "id": "PsychologicalHealth",
+        "label": "Psychological Health",
+        "definition": "Refers to psychological health."
+      },
+      {
+        "id": "Right",
+        "label": "Right",
+        "definition": "Refers to fundamental rights."
+      },
+      {
+        "id": "RightToNondiscrimination",
+        "label": "Right To Non-discrimination",
+        "definition": "Refers to the fundamental right to non-discrimination"
+      },
+      {
+        "id": "Safety",
+        "label": "Safety",
+        "definition": "Refers to the state of safety."
+      }
+    ]
+  },
+  "modelTerms": [
+    "BayesianNetwork",
+    "DecisionTree",
+    "MachineLearningModel",
+    "Model",
+    "TrainedModel"
+  ]
+}

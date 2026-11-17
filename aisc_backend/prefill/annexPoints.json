@@ -1,0 +1,19 @@
+{
+  "_comment": "The 14 Annex IV points the default form asks about. A custom question may be tagged with one of these ids. Shared with services/ontology; test/unit/annexPoints.test.ts checks it against KEY_QUESTIONS.",
+  "points": [
+    {"id": "1a",  "citation": "Annex IV(1)(a)"},
+    {"id": "1b",  "citation": "Annex IV(1)(b)"},
+    {"id": "1c",  "citation": "Annex IV(1)(c)"},
+    {"id": "1de", "citation": "Annex IV(1)(d)-(e)"},
+    {"id": "1f",  "citation": "Annex IV(1)(f)"},
+    {"id": "1gh", "citation": "Annex IV(1)(g)-(h)"},
+    {"id": "2a",  "citation": "Annex IV(2)(a)"},
+    {"id": "2b",  "citation": "Annex IV(2)(b)"},
+    {"id": "2c",  "citation": "Annex IV(2)(c)"},
+    {"id": "2d",  "citation": "Annex IV(2)(d)"},
+    {"id": "2e",  "citation": "Annex IV(2)(e)"},
+    {"id": "2f",  "citation": "Annex IV(2)(f)"},
+    {"id": "2g",  "citation": "Annex IV(2)(g)"},
+    {"id": "2h",  "citation": "Annex IV(2)(h)"}
+  ]
+}

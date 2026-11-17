@@ -13,11 +13,12 @@ Serves, from the backend's own single DB, under /projects/{pid}/...:
 
 All project-scoped: a member reads, an editor/owner writes (admin bypasses).
 """
+import json
 import uuid
 
 from asgiref.sync import sync_to_async
 from django.db import models
-from ninja import File, Router
+from ninja import File, Form, Router
 from ninja.files import UploadedFile
 from ninja.errors import HttpError
 
@@ -33,7 +34,6 @@ from aisc_backend.schemas.qualification import (
     CardComponentLinkOut,
     CardAgentTurnOut,
     PrefillOut,
-    PrefillSuggestionOut,
     QualificationCardIn,
     QualificationDetailOut,
     QualificationIn,
@@ -200,12 +200,18 @@ async def _active_questionnaire_definition(project, questionnaire_id: str) -> di
 
 @router.post("/{pid}/qualification/prefill", response=PrefillOut)
 async def prefill_qualification(request, pid: uuid.UUID, file: File[UploadedFile],
-                                questionnaire_id: str = ""):
+                                questionnaire_id: str = "",
+                                mode: str = Form("empty"),
+                                current: str = Form("{}")):
     """Propose answers from an uploaded document (PDF, Word or plain text).
 
-    Text rules only — no model: the document's lines are matched against the
-    questionnaire's questions and the values found are **proposed**. Nothing is
-    stored; the person accepts, edits or rejects every suggestion.
+    The pilot's own rules, text only — no model (see
+    `services.qualification_prefill`): the document's lines are read against the
+    form's questions, its labelled metadata, its risks and its VAIR lists, and
+    everything found is *proposed*. `current` is the form as it stands and
+    `mode` the merge the person chose: "empty" fills blanks only, "replace"
+    takes the document wherever it has something, and a document that says
+    nothing about a field never erases it. Nothing is stored.
     """
     project = await _project_for(request, pid, needed="editor")
     # reading the upload is a sync file hit: never do it on the event loop
@@ -213,40 +219,63 @@ async def prefill_qualification(request, pid: uuid.UUID, file: File[UploadedFile
     blob = await aread() if aread is not None else await sync_to_async(file.read)()
     filename = getattr(file, "name", "") or ""
     try:
+        qualification_prefill.check_size(blob)
+    except qualification_prefill.UploadTooLarge as exc:
+        raise HttpError(413, str(exc))
+    try:
         text = qualification_prefill.extract_text(filename, blob)
     except qualification_prefill.UnsupportedDocument as exc:
         raise HttpError(415, str(exc))
     except Exception as exc:  # noqa: BLE001 - a broken document is the caller's problem
         raise HttpError(415, f"{filename} could not be read: {exc}")
-
+    try:
+        before = json.loads(current or "{}")
+        if not isinstance(before, dict):
+            raise ValueError("the form's answers are not an object")
+    except ValueError as exc:
+        raise HttpError(422, f"current: {exc}")
     definition = await _active_questionnaire_definition(project, questionnaire_id)
+    try:
+        read = qualification_prefill.prefill(definition, text, before, mode)
+    except qualification_prefill.UnknownMode as exc:
+        raise HttpError(422, str(exc))
     questions = definition.get("questions") if isinstance(definition, dict) else None
-    if not isinstance(questions, list):
-        # an opaque definition (no per-question fields): nothing to match against
-        return PrefillOut(
-            filename=filename,
-            characters=len(text),
-            note="this questionnaire has no answerable questions to pre-fill",
-        )
-    proposals = qualification_prefill.propose(definition, text)
-    matched = {p["field"] for p in proposals}
-    unmatched = [
-        str(q.get("field"))
-        for q in questions
-        if isinstance(q, dict) and str(q.get("field") or "") not in matched
-    ]
+    note = "" if isinstance(questions, list) else (
+        "this questionnaire has no answerable questions to pre-fill"
+    )
     await sync_to_async(log_action)(
         request,
         action="create",
         resource_type="qualification_prefill",
         resource_id=str(pid),
-        metadata={"filename": filename, "proposals": len(proposals)},
+        metadata={
+            "filename": filename,
+            "mode": mode,
+            "proposals": len(read["proposed"]) + len(read["profileFilled"]),
+            "risks": read["risksProposed"],
+        },
     )
     return PrefillOut(
         filename=filename,
         characters=len(text),
-        proposals=[PrefillSuggestionOut(**p) for p in proposals],
-        unmatched=unmatched,
+        note=note,
+        source=read["source"],
+        model=read["model"],
+        values=read["values"],
+        filled=read["filled"],
+        kept=read["kept"],
+        proposed=read["proposed"],
+        profile=read["profile"],
+        profileFilled=read["profileFilled"],
+        tags=read["tags"],
+        tagsFilled=read["tagsFilled"],
+        risks=read["risks"],
+        risksKept=read["risksKept"],
+        risksProposed=read["risksProposed"],
+        picks=read["picks"],
+        picksProposed=read["picksProposed"],
+        unmatched=read["unmatched"] if isinstance(questions, list) else [],
+        unplaced=read["unplaced"],
     )
 
 

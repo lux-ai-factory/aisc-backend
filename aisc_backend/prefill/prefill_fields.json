@@ -1,0 +1,34 @@
+{
+  "_comment": "The fields a document can propose, shared with services/prefill. test/unit/prefillFields.test.ts checks it against the form, so the two cannot drift.",
+  "metadata": [
+    "systemName",
+    "systemVersion",
+    "company",
+    "description",
+    "targetUseCase",
+    "targetUsers",
+    "intendedDeployers"
+  ],
+  "annex": {
+    "1": {
+      "a": "q:annex-1:1a",
+      "b": "q:annex-1:1b",
+      "c": "q:annex-1:1c",
+      "d": "q:annex-1:1de",
+      "e": "q:annex-1:1de",
+      "f": "q:annex-1:1f",
+      "g": "q:annex-1:1gh",
+      "h": "q:annex-1:1gh"
+    },
+    "2": {
+      "a": "q:annex-2:2a",
+      "b": "q:annex-2:2b",
+      "c": "q:annex-2:2c",
+      "d": "q:annex-2:2d",
+      "e": "q:annex-2:2e",
+      "f": "q:annex-2:2f",
+      "g": "q:annex-2:2g",
+      "h": "q:annex-2:2h"
+    }
+  }
+}

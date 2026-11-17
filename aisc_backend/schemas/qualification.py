@@ -130,27 +130,48 @@ class NodesPatchIn(Schema):
     nodes: dict[str, NodePatchIn]
 
 
-class PrefillSuggestionOut(Schema):
-    """One suggested answer, with where in the document it was found."""
-
-    field: str
-    value: str
-    line: int = 0
-    matched: str = ""
-
-
 class PrefillOut(Schema):
-    """What a prefill read out of an uploaded document.
+    """What a prefill read out of an uploaded document (the pilot's own shape).
 
-    Nothing is stored: the client shows the suggestions and the person accepts,
-    edits or rejects each one.
+    Nothing is stored: the client shows what was proposed and the person accepts,
+    edits or rejects each one. The field names are the pilot's
+    (`qualification-prefill`), so what it means here is what it meant there:
+    `values` is the form's answers after the merge, `filled` the fields the
+    document wrote, `kept` those it left alone, and the rows and VAIR picks come
+    with the same three-way report.
     """
 
     filename: str = ""
     characters: int = 0
-    proposals: list[PrefillSuggestionOut] = []
-    unmatched: list[str] = []
     note: str = ""
+    #: "document" once something was read; "" when there was nothing to read
+    source: str = ""
+    #: always null: the reading is text rules, never a model
+    model: str | None = None
+    #: the answers after the merge, and which of them the document wrote
+    values: dict[str, str] = {}
+    filled: list[str] = []
+    kept: list[str] = []
+    #: the question fields this document answered
+    proposed: list[str] = []
+    #: the profile block's fields after the merge (description, use case, users,
+    #: deployers) and the tag sets, with the same filled/kept report
+    profile: dict[str, str] = {}
+    profileFilled: list[str] = []
+    tags: dict[str, list[str]] = {}
+    tagsFilled: list[str] = []
+    #: the risk rows to show, or null to leave the form's rows as they are
+    risks: list[dict] | None = None
+    risksKept: bool = False
+    risksProposed: int = 0
+    #: the VAIR picks the document named, by the pilot's own names
+    picks: dict = {}
+    picksProposed: int = 0
+    #: questions this document said nothing about, in form order
+    unmatched: list[str] = []
+    #: what the document named that this form has no field for, so nothing is
+    #: dropped in silence (system name, version, provider, the VAIR purpose)
+    unplaced: dict = {}
 
 
 class CardAgentMessageIn(Schema):

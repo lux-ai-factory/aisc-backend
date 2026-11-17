@@ -1,0 +1,86 @@
+[
+  {
+    "field": "q:annex-1:1a",
+    "text": "If this version replaces an earlier one, describe what changed and why. If it is the first release, state that.",
+    "citation": "Annex IV(1)(a)",
+    "annexPoint": "1a"
+  },
+  {
+    "field": "q:annex-1:1b",
+    "text": "Does the system work together with hardware or software that is not part of it, such as cameras, third-party software, or another AI system? If so, describe how they connect.",
+    "citation": "Annex IV(1)(b)",
+    "annexPoint": "1b"
+  },
+  {
+    "field": "q:annex-1:1c",
+    "text": "Which versions of software or firmware does the system require in order to run, and what are your requirements for updates?",
+    "citation": "Annex IV(1)(c)",
+    "annexPoint": "1c"
+  },
+  {
+    "field": "q:annex-1:1de",
+    "text": "How is the system supplied to customers: built into a device, as a download, as an online service, or in some other form? And what computer or hardware does it need to run on?",
+    "citation": "Annex IV(1)(d)-(e)",
+    "annexPoint": "1de"
+  },
+  {
+    "field": "q:annex-1:1f",
+    "text": "Is the system built into a physical product? If so, describe what that product looks like from the outside, any labels or markings on it, and how the parts are arranged inside. Indicate where the photographs or drawings are held.",
+    "citation": "Annex IV(1)(f)",
+    "annexPoint": "1f"
+  },
+  {
+    "field": "q:annex-1:1gh",
+    "text": "What does the system look like to the companies that use it, and what instructions do you provide to them?",
+    "citation": "Annex IV(1)(g)-(h)",
+    "annexPoint": "1gh"
+  },
+  {
+    "field": "q:annex-2:2a",
+    "text": "How was the system built, step by step? Include any pre-trained models or third-party tools you started from, and describe how you used, connected or modified them.",
+    "citation": "Annex IV(2)(a)",
+    "annexPoint": "2a"
+  },
+  {
+    "field": "q:annex-2:2b",
+    "text": "How does the system work, and why was it built that way? Cover what it does internally to reach a result; the main choices you made and the assumptions behind them, including who the system is intended to be used on; what the system is trying to get right, and which inputs matter most to it; what its output looks like and how good that output is expected to be; and anything you had to trade off to make the system safer, fairer, more accurate, or easier for a person to oversee.",
+    "citation": "Annex IV(2)(b)",
+    "annexPoint": "2b"
+  },
+  {
+    "field": "q:annex-2:2c",
+    "text": "How do the parts of the system fit together and pass work to each other, and how much computing power did you use to build, train and test it?",
+    "citation": "Annex IV(2)(c)",
+    "annexPoint": "2c"
+  },
+  {
+    "field": "q:annex-2:2d",
+    "text": "What data was the system trained on? Describe where it came from, how much of it there is, what it covers, how it was selected, how it was labelled, and how it was cleaned.",
+    "citation": "Annex IV(2)(d)",
+    "annexPoint": "2d"
+  },
+  {
+    "field": "q:annex-2:2e",
+    "text": "How can a person monitor the system, intervene, or stop it? And what does the system show the people using it so they can understand its results and judge how much to rely on them?",
+    "citation": "Annex IV(2)(e)",
+    "annexPoint": "2e"
+  },
+  {
+    "field": "q:annex-2:2f",
+    "text": "Are there changes to the system or to its performance that you already plan to make, such as retraining on a regular schedule? If so, describe them and how you will keep the system safe and accurate as they happen.",
+    "citation": "Annex IV(2)(f)",
+    "annexPoint": "2f"
+  },
+  {
+    "field": "q:annex-2:2g",
+    "text": "How was the system tested, and what were the results? Describe the data you tested it on, how you measure whether it is accurate and whether it holds up in difficult conditions, whether you checked that it performs equally well for different groups of people, and where the dated and signed test records are held.",
+    "citation": "Annex IV(2)(g)",
+    "annexPoint": "2g"
+  },
+  {
+    "field": "q:annex-2:2h",
+    "text": "What measures are in place to keep the system secure against tampering, misuse and attack?",
+    "citation": "Annex IV(2)(h)",
+    "annexPoint": "2h"
+  }
+]
