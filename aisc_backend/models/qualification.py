@@ -16,6 +16,11 @@ from .common import Base
 from .project import Project
 
 
+class PublishedSnapshotError(RuntimeError):
+    """A published snapshot (a completed qualification or a card version) is
+    immutable: it is never updated or deleted, only superseded."""
+
+
 class System(Base):
     """The AI system a project qualifies: the subject of its AI card.
 
@@ -138,6 +143,14 @@ class SystemVersion(Base):
         ]
         ordering = ["number"]
 
+    def delete(self, *args, **kwargs):
+        # Append-only: a cut version is a published snapshot. Deleting the newest
+        # rows is exactly how the pilot's trigger let an older "immutable"
+        # version change again, so no version may be deleted at all.
+        raise PublishedSnapshotError(
+            "a card version is append-only and cannot be deleted"
+        )
+
     def __str__(self):  # pragma: no cover - debug helper
         return f"{self.system} v{self.number}"
 
@@ -173,6 +186,37 @@ class Qualification(Base):
     answers = models.JSONField(default=dict)
     system_card = models.JSONField(null=True, blank=True)
     status = models.CharField(max_length=32, default="draft")
+    # When this row was frozen as a published snapshot (an explicit publish),
+    # or null while it is still an editable draft.
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_published(self) -> bool:
+        """A published snapshot: completed, and therefore immutable."""
+        return self.status == "completed" or self.published_at is not None
+
+    def _persisted_is_published(self) -> bool:
+        if self.pk is None or self._state.adding:
+            return False
+        return Qualification.objects.filter(
+            pk=self.pk, status="completed"
+        ).exists()
+
+    def save(self, *args, **kwargs):
+        # A published snapshot is never mutated: an edit or a reopen must build a
+        # draft/successor row instead (see `services.publication`).
+        if self._persisted_is_published():
+            raise PublishedSnapshotError(
+                "a published qualification is immutable; edit it as a successor"
+            )
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self._persisted_is_published():
+            raise PublishedSnapshotError(
+                "a published qualification cannot be deleted"
+            )
+        return super().delete(*args, **kwargs)
 
     def __str__(self):  # pragma: no cover - debug helper
         return f"qualification of {self.project.name}"

@@ -49,6 +49,7 @@ from aisc_backend.services import (
     ai_assistant,
     card_agent,
     card_components,
+    publication,
     qualification_service,
 )
 from aisc_backend.services import qualification_prefill
@@ -124,6 +125,20 @@ async def latest_system_version(request, pid: uuid.UUID):
     system = await system_repository.get_or_create(project)
     row = await system_repository.latest(system)
     return _version_out(row, str(project.pid)) if row is not None else None
+
+
+@router.get("/{pid}/system-versions/{number}", response=SystemVersionOut)
+async def get_system_version(request, pid: uuid.UUID, number: int):
+    """Read one published version by its number (its stable id).
+
+    A published version never moves, so this still resolves an old version even
+    after later drafts or versions exist."""
+    project = await _project_for(request, pid)
+    system = await system_repository.get_or_create(project)
+    row = await SystemVersion.objects.filter(system=system, number=number).afirst()
+    if row is None:
+        raise HttpError(404, f"no version {number}")
+    return _version_out(row, str(project.pid))
 
 
 @router.post("/{pid}/system-versions", response=SystemVersionOut)
@@ -351,8 +366,28 @@ async def save_qualification(request, pid: uuid.UUID, data: QualificationIn):
 
 @router.post("/{pid}/qualification/{qualification_pid}/complete", response=QualificationDetailOut)
 async def complete_qualification(request, pid: uuid.UUID, qualification_pid: uuid.UUID):
-    """Complete a draft (B2): the ONLY transition that builds the card and
-    bumps the card version. Completing twice is refused."""
+    """Complete a draft (B2): publish it as the next assessed-system version.
+
+    The explicit action that cuts a version (see `services.publication`). The
+    snapshot it produces is immutable, so completing twice is refused: editing or
+    reopening builds a successor instead."""
+    return await _publish_qualification(request, pid, qualification_pid, action="complete")
+
+
+@router.post("/{pid}/qualification/{qualification_pid}/publish", response=QualificationDetailOut)
+async def publish_qualification(request, pid: uuid.UUID, qualification_pid: uuid.UUID):
+    """Publish a draft as the next assessed-system version (the explicit action).
+
+    Same ONE transactional operation as `complete`, named for what it does: it
+    cuts the next `SystemVersion` and freezes the qualification as an immutable
+    snapshot. Nothing cuts a version implicitly."""
+    return await _publish_qualification(request, pid, qualification_pid, action="publish")
+
+
+async def _publish_qualification(
+    request, pid: uuid.UUID, qualification_pid: uuid.UUID, *, action: str
+) -> QualificationDetailOut:
+    """Build the card and publish the draft through the one publish operation."""
     project = await _project_for(request, pid, needed="editor")
     caller = caller_of(request)
     qualification = await Qualification.objects.filter(
@@ -361,7 +396,7 @@ async def complete_qualification(request, pid: uuid.UUID, qualification_pid: uui
     if qualification is None:
         raise HttpError(404, "no such qualification")
     if qualification.status == "completed":
-        raise HttpError(400, "already completed")
+        raise HttpError(400, "already published")
 
     # The backend owns user questionnaires; the builtin default lives on the
     # headless service. An empty or default id resolves there; anything else
@@ -382,27 +417,22 @@ async def complete_qualification(request, pid: uuid.UUID, qualification_pid: uui
         qualification.answers or {},
         system={"name": project.name, "version": "", "company": ""},
     )
-    system = await system_repository.get_or_create(project)
-    version = await system_repository.create_version(
-        system,
-        name=project.name,
-        version="",
-        provider="aisc-qualification",
-        description="",
-        created_by=caller.subject,
-    )
-    qualification.system_version = version
-    qualification.system_card = card
-    qualification.status = "completed"
-    if qualification.questionnaire_version is None:
-        qualification.questionnaire_version = await _resolve_questionnaire_version(
+    questionnaire_version = qualification.questionnaire_version
+    if questionnaire_version is None:
+        questionnaire_version = await _resolve_questionnaire_version(
             project, qualification.questionnaire_id, None
         )
-    await qualification.asave()
+    qualification, version = await publication.publish(
+        project,
+        qualification,
+        card=card,
+        created_by=caller.subject,
+        questionnaire_version=questionnaire_version,
+    )
     await card_components.link(project, qualification)
     await sync_to_async(log_action)(
         request,
-        action="complete",
+        action=action,
         resource_type="qualification",
         resource_id=str(qualification.pid),
         metadata={
@@ -416,9 +446,11 @@ async def complete_qualification(request, pid: uuid.UUID, qualification_pid: uui
 
 @router.post("/{pid}/qualification/{qualification_pid}/reopen", response=QualificationDetailOut)
 async def reopen_qualification(request, pid: uuid.UUID, qualification_pid: uuid.UUID):
-    """Reopen a completed qualification as a draft (B2 reverse): the AI card is
-    kept until the next complete call rebuilds it against the edited answers.
-    Reopening a draft is refused."""
+    """Reopen a published qualification as a NEW draft successor.
+
+    The published snapshot is never mutated: reopening copies its answers (and
+    its card, until the next publish rebuilds it) into a fresh draft row. Only
+    one draft may be open at a time, so a second reopen is refused."""
     project = await _project_for(request, pid, needed="editor")
     qualification = await Qualification.objects.filter(
         project=project, pid=qualification_pid
@@ -427,16 +459,32 @@ async def reopen_qualification(request, pid: uuid.UUID, qualification_pid: uuid.
         raise HttpError(404, "no such qualification")
     if qualification.status != "completed":
         raise HttpError(400, "only a completed qualification can be reopened")
-    qualification.status = "draft"
-    await qualification.asave()
+    open_draft = await Qualification.objects.filter(
+        project=project, status="draft"
+    ).afirst()
+    if open_draft is not None:
+        raise HttpError(400, "a draft is already open; finish or discard it first")
+    draft = await Qualification.objects.acreate(
+        project=project,
+        system_version=None,
+        questionnaire_id=qualification.questionnaire_id,
+        questionnaire_version=qualification.questionnaire_version,
+        answers=qualification.answers,
+        system_card=qualification.system_card,
+        status="draft",
+    )
     await sync_to_async(log_action)(
         request,
         action="reopen",
         resource_type="qualification",
-        resource_id=str(qualification.pid),
-        metadata={"projectPid": str(pid), "questionnaire_id": qualification.questionnaire_id},
+        resource_id=str(draft.pid),
+        metadata={
+            "projectPid": str(pid),
+            "from": str(qualification.pid),
+            "questionnaire_id": draft.questionnaire_id,
+        },
     )
-    return await _qualification_detail(qualification, str(project.pid))
+    return await _qualification_detail(draft, str(project.pid))
 
 
 @router.get(
@@ -500,22 +548,17 @@ async def edit_qualification_card(
     if current is None:
         raise HttpError(404, "no such card version")
 
-    system = await system_repository.get_or_create(project)
-    version = await system_repository.create_version(
-        system,
+    edited, version = await publication.publish(
+        project,
+        qualification,
+        card=data.system_card,
+        answers=qualification.answers,
+        created_by=caller.subject,
+        successor=True,
         name=current.name,
         version=current.version,
         provider=current.provider,
         description=current.description,
-        created_by=caller.subject,
-    )
-    edited = await Qualification.objects.acreate(
-        project=project,
-        system_version=version,
-        questionnaire_id=qualification.questionnaire_id,
-        answers=qualification.answers,
-        system_card=data.system_card,
-        status="completed",
     )
     await card_components.link(project, edited)
     await sync_to_async(log_action)(
@@ -618,23 +661,18 @@ async def _store_corrected_version(
     if current is None:
         raise HttpError(404, "no such card version")
 
-    system = await system_repository.get_or_create(project)
-    version = await system_repository.create_version(
-        system,
+    edited, version = await publication.publish(
+        project,
+        qualification,
+        card=card,
+        answers=answers,
+        created_by=caller.subject,
+        questionnaire_version=qualification.questionnaire_version,
+        successor=True,
         name=current.name,
         version=current.version,
         provider=current.provider,
         description=current.description,
-        created_by=caller.subject,
-    )
-    edited = await Qualification.objects.acreate(
-        project=project,
-        system_version=version,
-        questionnaire_id=qualification.questionnaire_id,
-        questionnaire_version=qualification.questionnaire_version,
-        answers=answers,
-        system_card=card,
-        status="completed",
     )
     await card_components.link(project, edited)
     await sync_to_async(log_action)(
