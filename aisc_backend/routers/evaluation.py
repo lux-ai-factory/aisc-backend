@@ -6,6 +6,7 @@ from asgiref.sync import sync_to_async
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from aisc_backend.auth.access import role_or_404
 from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput, PluginConfig
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.observation import Observation
@@ -45,6 +46,20 @@ metric_repository = BaseRepository(model=Metric)
 evaluation_plugin_repository = EvaluationPluginRepository()
 
 
+async def _authorized_evaluation(request, evaluation_pid: uuid.UUID) -> Evaluation:
+    """The evaluation reached by its own id, gated on the project that owns it:
+    a caller who is not a member of that project is told nothing (404)."""
+    evaluation = (
+        await Evaluation.objects.filter(pid=evaluation_pid)
+        .select_related("project")
+        .afirst()
+    )
+    if evaluation is None:
+        raise HttpError(404, f"No evaluation found {evaluation_pid}")
+    await role_or_404(request, evaluation.project)
+    return evaluation
+
+
 class EvaluationPluginInputInSchema(Schema):
     pid: uuid.UUID
     name: str
@@ -66,6 +81,7 @@ class CreateEvaluationRequest(Schema):
 @router.post("/task", response=EvaluationOutSchema)
 async def create_evaluation_task(request, data: CreateEvaluationRequest):
     project = await project_repository.get(data.project_pid, True)
+    await role_or_404(request, project)
 
     # Resolve and validate plugins before writing anything to DB
     resolved: list[tuple[EvaluationPluginInSchema, object]] = []
@@ -145,6 +161,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
 @router.get("/{evaluation_pid}", response=EvaluationDetailOutSchema)
 async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: str = ""):
+    await _authorized_evaluation(request, evaluation_pid)
     return await evaluation_repository.get_including(evaluation_pid, include)
 
 
@@ -156,6 +173,7 @@ async def get_evaluations_by_status(request, status: EvaluationStatus):
 @router.get("/{evaluation_pid}/plugins/status", response=dict)
 async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
     """Check if any plugins in the evaluation have failed."""
+    await _authorized_evaluation(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid, True)
 
     has_failed_plugins = await evaluation.evaluation_plugins.filter(status="Failed").aexists()
@@ -171,6 +189,7 @@ async def check_evaluation_plugins_status(request, evaluation_pid: uuid.UUID):
 async def get_evaluation_artifacts(
     request, evaluation_pid: uuid.UUID, evaluation_plugin_uuid: uuid.UUID
 ):
+    await _authorized_evaluation(request, evaluation_pid)
     evaluation = await evaluation_repository.get_with_related(evaluation_pid)
 
     if evaluation is None:
@@ -227,6 +246,7 @@ async def aggregate_evaluation_measurements(
     evaluation_pid: uuid.UUID,
     data: MeasurementAggregationRequest
 ):
+    await _authorized_evaluation(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
@@ -251,6 +271,7 @@ async def get_evaluation_dimension_keys(
     evaluation_pid: uuid.UUID, 
     data: DimensionKeysRequest
 ):
+    await _authorized_evaluation(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
@@ -274,6 +295,7 @@ async def get_evaluation_dimension_values(
     key: str,
     data: DimensionValuesRequest
 ):
+    await _authorized_evaluation(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
@@ -296,6 +318,7 @@ async def get_evaluation_metric_names(
     evaluation_pid: uuid.UUID, 
     data: MetricNamesRequest
 ):
+    await _authorized_evaluation(request, evaluation_pid)
     evaluation = await evaluation_repository.get(evaluation_pid)
     filter_params = {"observation__evaluation": evaluation}
 
