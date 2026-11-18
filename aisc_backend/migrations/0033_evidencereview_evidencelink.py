@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc_backend', '0032_seed_objectives'),
+        ('aisc_backend', '0015_unified_app_compliance'),
     ]
 
     operations = [
