@@ -15,7 +15,7 @@ celery: Celery = Celery(
     CELERY_APP_NAME, broker=CELERY_BROKER_URL, backend=REDIS_BACKEND_URL
 )
 
-RUN_EVAL_TASK = "aisc_eval.celery_tasks.run_evaluation"
+RUN_EVAL_TASK = "aisc_eval.dispatch.run_evaluation"
 RUN_PLUGIN_TASK = "aisc_eval.celery_tasks.run_plugin"
 
 
