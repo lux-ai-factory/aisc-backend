@@ -5,6 +5,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
+from aisc_backend.auth.access import role_or_404
 from aisc_backend.models import AIComponentType, ProjectConfig, ProjectConfigCategory
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
@@ -32,6 +33,8 @@ def _masked(value: str) -> str:
 async def derive_features_from_dataset(request, project_pid: uuid.UUID, source_dataset_pid: uuid.UUID):
     """Derive the data shape (features) from a dataset component so the UI can
     show/preview it before the datashape component is created."""
+    project = await project_repository.get(project_pid)
+    await role_or_404(request, project)
     source_dataset = await ai_component_repository.get(source_dataset_pid)
     if source_dataset is None or source_dataset.component_type != AIComponentType.DATASET:
         raise HttpError(400, "source_dataset_pid must reference a dataset component")
@@ -40,12 +43,15 @@ async def derive_features_from_dataset(request, project_pid: uuid.UUID, source_d
 
 @router.get("/{project_pid}", response=list[ProjectConfigOutSchema])
 async def list_project_configs(request, project_pid: uuid.UUID):
+    project = await project_repository.get(project_pid)
+    await role_or_404(request, project)
     return await project_config_repository.get_by_project(project_pid)
 
 
 @router.post("/{project_pid}", response=ProjectConfigOutSchema)
 async def create_project_config(request, project_pid: uuid.UUID, data: ProjectConfigInSchema):
     project = await project_repository.get(project_pid)
+    await role_or_404(request, project)
     try:
         key = await create_project_config_key(project, data.category, data.key)
     except ValueError as error:
@@ -71,6 +77,8 @@ async def create_project_config(request, project_pid: uuid.UUID, data: ProjectCo
 
 @router.get("/{project_pid}/available", response=dict[str, list[ProjectConfigOutSchema]])
 async def available_project_config(request, project_pid: uuid.UUID):
+    project = await project_repository.get(project_pid)
+    await role_or_404(request, project)
     result: dict[str, list[ProjectConfigOutSchema]] = {category.value: [] for category in ProjectConfigCategory}
     for project_config in await project_config_repository.get_by_project(project_pid):
         result[project_config.category].append(project_config)
@@ -79,6 +87,8 @@ async def available_project_config(request, project_pid: uuid.UUID):
 
 @router.patch("/{project_pid}/{project_config_pid}", response=ProjectConfigOutSchema)
 async def update_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID, data: ProjectConfigUpdateSchema):
+    project = await project_repository.get(project_pid)
+    await role_or_404(request, project)
     project_config = await project_config_repository.get(
         project_config_pid, project_pid=project_pid
     )
@@ -101,6 +111,8 @@ async def update_project_config(request, project_pid: uuid.UUID, project_config_
 
 @router.delete("/{project_pid}/{project_config_pid}", response={204: None})
 async def delete_project_config(request, project_pid: uuid.UUID, project_config_pid: uuid.UUID):
+    project = await project_repository.get(project_pid)
+    await role_or_404(request, project)
     project_config = await project_config_repository.get(project_config_pid)
     await sync_to_async(log_action)(
         request, action="delete", resource_type="project_config",

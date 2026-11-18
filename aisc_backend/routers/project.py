@@ -254,6 +254,7 @@ async def derive_datashape(source_dataset: AIComponent) -> dict:
 @router.get("/{pid}/aisystem", response=AISystemDetailOutSchema)
 async def get_project_aisystem(request, pid: uuid.UUID):
     project = await project_repository.get(pid, True)
+    await role_or_404(request, project)
     system = await ai_system_repository.get_with_components(project)
     if system is None:
         await ai_system_repository.get_or_create_for_project(project)
@@ -266,6 +267,7 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
     if not data.name or not data.name.strip():
         raise HttpError(400, "Component name is required")
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     system = await ai_system_repository.get_or_create_for_project(project)
 
     source_dataset = None
@@ -324,6 +326,7 @@ async def get_project_evaluations(
     exclude_status: list[EvaluationStatus] = Query([]),
 ):
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     filter: dict[str, Any] = {"project": project}
     exclude = None
     if status is not None:
@@ -339,6 +342,7 @@ async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
     """Return the most recent evaluation's input selections per plugin, so the
     evaluation form can prefill inputs from a previous run."""
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     latest = await evaluation_repository.latest_for_project(project)
     if latest is None:
         return {}
@@ -361,6 +365,7 @@ async def get_project_evaluation_inputs_template(request, pid: uuid.UUID):
 @router.get("/{pid}/plugins/{plugin_name}/config", response=dict | None)
 async def get_project_plugin_config(request, pid: uuid.UUID, plugin_name: str):
     project = await project_repository.get(pid, True)
+    await role_or_404(request, project)
     plugin = next(
         (p for p in project.get_enabled_plugins() if p.name == plugin_name), None
     )
@@ -376,6 +381,7 @@ async def aggregate_project_measurements(
     data: MeasurementAggregationRequest
 ):
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     queryset = await measurement_repository.filter_queryset(observation__evaluation__project=project)
     results = await measurement_repository.aggregate_measurements(
         queryset, data.group_by, data.filters, data.aggregations
@@ -386,6 +392,7 @@ async def aggregate_project_measurements(
 @router.get("/{pid}/measurements/dimension-keys", response=DimensionKeysResponse)
 async def get_project_dimension_keys(request, pid: uuid.UUID):
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     queryset = await measurement_repository.filter_queryset(
         observation__evaluation__project=project
     )
@@ -396,6 +403,7 @@ async def get_project_dimension_keys(request, pid: uuid.UUID):
 @router.get("/{pid}/measurements/dimension-values/{key}", response=DimensionValuesResponse)
 async def get_project_dimension_values(request, pid: uuid.UUID, key: str):
     project = await project_repository.get(pid)
+    await role_or_404(request, project)
     queryset = await measurement_repository.filter_queryset(
         observation__evaluation__project=project
     )
