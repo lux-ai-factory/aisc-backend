@@ -14,6 +14,7 @@ from aisc_backend.models import (
     Project,
     ProjectStatus,
 )
+from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.project import router as project_router
 
 client = TestAsyncClient(project_router)
@@ -27,6 +28,9 @@ class ProjectEvaluationsSerializationTestCase(TestCase):
 
     async def test_evaluations_response_with_derived_datashape_input(self):
         project = await Project.objects.acreate(name="p", status=ProjectStatus.Ready)
+        await ProjectMember.objects.acreate(
+            project=project, subject="development", role=MembershipRole.Owner
+        )
         system = await AISystem.objects.acreate(project=project)
 
         source = await AIComponent.objects.acreate(

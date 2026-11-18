@@ -5,11 +5,20 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend.models import AIComponent, AIComponentType
 from aisc_backend.models.ai_system import AISystem
+from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.routers.project_config import router
 
 client = TestAsyncClient(router)
 project_repository = ProjectRepository()
+
+
+async def owned_project():
+    project = await project_repository.create("p")
+    await ProjectMember.objects.acreate(
+        project=project, subject="development", role=MembershipRole.Owner
+    )
+    return project
 
 
 class DeriveFeaturesRouterTestCase(TestCase):
@@ -21,7 +30,7 @@ class DeriveFeaturesRouterTestCase(TestCase):
         )
 
     async def test_derive_features_requires_dataset_component(self):
-        project = await project_repository.create("p")
+        project = await owned_project()
         model = await AIComponent.objects.acreate(
             name="m", description="", component_type=AIComponentType.MODEL,
             system=await AISystem.objects.acreate(project=project, name="sys", description=""),
@@ -32,14 +41,14 @@ class DeriveFeaturesRouterTestCase(TestCase):
         self.assertEqual(res.status_code, 400, res.text)
 
     async def test_derive_features_rejects_missing_dataset(self):
-        project = await project_repository.create("p")
+        project = await owned_project()
         res = await client.post(
             f"/{project.pid}/derive-features?source_dataset_pid=00000000-0000-0000-0000-000000000000",
         )
         self.assertEqual(res.status_code, 400, res.text)
 
     async def test_derive_features_returns_extracted_features(self):
-        project = await project_repository.create("p")
+        project = await owned_project()
         dataset = await self.get_dataset(project)
 
         with patch("aisc_backend.routers.project_config.ai_component_repository.get") as mock_get, \

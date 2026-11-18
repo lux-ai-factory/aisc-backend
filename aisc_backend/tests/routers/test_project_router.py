@@ -20,6 +20,14 @@ from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.project import ProjectInSchema, ProjectOutSchema
 
 project_repository = ProjectRepository()
+
+
+async def owned_project():
+    project = await project_repository.create("p")
+    await ProjectMember.objects.acreate(
+        project=project, subject="development", role=MembershipRole.Owner
+    )
+    return project
 client = TestAsyncClient(project_router)
 
 class ProjectRouterTestCase(TestCase):
@@ -146,7 +154,7 @@ class ProjectMembershipRouterTestCase(TestCase):
 
 class ProjectComponentRouterTestCase(TestCase):
     async def test_get_aisystem_get_or_creates(self):
-        project = await project_repository.create("p")
+        project = await owned_project()
         response = await client.get(f"/{project.pid}/aisystem")
         self.assertEqual(200, response.status_code)
         body = response.data
@@ -154,7 +162,7 @@ class ProjectComponentRouterTestCase(TestCase):
         self.assertEqual(body["components"], [])
 
     async def test_create_llm_component_requires_existing_secret(self):
-        project = await project_repository.create("p")
+        project = await owned_project()
         payload = {
             "name": "llm",
             "component_type": "llm",
@@ -174,7 +182,7 @@ class ProjectComponentRouterTestCase(TestCase):
         self.assertEqual(body["json_value"], payload["json_value"])
 
     async def test_evaluation_inputs_template_empty_and_prefilled(self):
-        project = await project_repository.create("p")
+        project = await owned_project()
 
         response = await client.get(f"/{project.pid}/evaluation-inputs-template")
         self.assertEqual(200, response.status_code)

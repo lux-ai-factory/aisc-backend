@@ -14,6 +14,7 @@ from aisc_backend.models import (
     Project,
     ProjectStatus,
 )
+from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.project import router as project_router
 
 client = TestAsyncClient(project_router)
@@ -22,6 +23,9 @@ client = TestAsyncClient(project_router)
 class EvaluationInputsTemplateTestCase(TestCase):
     async def test_returns_latest_evaluation_inputs_per_plugin(self):
         project = await Project.objects.acreate(name="p", status=ProjectStatus.Ready)
+        await ProjectMember.objects.acreate(
+            project=project, subject="development", role=MembershipRole.Owner
+        )
         system = await AISystem.objects.acreate(project=project)
         dataset = await AIComponent.objects.acreate(
             name="Dataset A",
@@ -68,6 +72,9 @@ class EvaluationInputsTemplateTestCase(TestCase):
 
     async def test_returns_empty_when_no_evaluations(self):
         project = await Project.objects.acreate(name="p", status=ProjectStatus.Ready)
+        await ProjectMember.objects.acreate(
+            project=project, subject="development", role=MembershipRole.Owner
+        )
         response = await client.get(f"/{project.pid}/evaluation-inputs-template")
         self.assertEqual(200, response.status_code)
         self.assertEqual(response.data, {})

@@ -1,11 +1,11 @@
 """The one feature-flag registry for optional behaviour.
 
 Named flags are read from Django settings (which read the environment) and
-default OFF, so the core application — projects, components and evaluations —
-runs with every optional feature disabled. Optional routers consult a flag at
-request time through :func:`require_flag`; nothing is removed from
-INSTALLED_APPS, MIDDLEWARE or the root URLconf, so the same build can switch a
-feature on without changing its shape.
+default ON — the full profile. Turning the env var off gives the lean profile in
+which only the core application — projects, components and evaluations — runs.
+Optional routers consult a flag at request time through :func:`require_flag`;
+nothing is removed from INSTALLED_APPS, MIDDLEWARE or the root URLconf, so the
+same build can switch a feature off without changing its shape.
 
 The optional features and the routers they gate:
 
@@ -31,14 +31,14 @@ FLAG_SETTINGS: dict[str, str] = {
 
 
 def is_enabled(name: str) -> bool:
-    """Whether the named optional feature is switched on. Default OFF."""
+    """Whether the named optional feature is switched on. Default ON (full profile)."""
     try:
         setting_name = FLAG_SETTINGS[name]
     except KeyError:
         raise KeyError(
             f"Unknown feature flag {name!r}; known flags: {sorted(FLAG_SETTINGS)}"
         )
-    return bool(getattr(settings, setting_name, False))
+    return bool(getattr(settings, setting_name, True))
 
 
 def require_flag(name: str) -> Callable:

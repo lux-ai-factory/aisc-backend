@@ -2,6 +2,7 @@ from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.project import Project, ProjectStatus
+from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.project_config import router
 
 
@@ -11,6 +12,9 @@ client = TestAsyncClient(router)
 class ProjectConfigRouterTestCase(TestCase):
     def setUp(self):
         self.project = Project.objects.create(name="proj", status=ProjectStatus.Ready)
+        ProjectMember.objects.create(
+            project=self.project, subject="development", role=MembershipRole.Owner
+        )
 
     async def test_create_variable_config_roundtrip(self):
         res = await client.post(
