@@ -86,5 +86,13 @@ Reading the log:
 |---|---|
 | `generate` · report | assemble the report snapshot and render the PDF/HTML |
 
+### connections (backend-native, CON-01)
+| action · resource_type | when |
+|---|---|
+| `update`/`delete` · connection | create/edit or delete a connection |
+| `set_target` · connection | link a connection to the component it reaches |
+| `bind` · run_binding | bind the adapter/version and helper a run used (snapshotted) |
+
+
 > `action` + `resource_type` are always server-decided (never from the request body); `actor` + `source_ip`
 > come from the verified request.

@@ -191,6 +191,11 @@ async def set_target(request, pid: uuid.UUID, name: str, data: ConnectionTargetI
         raise HttpError(400, "the target names no component of this project")
     connection.target_component = target
     await connection.asave(update_fields=["target_component"])
+    await sync_to_async(log_action)(
+        request, action="set_target", resource_type="connection",
+        resource_id=str(connection.pid),
+        metadata={"projectPid": str(pid), "name": name, "target": str(target.pid)},
+    )
     return await service.connection_row(connection)
 
 
@@ -284,4 +289,15 @@ async def put_binding(request, pid: uuid.UUID, plugin_pid: uuid.UUID, data: RunB
         if helper is None:
             raise HttpError(400, "a role binds a helper")
     binding = await service.bind(plugin, role=data.role, connection=connection, helper=helper)
+    await sync_to_async(log_action)(
+        request, action="bind", resource_type="run_binding",
+        resource_id=str(binding.pid),
+        metadata={
+            "projectPid": str(pid),
+            "role": data.role,
+            "connection": connection.name if connection else None,
+            "helper": helper.name if helper else None,
+            "adapter_version": binding.adapter_version,
+        },
+    )
     return service.binding_row(binding)
