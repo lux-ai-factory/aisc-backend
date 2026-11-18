@@ -15,6 +15,8 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import caller_of, role_or_404
+from aisc_backend.auth.keycloak import KeycloakAuth
+from aisc_backend.flags import require_flag
 from aisc_backend.models.control_objective import (
     ControlObjective,
     ObjectiveProfile,
@@ -58,7 +60,7 @@ from aisc_backend.services import dimensions as dimension_map
 from aisc_backend.services import objective_profiles, risk_mapper
 from aisc_backend.services.objective_sets import diff_rows
 
-router = Router(tags=["control-objectives"])
+router = Router(tags=["control-objectives"], auth=[require_flag("objectives"), KeycloakAuth()])
 
 project_repository = ProjectRepository()
 

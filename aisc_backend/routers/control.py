@@ -15,6 +15,8 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import role_or_404
+from aisc_backend.auth.keycloak import KeycloakAuth
+from aisc_backend.flags import require_flag
 from aisc_backend.models.control import (
     ControlQuestion,
     ControlSource,
@@ -38,7 +40,7 @@ from aisc_backend.schemas.control import (
 )
 from aisc_backend.services import controls_scoring
 
-router = Router(tags=["controls"])
+router = Router(tags=["controls"], auth=[require_flag("controls"), KeycloakAuth()])
 
 project_repository = ProjectRepository()
 

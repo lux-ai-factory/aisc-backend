@@ -23,6 +23,8 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import caller_of, role_or_404
+from aisc_backend.auth.keycloak import KeycloakAuth
+from aisc_backend.flags import require_flag
 from aisc_backend.models.evaluation import Evaluation
 from aisc_backend.models.project import Project
 from aisc_backend.models.qualification import SystemVersion
@@ -42,7 +44,7 @@ from aisc_backend.schemas.report import (
 from aisc_backend.services import report_blocks, report_local_runs, report_render, report_service, report_snapshot
 from aisc_backend.services.report_snapshot import REPORT_SECTIONS
 
-router = Router(tags=["reporting"])
+router = Router(tags=["reporting"], auth=[require_flag("reporting"), KeycloakAuth()])
 
 project_repository = ProjectRepository()
 

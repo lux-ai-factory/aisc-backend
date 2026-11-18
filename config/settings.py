@@ -305,6 +305,15 @@ CONTROL_OBJECTIVES_LLM_API_KEY = env("CONTROL_OBJECTIVES_LLM_API_KEY", default="
 CARD_AGENT_LLM_BASE_URL = env("CARD_AGENT_LLM_BASE_URL", default="")
 CARD_AGENT_LLM_MODEL = env("CARD_AGENT_LLM_MODEL", default="mistral")
 CARD_AGENT_LLM_API_KEY = env("CARD_AGENT_LLM_API_KEY", default="")
+# --- Optional feature flags (read by aisc_backend.flags) ---
+# One mechanism for optional behaviour, all default OFF: the core app (projects,
+# components, evaluations) runs with every optional feature disabled. The
+# optional routers are gated at request time in `aisc_backend/flags.py`; these
+# settings are the single place that turns a feature on.
+FEATURE_QUALIFICATION = env.bool("FEATURE_QUALIFICATION", False)
+FEATURE_OBJECTIVES = env.bool("FEATURE_OBJECTIVES", False)
+FEATURE_CONTROLS = env.bool("FEATURE_CONTROLS", False)
+FEATURE_REPORTING = env.bool("FEATURE_REPORTING", False)
 ## .env vars
 
 APP_NAME = env("APP_NAME","aisc-backend")

@@ -24,6 +24,8 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import caller_of, role_or_404
+from aisc_backend.auth.keycloak import KeycloakAuth
+from aisc_backend.flags import require_flag
 from aisc_backend.models.qualification import Qualification, Questionnaire, SystemVersion
 from aisc_backend.models.project import Project
 from aisc_backend.repositories.project_repository import ProjectRepository
@@ -51,7 +53,7 @@ from aisc_backend.services import (
 )
 from aisc_backend.services import qualification_prefill
 
-router = Router(tags=["qualification"])
+router = Router(tags=["qualification"], auth=[require_flag("qualification"), KeycloakAuth()])
 
 project_repository = ProjectRepository()
 system_repository = SystemRepository()
