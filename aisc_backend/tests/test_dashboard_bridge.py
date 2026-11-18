@@ -142,17 +142,37 @@ class OpenBridgeTest(BridgeTestCase):
         self.assertEqual(self.received[0]["path"], f"/api/v1/aisc_project/{self.project.pid}")
         self.assertEqual(self.received[0]["token"], TOKEN)
 
-    def test_a_tool_tile_carries_its_charts(self):
+    def test_a_tool_tile_carries_the_dashboards_own_body(self):
+        # The dashboard's bridge reads `visualizations` (aisc_ext.plugin_tiles.plugin_request),
+        # not `charts`, and needs the plugin's version and the project's name to make the tile.
         answer = dashboard_bridge.sync_tool(
-            self.project, "fairness", "Fairness", charts=[{"metric": "accuracy"}]
+            self.project,
+            "strongreject::StrongReject",
+            "StrongReject",
+            version="1.2.0",
+            project_name="Assessment Two",
+            visualizations=[{"chart_type": "bar", "metrics": ["harmful_rate"]}],
         )
         call = self.received[0]
         self.assertEqual(call["method"], "PUT")
         self.assertEqual(call["path"], f"/api/v1/aisc_project/{self.project.pid}/plugins")
-        self.assertEqual(call["body"]["plugin"], "fairness")
-        self.assertEqual(call["body"]["charts"], [{"metric": "accuracy"}])
-        self.assertEqual(answer, {"plugin": "fairness", "slug": "assessed", "charts": 2,
-                                  "deleted": False})
+        self.assertEqual(
+            call["body"],
+            {
+                "plugin": "strongreject::StrongReject",
+                "label": "StrongReject",
+                "version": "1.2.0",
+                "project_name": "Assessment Two",
+                "visualizations": [{"chart_type": "bar", "metrics": ["harmful_rate"]}],
+                "again": False,
+            },
+        )
+        self.assertEqual(answer, {"plugin": "strongreject::StrongReject", "slug": "assessed",
+                                  "charts": 2, "deleted": False})
+
+    def test_a_deleted_tile_is_made_again_only_when_asked(self):
+        dashboard_bridge.sync_tool(self.project, "fairness", "Fairness", again=True)
+        self.assertIs(self.received[0]["body"]["again"], True)
 
     def test_a_dashboard_that_answers_500_never_stops_a_person(self):
         _Recorder.status = 500

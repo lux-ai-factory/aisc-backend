@@ -106,13 +106,33 @@ def unregister(project) -> bool:
         return False
 
 
-def sync_tool(project, tool: str, label: str, charts: list[dict] | None = None) -> dict:
-    """Make or update one tool's tile from the charts this version has for it.
+def sync_tool(
+    project,
+    tool: str,
+    label: str,
+    version: str = "",
+    project_name: str = "",
+    visualizations: list[dict] | None = None,
+    again: bool = False,
+) -> dict:
+    """Make or update one tool's tile from the default charts its plugin declares.
 
-    `BridgeUnavailable` when a configured dashboard did not take it, so the person
-    who asked is told; `BridgeClosed` when there is nothing to call.
+    The body is the dashboard's own bridge contract (`aisc_ext.plugin_tiles.plugin_request`):
+    `plugin` is the engine's `<package>::<class>`, `visualizations` the plugin's
+    default charts as the engine serves them (`metric_visualizations`), `version`
+    and `project_name` label the tile, and `again` remakes a tile someone deleted
+    (a tile is only made again when that is asked). `BridgeUnavailable` when a configured dashboard did not
+    take it, so the person who asked is told; `BridgeClosed` when there is nothing
+    to call.
     """
-    body = {"plugin": tool, "label": label, "charts": charts or []}
+    body = {
+        "plugin": tool,
+        "label": label,
+        "version": version,
+        "project_name": project_name or (project.name or ""),
+        "visualizations": visualizations or [],
+        "again": again,
+    }
     try:
         answer = _request("PUT", f"/api/v1/aisc_project/{project.pid}/plugins", body,
                           TILE_TIMEOUT_SECONDS)
