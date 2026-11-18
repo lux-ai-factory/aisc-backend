@@ -17,12 +17,27 @@ from .project import Project
 
 
 class System(Base):
-    """The AI system a project qualifies: the subject of its AI card."""
+    """The AI system a project qualifies: the subject of its AI card.
+
+    This is only optional content about the project's assessed system: it links
+    to the core ``AISystem`` rather than naming a system of its own, so core and
+    qualification can never resolve to two different assessed systems.
+    """
 
     project = models.OneToOneField(
         Project,
         on_delete=models.CASCADE,
         related_name="qualification_system",
+    )
+    # The project's assessed-system identity (the core `AISystem`) this content
+    # belongs to. Null until resolved; both sides are per-project, so resolving
+    # it can only land on that one system.
+    aisystem = models.ForeignKey(
+        "AISystem",
+        on_delete=models.SET_NULL,
+        related_name="qualification_systems",
+        null=True,
+        blank=True,
     )
     # Which questionnaire this project qualifies against (the backend's
     # per-project selection); null until one is chosen.

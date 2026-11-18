@@ -3,6 +3,7 @@ Repository for systems and their card versions (the system-versions contract).
 """
 from aisc_backend.models.qualification import System, SystemVersion
 from aisc_backend.models.project import Project
+from aisc_backend.repositories.ai_component_repository import AISystemRepository
 
 
 class SystemRepository:
@@ -17,6 +18,19 @@ class SystemRepository:
                 name=project.name,
                 description="",
             )
+        return await self.linked_to_assessed_system(system, project)
+
+    async def linked_to_assessed_system(self, system: System, project: Project) -> System:
+        """Point this qualification content at the project's one assessed system.
+
+        The core `AISystem` is the assessed-system identity; the qualification
+        `System` is optional content about it. Resolving the link here — the one
+        place qualification content is materialised — keeps a project from ever
+        carrying two assessed systems.
+        """
+        if system.aisystem_id is None:
+            system.aisystem = await AISystemRepository().get_or_create_for_project(project)
+            await system.asave(update_fields=["aisystem"])
         return system
 
     async def next_number(self, system: System) -> int:
