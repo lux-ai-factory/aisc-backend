@@ -289,3 +289,5 @@ PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
 PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
 PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))
 PACKAGE_REGISTRY_INDEX = env('PACKAGE_REGISTRY_INDEX', '')
+# Internal Flower API, accessed only by the admin monitoring endpoints.
+FLOWER_SERVICE_URL = env("FLOWER_SERVICE_URL", default="http://aisc-eval-flower:5555/flower")
