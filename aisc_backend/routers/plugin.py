@@ -240,6 +240,7 @@ class PackageAvailableSchema(Schema):
     package_name: str
     version: str
     source: str
+    dimensions: list[str] = []
 
 
 @router.get("", response=list[PackageAvailableSchema])
@@ -252,7 +253,8 @@ async def get_plugins(request):
             available_packages.append(PackageAvailableSchema(
                 package_name=pkg_name,
                 version=version,
-                source=meta.get("source", "unknown")
+                source=meta.get("source", "unknown"),
+                dimensions=meta.get("dimensions", []),
             ))
 
     return available_packages
