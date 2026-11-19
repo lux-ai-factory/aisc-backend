@@ -257,12 +257,6 @@ PROJECT_BOOTSTRAP_OWNERS = env("PROJECT_BOOTSTRAP_OWNERS", default="")
 # The isolated qualification compute service: answers in, AI card out. Empty
 # means the backend falls back to a deterministic summary card (dev/tests).
 QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
-# --- Headless report service (read by services.report_service) ---
-# The report microservice (apps/report): the backend assembles a JSON snapshot
-# and this service draws it (PDF/HTML). Empty means the backend renders locally
-# (a real PDF/Word document via services.report_render); a configured-but-down
-# service is an error, not a silent fallback.
-REPORT_SERVICE_URL = env("REPORT_SERVICE_URL", default="")
 # --- Controls catalogue (read by services.controls_catalogue) ---
 # The hosted checklist catalogue (AI Factory Sandbox Configurator API v1.1).
 # `manage.py sync_controls_catalogue` upserts its rows into the control tables;

@@ -2,8 +2,8 @@
 REP-01 / REP-02 backend tests: report layouts and blocks, the immutable ORM
 snapshot, version selection, and real PDF/Word rendering.
 
-These run hermetically: `REPORT_SERVICE_URL` is unset, so generation goes
-through the in-process renderer and the stored document is a real PDF or DOCX.
+These run hermetically: generation goes through the one in-process renderer
+(ADR 0008) and the stored document is a real PDF or DOCX.
 Auth is the dev-bypass mode (caller subject "development").
 """
 from unittest import mock

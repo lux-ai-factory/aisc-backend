@@ -457,8 +457,7 @@ async def _render_report(report_pid: str, snapshot: dict, fmt: str) -> None:
     'generated' (with the document) or 'failed'. Async so it can run in a
     worker thread (``_launch_worker``) or be awaited directly in tests."""
     try:
-        project_pid = str(snapshot.get("project", {}).get("pid") or "")
-        document, content_type = await report_service.generate(project_pid, snapshot, fmt)
+        document, content_type = await report_service.generate(snapshot, fmt)
     except Exception as exc:                     # noqa: BLE001 - never crash the worker thread
         logger.warning("report %s render failed: %s", report_pid, exc)
         await Report.objects.filter(pid=report_pid).aupdate(status="failed")

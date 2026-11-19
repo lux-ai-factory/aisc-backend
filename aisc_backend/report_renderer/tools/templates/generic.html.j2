@@ -1,3 +1,4 @@
+{% if has_measurements %}
 <table class="measurements">
   <thead><tr><th>{{ t("Metric") }}</th><th>{{ t("Value") }}</th><th>{{ t("Unit") }}</th></tr></thead>
   <tbody>
@@ -6,3 +7,6 @@
   </tbody>
 </table>
 {% if more %}<p class="more">{{ t("and {count} more", count=more) }}</p>{% endif %}
+{% else %}
+<p class="measurements-empty">{{ t("This run recorded no measurements.") }}</p>
+{% endif %}

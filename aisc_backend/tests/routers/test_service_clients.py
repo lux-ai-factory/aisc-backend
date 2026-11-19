@@ -1,11 +1,14 @@
-"""Outbound headless service contracts, exercised through httpx transport."""
+"""Outbound headless service contracts, exercised through httpx transport.
+
+Only the qualification service remains an outbound service (ADR 0006); the report renderer
+runs in-process (ADR 0008) and has no transport to exercise here.
+"""
 
 from unittest import IsolatedAsyncioTestCase, mock
 
 import httpx
 
 from aisc_backend.services import qualification_service as qualification
-from aisc_backend.services import report_service as report
 
 
 class ServiceClientTest(IsolatedAsyncioTestCase):
@@ -65,72 +68,26 @@ class ServiceClientTest(IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_report_contract(self):
-        def handler(request):
-            import json
-
-            self.assertEqual(request.url.path, "/api/generate")
-            self.assertEqual(request.method, "POST")
-            self.assertEqual(request.headers["X-AISC-Service-Token"], "secret")
-            self.assertEqual(
-                json.loads(request.content),
-                {"project_pid": "p1", "format": "pdf", "snapshot": {"project": {"name": "P"}}},
-            )
-            return httpx.Response(
-                200, content=b"%PDF-1.7 test", headers={"content-type": "application/pdf"}
-            )
-
-        with (
-            mock.patch.object(report, "REPORT_SERVICE_URL", "http://report:8000/"),
-            mock.patch.object(report, "SERVICE_TOKEN_FOR_APPS", "secret"),
-            self.client(report, handler),
-        ):
-            data, content_type = await report.generate("p1", {"project": {"name": "P"}})
-            self.assertTrue(data.startswith(b"%PDF-"))
-            self.assertEqual(content_type, "application/pdf")
-
     async def test_configured_failures_are_not_successful_fallbacks(self):
-        for module, setting, error, call in [
-            (
-                qualification,
-                "QUALIFICATION_SERVICE_URL",
-                qualification.QualificationServiceError,
-                lambda: qualification.build_card("p", "q", {}, {}),
-            ),
-            (
-                report,
-                "REPORT_SERVICE_URL",
-                report.ReportServiceError,
-                lambda: report.generate("p", {}),
-            ),
-        ]:
-            for status in (401, 503):
-                with (
-                    mock.patch.object(module, setting, "http://service"),
-                    self.client(module, lambda r: httpx.Response(status)),
-                ):
-                    with self.assertRaises(error):
-                        await call()
+        for status in (401, 503):
+            with (
+                mock.patch.object(qualification, "QUALIFICATION_SERVICE_URL", "http://service"),
+                self.client(qualification, lambda r: httpx.Response(status)),
+            ):
+                with self.assertRaises(qualification.QualificationServiceError):
+                    await qualification.build_card("p", "q", {}, {})
 
-            def offline(request):
-                raise httpx.ConnectError("offline")
+        def offline(request):
+            raise httpx.ConnectError("offline")
 
-            with mock.patch.object(module, setting, "http://service"), self.client(module, offline):
-                with self.assertRaises(error):
-                    await call()
-
-    async def test_invalid_documents_and_json(self):
         with (
-            mock.patch.object(report, "REPORT_SERVICE_URL", "http://report"),
-            self.client(
-                report,
-                lambda r: httpx.Response(
-                    200, text="<html>error</html>", headers={"content-type": "text/html"}
-                ),
-            ),
+            mock.patch.object(qualification, "QUALIFICATION_SERVICE_URL", "http://service"),
+            self.client(qualification, offline),
         ):
-            with self.assertRaises(report.ReportServiceError):
-                await report.generate("p", {})
+            with self.assertRaises(qualification.QualificationServiceError):
+                await qualification.build_card("p", "q", {}, {})
+
+    async def test_invalid_json(self):
         with (
             mock.patch.object(qualification, "QUALIFICATION_SERVICE_URL", "http://qualification"),
             self.client(qualification, lambda r: httpx.Response(200, text="not JSON")),

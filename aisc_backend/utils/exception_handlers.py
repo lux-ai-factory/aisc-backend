@@ -1,6 +1,6 @@
 from ninja import NinjaAPI
 from aisc_backend.services.qualification_service import QualificationServiceError
-from aisc_backend.services.report_service import ReportServiceError
+from aisc_backend.services.report_service import ReportRenderError
 import traceback
 
 from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
@@ -12,7 +12,7 @@ logger = get_logger(APP_NAME, LOG_LEVEL)
 
 def register_exception_handlers(api: NinjaAPI):
     @api.exception_handler(QualificationServiceError)
-    @api.exception_handler(ReportServiceError)
+    @api.exception_handler(ReportRenderError)
     def upstream_service_error(request, exc):
         return api.create_response(request, {"detail": str(exc)}, status=502)
 

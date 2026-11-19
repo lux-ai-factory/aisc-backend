@@ -1,10 +1,12 @@
 """
-REP-02 backend tests: the report-plugin ABI (per-tool renderers) and the pilot renderer's
+REP-02 backend tests: how the Test results block draws each plugin's run (the eval plugin's own
+renderer when it has one, the generic measurements table otherwise), and the pilot renderer's
 fidelity — WeasyPrint's page rule, the vendored CSS, SVG logos and the Word export.
 
-Hermetic: no report service, no network. Auth is the dev-bypass mode.
+Hermetic: no report service (there is none, ADR 0008), no network. Auth is the dev-bypass mode.
 """
 import base64
+from unittest import mock
 
 from django.test import TestCase
 
@@ -71,37 +73,19 @@ async def _evaluation_with_run(project, plugin_name, *, package_name=None, metri
     return evaluation
 
 
-# --- the plugin ABI -------------------------------------------------------------
+class _StubRenderer:
+    """A plugin renderer, standing in for one an eval plugin would return."""
+
+    def render(self, run, ctx) -> str:
+        return '<table class="tool-x"><tr><td>' + run.tool["display_name"] + "</td></tr></table>"
 
 
-class PluginRegistryTest(TestCase):
-
-    def test_the_bundled_renderers_are_registered(self):
-        by_renderer = {item["renderer"]: item for item in tools_abi.inventory()}
-        for name in ("LANGBITEToolRenderer", "MLAREJECTToolRenderer", "PROMPTFOOToolRenderer",
-                     "STRONGREJECTToolRenderer"):
-            self.assertIn(name, by_renderer)
-        self.assertEqual(by_renderer["LANGBITEToolRenderer"]["tool_names"], ["LangBiTe"])
-        self.assertEqual(by_renderer["PROMPTFOOToolRenderer"]["tool_names"], ["Promptfoo", "promptfoo"])
-        self.assertEqual(by_renderer["LANGBITEToolRenderer"]["contract_version"], 2)
-
-    def test_a_renderer_is_matched_by_normalised_names(self):
-        self.assertEqual(
-            type(tools_abi.renderer_for({"display_name": "promptfoo"})).__name__, "PROMPTFOOToolRenderer"
-        )
-        self.assertEqual(
-            type(tools_abi.renderer_for({"name": "Strong-Reject"})).__name__, "STRONGREJECTToolRenderer"
-        )
-        self.assertEqual(
-            type(tools_abi.renderer_for({"package_name": "aisc-plugin-langbite"})).__name__,
-            "LANGBITEToolRenderer",
-        )
-        self.assertIsNone(tools_abi.renderer_for({"display_name": "Something else"}))
+# --- the plugin renderer contract -----------------------------------------------
 
 
 class ToolRunTest(TestCase):
 
-    async def test_a_tool_run_is_built_from_the_orm_and_drawn_by_its_renderer(self):
+    async def test_a_tool_run_is_built_from_the_orm(self):
         project = await _project()
         evaluation = await _evaluation_with_run(
             project,
@@ -113,21 +97,47 @@ class ToolRunTest(TestCase):
         run = runs[0]
         self.assertEqual(run.tool["display_name"], "LangBiTe")
         self.assertEqual(run.tool["package_name"], "aisc-plugin-langbite")
+        self.assertEqual(run.tool["version"], "1.0")
         self.assertEqual(run.measurements[0]["metric"], "score")
-        section, renderer = tools_abi.render_run(run, tools_abi.make_ctx())
-        self.assertEqual(renderer, "LANGBITEToolRenderer")
-        # the tool's own template, not the generic measurements table
-        self.assertIn("tool-langbite", section)
-        self.assertNotIn('class="measurements"', section)
+        self.assertEqual(run.evaluation_plugin["status"], "Done")
 
-    async def test_a_tool_without_a_renderer_falls_back_to_the_generic_table(self):
+    async def test_a_plugin_without_a_renderer_gets_the_generic_table(self):
         project = await _project()
         evaluation = await _evaluation_with_run(project, "Unknown Tool", metrics=[("score", 0.25, {})])
         runs = await tools_abi.tool_runs(evaluation)
+        # the plugin package is not installed here, so there is no renderer: the default section
         section, renderer = tools_abi.render_run(runs[0], tools_abi.make_ctx())
-        self.assertEqual(renderer, "generic")
-        self.assertIn("measurements", section)
+        self.assertEqual(renderer, tools_abi.GENERIC)
+        self.assertIn('class="measurements"', section)
         self.assertIn("score", section)
+
+    async def test_the_plugin_renderer_draws_the_section(self):
+        project = await _project()
+        evaluation = await _evaluation_with_run(project, "LangBiTe", metrics=[("score", 0.5, {})])
+        runs = await tools_abi.tool_runs(evaluation)
+        with mock.patch.object(tools_abi, "renderer_for", return_value=_StubRenderer()):
+            section, renderer = tools_abi.render_run(runs[0], tools_abi.make_ctx())
+        self.assertEqual(renderer, "_StubRenderer")
+        self.assertIn("tool-x", section)
+        # the tool's own fragment, not the generic measurements table
+        self.assertNotIn('class="measurements"', section)
+
+    async def test_a_renderer_that_raises_degrades_to_the_generic_table(self):
+        class Broken:
+            def render(self, run, ctx):
+                raise RuntimeError("boom")
+
+        project = await _project()
+        evaluation = await _evaluation_with_run(project, "LangBiTe", metrics=[("score", 0.5, {})])
+        runs = await tools_abi.tool_runs(evaluation)
+        with mock.patch.object(tools_abi, "renderer_for", return_value=Broken()):
+            section, renderer = tools_abi.render_run(runs[0], tools_abi.make_ctx())
+        self.assertEqual(renderer, tools_abi.GENERIC)
+        self.assertIn('class="measurements"', section)
+
+    def test_renderer_for_is_none_without_a_plugin_package(self):
+        self.assertIsNone(tools_abi.renderer_for({"name": "No Package"}))
+        self.assertIsNone(tools_abi.renderer_for(None))
 
     async def test_local_runs_are_left_out_of_the_tool_runs(self):
         project = await _project()
@@ -154,7 +164,8 @@ class ToolRunTest(TestCase):
             "generated_at": "2026-11-17T00:00:00+00:00",
         }
         html = await renderer_document.render_html(snapshot)
-        self.assertIn("tool-langbite", html)
+        # the run is drawn (the plugin has no renderer here, so the default table)
+        self.assertIn('class="measurements"', html)
 
 
 # --- renderer fidelity ----------------------------------------------------------

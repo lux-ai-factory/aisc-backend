@@ -1,11 +1,10 @@
 """
-Tests for the reporting backend: snapshot assembly, generation against a
-stubbed headless service, report read + PDF stream, and project scoping.
+Tests for the reporting backend: snapshot assembly, generation with the
+renderer stubbed, report read + PDF stream, and project scoping.
 
-The headless report service is stubbed (`report_service.generate` is patched)
-so these tests run hermetically (no running service, no network). Auth is the
-dev-bypass mode, so `caller_of` returns the development caller (subject
-"development").
+The renderer is stubbed (`report_service.generate` is patched) so these tests run
+hermetically (no WeasyPrint, no network). Auth is the dev-bypass mode, so
+`caller_of` returns the development caller (subject "development").
 """
 import json
 import unittest.mock as mock
@@ -678,7 +677,7 @@ class ReportWorkerTest(TestCase):
         report, snapshot = await self._pending_report(project)
         with mock.patch(
             "aisc_backend.services.report_service.generate",
-            new=mock.AsyncMock(side_effect=report_service.ReportServiceError("down")),
+            new=mock.AsyncMock(side_effect=report_service.ReportRenderError("render failed")),
         ):
             await _render_report(str(report.pid), snapshot, "pdf")
         await report.arefresh_from_db()

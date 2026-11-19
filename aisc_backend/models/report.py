@@ -4,10 +4,9 @@ Reports — a project's generated assessment report and its layouts.
 The backend is the single door for reporting: it owns the `ReportLayout` rows
 (ordered blocks) and the `Report` row (project FK, the card-version ref it
 snapshots, the layout + revision, the period, format and the stored document).
-Rendering happens in this app (`services.report_render`) and produces a real PDF
-or DOCX; the optional external renderer (`services.report_service`) is kept for
-deployments that configure one, but it is no longer the only path and an HTML
-page is never served as a PDF.
+Rendering happens in this app (`services.report_render`, the one engine, ADR 0008)
+and produces a real PDF, Word or HTML document; there is no external renderer and
+an HTML page is never served as a PDF.
 """
 import uuid
 

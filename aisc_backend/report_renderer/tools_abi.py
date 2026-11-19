@@ -1,24 +1,24 @@
-"""The report-plugin ABI (REP-02): the per-tool renderers of the Test results block.
+"""The per-tool section of the Test results block.
 
-The ABI is `aisc_report_plugin_interface`, vendored verbatim from the pilot. A tool renderer
-declares the tool names it answers to and draws one engine run — a read-only `ToolRun`, no
-database session — as an HTML fragment. A tool without a renderer falls back to the generic
-measurements table (also the pilot's `report_renderer/tools/generic.py`).
+Each run of an evaluation is drawn by the eval plugin that produced it: the backend loads the
+plugin object (the same way `services/report_snapshot.py` does to learn what to chart) and asks
+it for a renderer through `BaseEvaluationPlugin.get_report_renderer()`. The renderer gets a
+read-only `ToolRun` — one engine run, no database session — and returns an HTML fragment.
 
-Renderers are found the way the pilot finds them: the `aisc_report.tools` entry points of every
-installed distribution, plus the four the backend bundles under `aisc_report_plugin_*`.
+A plugin that does not implement the method, returns None, or whose renderer raises is **not**
+left out of the report: it falls back to the generic measurements table
+(`render_generic`). That is the default section, so a plugin written before this contract
+existed — or one with nothing custom to draw — still renders and exports something useful.
 """
 from __future__ import annotations
 
 import functools
-import importlib
-import importlib.metadata as metadata
 import logging
 from types import SimpleNamespace
 
-from aisc_report_plugin_interface import BaseToolRenderer, ToolRun
-from aisc_report_plugin_interface.i18n import fill
-from aisc_report_plugin_interface.templating import render_package_template
+from aisc_plugin_interface.report import BaseToolRenderer, ToolRun
+from aisc_plugin_interface.report.i18n import fill
+from aisc_plugin_interface.report.templating import render_package_template
 
 from aisc_backend.models.artifact import Artifact
 from aisc_backend.models.measure import Measurement
@@ -27,58 +27,49 @@ from aisc_backend.models.plugin import EvaluationInput, EvaluationPlugin
 
 logger = logging.getLogger("report_renderer")
 
-ENTRY_POINT_GROUP = "aisc_report.tools"
-
-#: the tool renderers the backend ships (the pilot ships the same four as plugins)
-BUNDLED = (
-    ("aisc_report_plugin_langbite", "LANGBITEToolRenderer"),
-    ("aisc_report_plugin_mlareject", "MLAREJECTToolRenderer"),
-    ("aisc_report_plugin_promptfoo", "PROMPTFOOToolRenderer"),
-    ("aisc_report_plugin_strongreject", "STRONGREJECTToolRenderer"),
-)
-
 #: the measurements table shows this many rows, then "and N more" (the pilot's generic renderer)
 GENERIC_LIMIT = 500
 
+#: the renderer name reported when a run falls back to the generic table
+GENERIC = "generic"
 
-@functools.lru_cache(maxsize=1)
-def registry() -> tuple[BaseToolRenderer, ...]:
-    """Every tool renderer: the installed `aisc_report.tools` entry points, then the bundled ones."""
-    renderers: list[BaseToolRenderer] = []
+
+@functools.lru_cache(maxsize=128)
+def _plugin_renderer(package_name: str, name: str, version: str) -> BaseToolRenderer | None:
+    """The `get_report_renderer()` of the eval plugin, or None when it has none.
+
+    Loading the plugin is the mechanism the report already uses for charts
+    (`_declared_charts`), so a plugin's renderer is reached the same way as its
+    visualizations — no second registry and no backend-bundled per-tool code.
+    Any failure (the plugin is missing, the call raises) degrades to the default section.
+    """
     try:
-        entry_points = metadata.entry_points(group=ENTRY_POINT_GROUP)
-    except Exception:                                                # noqa: BLE001 (any metadata failure)
-        entry_points = ()
-    for entry_point in entry_points:
-        try:
-            renderers.append(entry_point.load()())
-        except Exception:                                            # noqa: BLE001 (a broken third-party plugin)
-            logger.warning("report tool entry point %r could not be loaded", entry_point.name, exc_info=True)
-    for module_name, class_name in BUNDLED:
-        module = importlib.import_module(module_name)
-        renderers.append(getattr(module, class_name)())
-    return tuple(renderers)
+        from aisc_backend.routers.plugin import plugin_loader
+
+        obj = plugin_loader.load_plugin(package_name, name, version)
+    except Exception:                                                # noqa: BLE001 (a plugin the backend cannot load)
+        logger.warning("report renderer: could not load plugin %s/%s@%s", name, package_name, version,
+                       exc_info=True)
+        return None
+    getter = getattr(obj, "get_report_renderer", None)
+    if not callable(getter):
+        return None
+    try:
+        return getter()
+    except Exception:                                                # noqa: BLE001 (a broken plugin renderer)
+        logger.warning("report renderer: %s/%s@%s raised in get_report_renderer", name, package_name,
+                       version, exc_info=True)
+        return None
 
 
-def renderer_for(plugin_row) -> BaseToolRenderer | None:
-    """The renderer that answers to this engine plugin row, or None (the generic table then)."""
-    for renderer in registry():
-        if renderer.matches(plugin_row):
-            return renderer
-    return None
-
-
-def inventory() -> list[dict]:
-    """What the ABI offers: each renderer, its contract version and the tool names it answers to."""
-    return [
-        {
-            "renderer": type(renderer).__name__,
-            "module": type(renderer).__module__,
-            "contract_version": renderer.contract_version,
-            "tool_names": list(renderer.tool_names),
-        }
-        for renderer in registry()
-    ]
+def renderer_for(tool) -> BaseToolRenderer | None:
+    """The eval plugin's report renderer for this run's tool, or None (the generic table then)."""
+    if not tool:
+        return None
+    package_name = tool.get("package_name")
+    if not package_name:
+        return None
+    return _plugin_renderer(str(package_name), str(tool.get("name") or ""), str(tool.get("version") or ""))
 
 
 def make_ctx(language: str = "en", tool_options: dict | None = None) -> SimpleNamespace:
@@ -95,15 +86,30 @@ def make_ctx(language: str = "en", tool_options: dict | None = None) -> SimpleNa
 
 
 def render_run(run: ToolRun, ctx=None) -> tuple[str, str]:
-    """The run's section as (html, renderer name): the tool's renderer, else the generic table."""
+    """The run's section as (html, renderer name): the plugin's renderer, else the generic table.
+
+    A renderer that raises degrades to the generic table, as in the pilot — one broken plugin
+    never costs the report its whole Test results block.
+    """
+    ctx = ctx or make_ctx()
     renderer = renderer_for(run.tool)
     if renderer is None:
-        return render_generic(run, ctx), "generic"
-    return renderer.render(run, ctx or make_ctx()), type(renderer).__name__
+        return render_generic(run, ctx), GENERIC
+    try:
+        return renderer.render(run, ctx), type(renderer).__name__
+    except Exception:                                                # noqa: BLE001 (a broken plugin renderer)
+        logger.warning("report renderer %s raised, the generic table is used instead", type(renderer).__name__,
+                       exc_info=True)
+        return render_generic(run, ctx), GENERIC
 
 
 def render_generic(run: ToolRun, ctx=None) -> str:
-    """The measurements table for a tool with no renderer (the pilot's generic.py)."""
+    """The default section for a run whose plugin draws none: its measurements table.
+
+    This is what a plugin without a report renderer gets, so a report never shows an empty
+    section for a tool that ran.
+    """
+    ctx = ctx or make_ctx()
     measurements = list(run.measurements)
     rows = [
         {
@@ -119,6 +125,7 @@ def render_generic(run: ToolRun, ctx=None) -> str:
         "templates/generic.html.j2",
         rows=rows,
         more=more,
+        has_measurements=bool(measurements),
         t=getattr(ctx, "t", None) or (lambda message, **params: fill(message, params)),
     )
 

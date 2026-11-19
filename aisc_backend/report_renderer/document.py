@@ -14,9 +14,10 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
-from aisc_report_plugin_interface.charts import svg as chart_svg
-from aisc_report_plugin_interface.i18n import fill
-from aisc_report_plugin_interface.templating import render_package_template
+from aisc_plugin_interface.report.charts import svg as chart_svg
+from aisc_plugin_interface.report.i18n import fill
+from aisc_plugin_interface.report.templating import render_package_template
+from asgiref.sync import sync_to_async
 from markupsafe import Markup
 
 from aisc_backend.models.evaluation import Evaluation
@@ -265,7 +266,11 @@ async def _test_results(snapshot: dict, language: str, t) -> str:
         runs = []
         if evaluation is not None:
             for run in await tools_abi.tool_runs(evaluation):
-                section, _name = tools_abi.render_run(run, tools_abi.make_ctx(language))
+                # the plugin renderer may load plugin code (a blocking import, like
+                # _declared_charts): keep it off the event loop
+                section, _name = await sync_to_async(tools_abi.render_run)(
+                    run, tools_abi.make_ctx(language)
+                )
                 # the renderer returns HTML: print it, do not escape it again
                 section = Markup(section)
                 components = ", ".join(c["name"] for c in run.components)
