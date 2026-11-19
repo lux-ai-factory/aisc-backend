@@ -30,29 +30,18 @@ async def _project():
 
 async def _risk(project, name, impact=None, likelihood=None):
     """Seed one register risk straight into the DB (risks come from the AI card;
-    there is no manual "add risk" endpoint any more). Also records its initial
-    v1 revision, exactly as the from-card import does."""
+    there is no manual "add risk" endpoint any more). No revision is recorded
+    yet — a version only exists for an actual assessment, so the first rating
+    is v1."""
     last = await Risk.objects.filter(project=project).order_by("-position").afirst()
     position = (last.position + 1) if last is not None else 1
-    risk = await Risk.objects.acreate(
+    return await Risk.objects.acreate(
         project=project,
         position=position,
         name=name,
         impact=impact,
         likelihood=likelihood,
     )
-    await RiskVersion.objects.acreate(
-        risk=risk,
-        number=1,
-        name=name,
-        description="",
-        impact=impact,
-        likelihood=likelihood,
-        comment="",
-        airo_text="",
-        created_by="development",
-    )
-    return risk
 
 
 async def _seed_objectives():
@@ -339,20 +328,20 @@ class ControlObjectivesRouterTest(TestCase):
         project = await _project()
         risk = await _risk(project, "Poisoned training data")
 
-        # a seeded risk records v1 (its initial, unrated state)
+        # an import-only risk has no revision yet: a version only exists for an
+        # assessment, so the first one is v1 (rated), never an unrated v1 + v2
         versions = (await co_client.get(
             f"/{project.pid}/control-objectives/risks/{risk.pid}/versions")).json()
-        self.assertEqual([v["number"] for v in versions], [1])
-        self.assertEqual(versions[0]["rating"], 0)
+        self.assertEqual(versions, [])
 
-        # rating creates v2 with the new assessment
+        # the first rating creates v1
         (await co_client.patch(
             f"/{project.pid}/control-objectives/risks/{risk.pid}/rating",
             json={"impact": 3, "likelihood": 4},
         )).json()
         versions = (await co_client.get(
             f"/{project.pid}/control-objectives/risks/{risk.pid}/versions")).json()
-        self.assertEqual([v["number"] for v in versions], [1, 2])
+        self.assertEqual([v["number"] for v in versions], [1])
         self.assertEqual(versions[-1]["rating"], 12)
         self.assertEqual(versions[-1]["name"], "Poisoned training data")
 
@@ -363,15 +352,15 @@ class ControlObjectivesRouterTest(TestCase):
         )).json()
         versions = (await co_client.get(
             f"/{project.pid}/control-objectives/risks/{risk.pid}/versions")).json()
-        self.assertEqual([v["number"] for v in versions], [1, 2])
+        self.assertEqual([v["number"] for v in versions], [1])
 
-        # reading an old number returns the assessment as it was
+        # reading the old number returns the assessment as it was
         v1 = (await co_client.get(
             f"/{project.pid}/control-objectives/risks/{risk.pid}/versions/1")).json()
-        self.assertEqual(v1["rating"], 0)
+        self.assertEqual(v1["rating"], 12)
         self.assertEqual(v1["risk_pid"], str(risk.pid))
         missing = await co_client.get(
-            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions/99")
+            f"/{project.pid}/control-objectives/risks/{risk.pid}/versions/2")
         self.assertEqual(missing.status_code, 404)
 
 

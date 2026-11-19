@@ -9,7 +9,7 @@ projectPid.
 import uuid
 
 from asgiref.sync import sync_to_async
-from django.db.models import Q
+from django.db.models import Max, Q
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -95,6 +95,8 @@ def _risk_out(r: Risk) -> RiskOut:
         likelihood=r.likelihood,
         rating=r.rating,
         comment=r.comment,
+        # the risk's current revision number (0 until first rated)
+        version=getattr(r, "version", None) or 0,
     )
 
 
@@ -263,7 +265,9 @@ async def list_risks(request, pid: uuid.UUID):
     project = await _project_for(request, pid)
     return [
         _risk_out(r)
-        async for r in Risk.objects.filter(project=project).order_by("position")
+        async for r in Risk.objects.filter(project=project)
+        .order_by("position")
+        .annotate(version=Max("versions__number"))
     ]
 
 
@@ -296,7 +300,6 @@ async def import_card_risks(request, pid: uuid.UUID):
         if await Risk.objects.filter(project=project).aexists()
         else 1
     )
-    subject = caller_of(request).subject
     created: list[Risk] = []
     updated: list[Risk] = []
     for item in raw_risks:
@@ -315,13 +318,11 @@ async def import_card_risks(request, pid: uuid.UUID):
             if row.airo_text != chain:
                 row.airo_text = chain
                 await row.asave()
-                await _create_risk_version(row, subject)
             updated.append(row)
             continue
         row = await Risk.objects.acreate(
             project=project, position=position, name=name, airo_text=chain,
         )
-        await _create_risk_version(row, subject)
         position += 1
         created.append(row)
     await sync_to_async(log_action)(
@@ -358,6 +359,8 @@ async def rate_risk(request, pid: uuid.UUID, risk_pid: uuid.UUID, data: RiskRati
     now = (risk.impact, risk.likelihood, risk.comment, risk.airo_text)
     if prev != now:
         await _create_risk_version(risk, caller_of(request).subject)
+        # the response must carry the new revision number (queryset is unannotated)
+        setattr(risk, "version", (getattr(risk, "version", None) or 0) + 1)
     return _risk_out(risk)
 
 

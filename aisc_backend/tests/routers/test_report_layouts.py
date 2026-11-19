@@ -6,6 +6,8 @@ These run hermetically: `REPORT_SERVICE_URL` is unset, so generation goes
 through the in-process renderer and the stored document is a real PDF or DOCX.
 Auth is the dev-bypass mode (caller subject "development").
 """
+from unittest import mock
+
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
@@ -16,7 +18,7 @@ from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.models.qualification import System
 from aisc_backend.models.report import Report, ReportLayout
 from aisc_backend.repositories.system_repository import SystemRepository
-from aisc_backend.routers.report import router as report_router
+from aisc_backend.routers.report import _render_report, router as report_router
 from aisc_backend.report_renderer import document as renderer_document
 from aisc_backend.services import report_blocks, report_render
 
@@ -40,6 +42,20 @@ async def _versioned_project(name="versioned"):
 
 def _blocks(*type_ids):
     return [report_blocks.new_block(t) for t in type_ids]
+
+
+async def _generate(project_pid, payload):
+    """POST a report with the background worker suppressed, then run the render
+    inline so the test observes a finished document. Production renders in a
+    thread (``_launch_worker``); tests drive it deterministically instead."""
+    with mock.patch("aisc_backend.routers.report._launch_worker", new=mock.Mock()) as launch:
+        resp = await report_client.post(
+            f"/{project_pid}/reports/generate", json=payload
+        )
+        if resp.status_code == 200:
+            _, snapshot, fmt = launch.call_args.args
+            await _render_report(str(resp.json()["pid"]), snapshot, fmt)
+    return resp
 
 
 # --- blocks + built-in layouts --------------------------------------------------
@@ -258,15 +274,16 @@ class ReportGenerationTest(TestCase):
     async def test_generate_pdf_is_a_real_pdf(self):
         project = await _project()
         body = (
-            await report_client.post(
-                f"/{project.pid}/reports/generate",
-                json={"period": "2026-Q3", "format": "pdf", "layout_id": "builtin-summary"},
+            await _generate(
+                project.pid,
+                {"period": "2026-Q3", "format": "pdf", "layout_id": "builtin-summary"},
             )
         ).json()
         report = await Report.objects.aget(pid=body["pid"])
         self.assertTrue(bytes(report.document).startswith(b"%PDF-"))
         self.assertEqual(report.snapshot_checksum, body["snapshot_checksum"])
-        self.assertEqual(report.document_checksum, body["document_checksum"])
+        # the document checksum is set by the worker, after the pending response
+        self.assertTrue(report.document_checksum)
         self.assertEqual(body["layout_id"], "builtin-summary")
 
         resp = await report_client.get(f"/{project.pid}/reports/{body['pid']}/pdf")
@@ -277,9 +294,9 @@ class ReportGenerationTest(TestCase):
     async def test_generate_docx_and_pdf_companion(self):
         project = await _project()
         body = (
-            await report_client.post(
-                f"/{project.pid}/reports/generate",
-                json={"period": "", "format": "docx", "layout_id": "builtin-assessment-report"},
+            await _generate(
+                project.pid,
+                {"period": "", "format": "docx", "layout_id": "builtin-assessment-report"},
             )
         ).json()
         report = await Report.objects.aget(pid=body["pid"])
@@ -295,9 +312,9 @@ class ReportGenerationTest(TestCase):
     async def test_selects_the_named_version(self):
         project, v1, v2 = await _versioned_project()
         body = (
-            await report_client.post(
-                f"/{project.pid}/reports/generate",
-                json={"format": "pdf", "version_pid": str(v1.pid), "layout_id": "builtin-summary"},
+            await _generate(
+                project.pid,
+                {"format": "pdf", "version_pid": str(v1.pid), "layout_id": "builtin-summary"},
             )
         ).json()
         self.assertEqual(body["system_version"]["number"], 1)
@@ -308,9 +325,9 @@ class ReportGenerationTest(TestCase):
     async def test_snapshot_is_frozen_when_the_project_changes(self):
         project, v1, _ = await _versioned_project()
         created = (
-            await report_client.post(
-                f"/{project.pid}/reports/generate",
-                json={"format": "pdf", "layout_id": "builtin-assessment-report"},
+            await _generate(
+                project.pid,
+                {"format": "pdf", "layout_id": "builtin-assessment-report"},
             )
         ).json()
         report = await Report.objects.aget(pid=created["pid"])
@@ -356,9 +373,9 @@ class ReportGenerationTest(TestCase):
             )
         ).json()
         body = (
-            await report_client.post(
-                f"/{project.pid}/reports/generate",
-                json={"format": "pdf", "layout_id": layout["id"]},
+            await _generate(
+                project.pid,
+                {"format": "pdf", "layout_id": layout["id"]},
             )
         ).json()
         self.assertEqual(body["layout_id"], layout["id"])

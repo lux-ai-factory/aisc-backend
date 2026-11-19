@@ -11,16 +11,13 @@ stub it (contract-first) without a running service. When the service is not
 configured, the client falls back to a deterministic summary card so the
 backend works end-to-end in dev and in tests.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 
-try:
-    import httpx
-except ImportError:  # pragma: no cover - httpx is optional at import time
-    httpx = None
-
+import httpx
 from config.settings import QUALIFICATION_SERVICE_URL, SERVICE_TOKEN_FOR_APPS
 
 logger = logging.getLogger(__name__)
@@ -76,8 +73,6 @@ async def build_card(
     """
     if not QUALIFICATION_SERVICE_URL:
         return _summary_card(answers)
-    if httpx is None:
-        raise QualificationServiceError("httpx is not installed")
     payload = {
         "project_pid": str(project_pid),
         "questionnaire_id": questionnaire_id,
@@ -86,71 +81,60 @@ async def build_card(
         "system": system or {},
     }
     try:
-        resp = await httpx.AsyncClient(timeout=120).post(
-            f"{QUALIFICATION_SERVICE_URL}/api/build",
-            json=payload,
-            headers=_service_headers(),
-        )
-    except Exception as exc:  # noqa: BLE001 - the caller decides how to degrade
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{QUALIFICATION_SERVICE_URL.rstrip('/')}/api/build",
+                json=payload,
+                headers=_service_headers(),
+            )
+    except httpx.HTTPError as exc:
         logger.warning("qualification service unreachable: %s", exc)
-        return _summary_card(answers)
+        raise QualificationServiceError("qualification service unavailable") from exc
     if resp.status_code != 200:
-        raise QualificationServiceError(
-            f"qualification service answered {resp.status_code}"
-        )
-    return resp.json()
+        raise QualificationServiceError(f"qualification service answered {resp.status_code}")
+    return _response_json(resp)
 
 
 async def get_default_questionnaire() -> dict:
     """Fetch the builtin default questionnaire definition from the service.
 
-    Returns {} when no service is configured or reachable (the webapp then
-    shows no default); raises when a configured service refuses to answer.
+    Returns {} when unconfigured; raises when a configured service fails.
     """
     if not QUALIFICATION_SERVICE_URL:
         return {}
-    if httpx is None:
-        raise QualificationServiceError("httpx is not installed")
     try:
-        resp = await httpx.AsyncClient(timeout=30).get(
-            f"{QUALIFICATION_SERVICE_URL}/api/default-questionnaire",
-            headers=_service_headers(),
-        )
-    except Exception as exc:  # noqa: BLE001 - the caller decides how to degrade
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{QUALIFICATION_SERVICE_URL.rstrip('/')}/api/default-questionnaire",
+                headers=_service_headers(),
+            )
+    except httpx.HTTPError as exc:
         logger.warning("qualification service unreachable: %s", exc)
-        return {}
+        raise QualificationServiceError("qualification service unavailable") from exc
     if resp.status_code != 200:
-        raise QualificationServiceError(
-            f"qualification service answered {resp.status_code}"
-        )
-    data = resp.json()
-    return data if isinstance(data, dict) else {}
+        raise QualificationServiceError(f"qualification service answered {resp.status_code}")
+    return _response_json(resp)
 
 
 async def get_vocabularies() -> dict:
     """The VAIR term lists for the qualification form, per AIRO class.
 
-    {} when no service is configured or reachable (the form degrades to free
-    text); raises when a configured service refuses to answer.
+    {} when unconfigured; raises when a configured service fails.
     """
     if not QUALIFICATION_SERVICE_URL:
         return {}
-    if httpx is None:
-        raise QualificationServiceError("httpx is not installed")
     try:
-        resp = await httpx.AsyncClient(timeout=30).get(
-            f"{QUALIFICATION_SERVICE_URL}/api/vocabularies",
-            headers=_service_headers(),
-        )
-    except Exception as exc:  # noqa: BLE001 - the caller decides how to degrade
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{QUALIFICATION_SERVICE_URL.rstrip('/')}/api/vocabularies",
+                headers=_service_headers(),
+            )
+    except httpx.HTTPError as exc:
         logger.warning("qualification service unreachable: %s", exc)
-        return {}
+        raise QualificationServiceError("qualification service unavailable") from exc
     if resp.status_code != 200:
-        raise QualificationServiceError(
-            f"qualification service answered {resp.status_code}"
-        )
-    data = resp.json()
-    return data if isinstance(data, dict) else {}
+        raise QualificationServiceError(f"qualification service answered {resp.status_code}")
+    return _response_json(resp)
 
 
 def card_jsonld(card: dict | None) -> str | None:
@@ -165,3 +149,13 @@ def card_jsonld(card: dict | None) -> str | None:
         return json.dumps(card.get("graph") or card)
     except TypeError:
         return None
+
+
+def _response_json(response: httpx.Response) -> dict:
+    try:
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Expected an object")
+        return data
+    except ValueError as exc:
+        raise QualificationServiceError("qualification service returned invalid JSON") from exc

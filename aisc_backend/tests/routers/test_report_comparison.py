@@ -48,7 +48,8 @@ async def _two_versions(project):
 async def _objective(objective_id):
     objective, _ = await ControlObjective.objects.aupdate_or_create(
         objective_id=objective_id,
-        defaults={"macro_requirement": "REQ", "text": f"Objective {objective_id}",
+        defaults={"macro_requirement": "REQ1 Human Agency and Oversight",
+                  "text": f"Objective {objective_id}",
                   "assessment_mode": "Control"},
     )
     return objective

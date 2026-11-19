@@ -365,7 +365,7 @@ class ServiceDefaultQuestionnaireTest(TestCase):
             resp = await questionnaire_client.get("/default")
         self.assertEqual(resp.status_code, 404)
 
-    async def test_default_endpoint_is_404_when_the_service_refuses(self):
+    async def test_default_endpoint_is_502_when_the_service_refuses(self):
         from aisc_backend.services.qualification_service import QualificationServiceError
 
         with mock.patch(
@@ -373,7 +373,7 @@ class ServiceDefaultQuestionnaireTest(TestCase):
             new=mock.AsyncMock(side_effect=QualificationServiceError("refused")),
         ):
             resp = await questionnaire_client.get("/default")
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 502)
 
     async def test_complete_without_questionnaire_uses_service_default(self):
         project = await _project()

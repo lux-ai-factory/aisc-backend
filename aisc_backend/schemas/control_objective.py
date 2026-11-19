@@ -42,6 +42,8 @@ class RiskOut(Schema):
     likelihood: int | None = None
     rating: int = 0
     comment: str = ""
+    # the risk's current revision number (0 until first rated)
+    version: int = 0
 
 
 class RiskRatingIn(Schema):

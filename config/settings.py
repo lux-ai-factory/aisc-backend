@@ -258,8 +258,10 @@ PROJECT_BOOTSTRAP_OWNERS = env("PROJECT_BOOTSTRAP_OWNERS", default="")
 # means the backend falls back to a deterministic summary card (dev/tests).
 QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
 # --- Headless report service (read by services.report_service) ---
-# The isolated report renderer: snapshot in, PDF/HTML out. Empty means the
-# backend falls back to a deterministic HTML summary (dev/tests).
+# The report microservice (apps/report): the backend assembles a JSON snapshot
+# and this service draws it (PDF/HTML). Empty means the backend renders locally
+# (a real PDF/Word document via services.report_render); a configured-but-down
+# service is an error, not a silent fallback.
 REPORT_SERVICE_URL = env("REPORT_SERVICE_URL", default="")
 # --- Controls catalogue (read by services.controls_catalogue) ---
 # The hosted checklist catalogue (AI Factory Sandbox Configurator API v1.1).
@@ -344,3 +346,5 @@ PACKAGE_REGISTRY_URL = env('PACKAGE_REGISTRY_URL', '')
 PACKAGE_REGISTRY_USER = empty_str_to_none(env('PACKAGE_REGISTRY_USER', None))
 PACKAGE_REGISTRY_PASSWORD = empty_str_to_none(env('PACKAGE_REGISTRY_PASSWORD', None))
 PACKAGE_REGISTRY_INDEX = env('PACKAGE_REGISTRY_INDEX', '')
+# Internal Flower API, accessed only by the admin monitoring endpoints.
+FLOWER_SERVICE_URL = env("FLOWER_SERVICE_URL", default="http://aisc-eval-flower:5555/flower")

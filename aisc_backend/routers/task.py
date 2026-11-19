@@ -6,6 +6,8 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
+from aisc_backend.auth.keycloak import require_role
+from aisc_backend.services.monitoring import fetch_tasks
 from aisc_backend.models import Evaluation
 from aisc_backend.models.evaluation import EvaluationStatus
 from aisc_backend.services import celery_service
@@ -14,6 +16,16 @@ router = Router(tags=["task"])
 
 STOP_MESSAGE = "Stopped by user"
 RUNNING_PLUGIN_STATUSES = ["Pending", "Running"]
+
+
+@router.get("/monitoring", response=dict, auth=require_role("admin"))
+async def monitoring_tasks(request):
+    return await fetch_tasks("tasks")
+
+
+@router.get("/monitoring/{task_id}", response=dict, auth=require_role("admin"))
+async def monitoring_task(request, task_id: uuid.UUID):
+    return await fetch_tasks(f"task/info/{task_id}")
 
 
 @router.get("{pid}/status", response=dict)

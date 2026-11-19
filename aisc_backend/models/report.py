@@ -87,6 +87,9 @@ class Report(models.Model):
     layout_revision = models.PositiveIntegerField(null=True, blank=True)
     period = models.CharField(max_length=255, blank=True, default="")
     format = models.CharField(max_length=16, default="pdf")     # pdf | docx | html
+    # The report's own version within the project (1, 2, 3, …): the cover's
+    # "Version" is the report's, not the AI card's.
+    version = models.PositiveIntegerField(default=1)
     # Where the rendered file lives (a storage reference; the backend holds the
     # bytes of `document` and `file_ref` names the key for a future object store).
     file_ref = models.CharField(max_length=255, blank=True, default="")
@@ -126,6 +129,20 @@ class ProjectReportSettings(models.Model):
     )
     default_format = models.CharField(max_length=16, default="pdf")  # pdf | docx | html
     default_sections = models.JSONField(default=list)  # subset of REPORT_SECTIONS, [] = all
+    # the report's customisation: what the cover says and the document's colours
+    report_title = models.CharField(max_length=200, blank=True, default="")
+    subtitle = models.CharField(max_length=300, blank=True, default="")
+    primary_color = models.CharField(max_length=7, default="#000fdf")
+    accent_color = models.CharField(max_length=7, default="#ff007e")
+    # the full look contract (the renderer's `style`): the typeface, the
+    # page-margin texts, the confidentiality marking, the document id and a logo
+    font = models.CharField(max_length=32, default="inter")
+    font_size_pt = models.FloatField(default=11)
+    header_text = models.CharField(max_length=120, blank=True, default="")
+    footer_text = models.CharField(max_length=120, blank=True, default="")
+    marking = models.CharField(max_length=32, default="none")
+    show_document_id = models.BooleanField(default=False)
+    logo = models.JSONField(null=True, blank=True, default=None)  # {mime, data_base64}
     updated_by = models.CharField(max_length=255, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
