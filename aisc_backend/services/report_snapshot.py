@@ -5,17 +5,27 @@ A report's snapshot is the point-in-time picture the report documents, so it
 can be generated (PDF/HTML) by the headless service and re-read even after the
 project changes:
   - the latest card-version ref (and the AI card it produced, for the report's
-    card section);
+    card section, with the card's knowledge graph as plain nodes/edges);
   - controls coverage (installed checklists + their latest submission's
     coverage/readiness);
-  - control-objectives priorities (the same computed matrix the webapp reads).
+  - control-objectives priorities (the same computed matrix the webapp reads,
+    limited to the objectives the project's profile selected);
+  - each evaluation's key results, plus the charts its plugins declare
+    (`get_metric_visualizations`) with the run's measurements, which the
+    renderer draws as inline SVG.
 
 Everything is read on demand; nothing is cached or stored here (the `Report`
 row snapshots the result).
 """
 from __future__ import annotations
 
+import json
+import logging
+import re
 from datetime import datetime, timezone
+
+from asgiref.sync import sync_to_async
+from django.db.models import Q
 
 from aisc_backend.models.control import (
     ControlQuestion,
@@ -40,6 +50,8 @@ from aisc_backend.services import controls_scoring
 from aisc_backend.services import qualification_service
 
 system_repository = SystemRepository()
+
+logger = logging.getLogger(__name__)
 
 #: The report sections a generate call (or the project's settings) can pick.
 #: The snapshot always assembles every section's data; `sections` records
@@ -96,8 +108,9 @@ def _version_ref(version: SystemVersion | None) -> dict | None:
 
 async def _latest_card(project: Project) -> dict | None:
     """The AI card of the latest saved qualification, if any. Also carries the
-    JSON-LD graph (what the webapp's card graph is drawn from), so the report
-    can render the AI-card graph, not just its summary."""
+    JSON-LD graph (what the webapp's card graph is drawn from) plus the same
+    graph as plain nodes/edges (`graph`), which the report draws without having
+    to interpret JSON-LD itself."""
     q = (
         await Qualification.objects.filter(project=project)
         .order_by("-created_at")
@@ -107,18 +120,113 @@ async def _latest_card(project: Project) -> dict | None:
         return None
     card = dict(q.system_card)
     card["jsonld"] = qualification_service.card_jsonld(q.system_card)
+    card["graph"] = _card_graph(card["jsonld"])
     return card
 
 
-async def _measurement_rows(evaluation: Evaluation) -> list[dict]:
-    """The latest observation's raw measurements (metric, score, dimensions)."""
-    obs = (
-        await Observation.objects.filter(evaluation=evaluation)
-        .order_by("-created_at")
-        .afirst()
-    )
-    if obs is None:
-        return []
+_IRI_TAIL = re.compile(r"[#/:]([^#/:]+)$")
+_QUAL_NS = "https://lux-ai-factory.github.io/qualification/ns#"
+_LABEL_KEYS = (
+    "http://www.w3.org/2000/01/rdf-schema#label",
+    "rdfs:label",
+    "label",
+)
+
+
+def _local_name(iri: str) -> str:
+    match = _IRI_TAIL.search(iri)
+    return match.group(1) if match else iri
+
+
+def _literal(node: dict, *keys: str) -> str | None:
+    """The node's first non-empty string value for the keys (a `@value` is
+    unwrapped), like the webapp's firstLiteral."""
+    for key in keys:
+        value = node.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item:
+                    return item
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get("@value"), str)
+                    and item["@value"]
+                ):
+                    return item["@value"]
+    return None
+
+
+def _card_node_label(node: dict) -> str:
+    label = _literal(node, *_LABEL_KEYS)
+    if label:
+        return label
+    question_id = _literal(node, f"{_QUAL_NS}questionId", "qual:questionId")
+    text = _literal(node, f"{_QUAL_NS}text", "qual:text")
+    if question_id and text:
+        return f"answer {question_id}: {' '.join(text.split())}"
+    if question_id:
+        return f"answer {question_id}"
+    if text:
+        return " ".join(text.split())
+    node_id = str(node.get("@id") or "node")
+    if node_id.startswith("_:"):
+        return _literal(node, f"{_QUAL_NS}citation", "qual:citation") or "answer"
+    return _local_name(node_id)
+
+
+def _card_node_type(node: dict) -> str:
+    kind = node.get("@type")
+    if isinstance(kind, list):
+        return ",".join(_local_name(str(item)) for item in kind if item)
+    return _local_name(str(kind)) if kind else ""
+
+
+def _card_graph(jsonld: str | None) -> dict:
+    """The card's JSON-LD as plain {nodes, edges} for the report (the same
+    entities the webapp's card graph shows: nodes carry a label + type, edges
+    the object references)."""
+    if not isinstance(jsonld, str):
+        return {"nodes": [], "edges": []}
+    try:
+        parsed = json.loads(jsonld)
+    except ValueError:
+        return {"nodes": [], "edges": []}
+    if isinstance(parsed, list):
+        entries = [n for n in parsed if isinstance(n, dict)]
+    elif isinstance(parsed, dict) and isinstance(parsed.get("@graph"), list):
+        entries = [n for n in parsed["@graph"] if isinstance(n, dict)]
+    elif isinstance(parsed, dict) and isinstance(parsed.get("@id"), str):
+        entries = [parsed]
+    else:
+        entries = []
+
+    ids = {str(n.get("@id")) for n in entries}
+    nodes = [
+        {"id": str(n.get("@id") or ""), "label": _card_node_label(n), "type": _card_node_type(n)}
+        for n in entries
+    ]
+    edges = []
+    for node in entries:
+        source = str(node.get("@id") or "")
+        for key, value in node.items():
+            if key.startswith("@"):
+                continue
+            targets = value if isinstance(value, list) else [value]
+            for target in targets:
+                if (
+                    isinstance(target, dict)
+                    and isinstance(target.get("@id"), str)
+                    and target["@id"] in ids
+                    and target["@id"] != source
+                ):
+                    edges.append({"source": source, "target": target["@id"]})
+    return {"nodes": nodes, "edges": edges}
+
+
+async def _observation_rows(obs: Observation) -> list[dict]:
+    """An observation's raw measurements (metric, score, dimensions)."""
     return [
         {
             "metric": m.metric.name,
@@ -129,6 +237,69 @@ async def _measurement_rows(evaluation: Evaluation) -> list[dict]:
         .select_related("metric")
         .order_by("metric__name", "time")
     ]
+
+
+async def _measurement_rows(evaluation: Evaluation) -> list[dict]:
+    """The latest observation's raw measurements."""
+    obs = (
+        await Observation.objects.filter(evaluation=evaluation)
+        .order_by("-created_at")
+        .afirst()
+    )
+    if obs is None:
+        return []
+    return await _observation_rows(obs)
+
+
+def _declared_charts(evaluation_plugin) -> list[dict]:
+    """The charts the run's plugin declares (its contract tells what to draw)."""
+    from aisc_backend.routers.plugin import plugin_loader
+
+    config = evaluation_plugin.plugin_config
+    plugin = config.plugin
+    obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    return [
+        chart.model_dump(mode="json")
+        for chart in obj.get_metric_visualizations(config.config or {})
+    ]
+
+
+async def _visualizations(evaluation: Evaluation) -> list[dict]:
+    """Per plugin of the evaluation: what it declares to chart, and the
+    measurements of its latest observation (the charts' source rows)."""
+    visualizations = []
+    plugins = [
+        ep
+        async for ep in evaluation.evaluation_plugins.select_related(
+            "plugin_config__plugin"
+        )
+    ]
+    for evaluation_plugin in plugins:
+        config = evaluation_plugin.plugin_config
+        if config is None or config.plugin is None:
+            continue
+        plugin = config.plugin
+        try:
+            charts = await sync_to_async(_declared_charts)(evaluation_plugin)
+        except Exception:  # a plugin that will not load must not fail the report
+            logger.warning("report: could not read %s's declared charts", plugin,
+                           exc_info=True)
+            continue
+        if not charts:
+            continue
+        obs = (
+            await Observation.objects.filter(evaluation=evaluation, tool=str(plugin))
+            .order_by("-created_at")
+            .afirst()
+        )
+        visualizations.append(
+            {
+                "plugin": str(plugin),
+                "charts": charts,
+                "measurements": [] if obs is None else await _observation_rows(obs),
+            }
+        )
+    return visualizations
 
 
 #: how many dimension groupings / groups per grouping a report shows
@@ -206,6 +377,7 @@ async def _evaluations(project: Project, evaluation_pids: list[str]) -> list[dic
                 "task": str(e.task) if e.task is not None else None,
                 "created_at": e.created_at.isoformat(),
                 "key_results": _evaluation_stats(await _measurement_rows(e)),
+                "visualizations": await _visualizations(e),
             }
         )
     return result
@@ -283,19 +455,22 @@ async def _controls(project: Project) -> list[dict]:
 
 
 async def _objectives(project: Project) -> dict:
-    """The computed matrix: priorities (ranked, with key flags) + key objectives.
-
-    Mirrors the matrix the webapp reads (control-objectives router), using the
-    same `prioritise` service so a report's objectives match the project's.
-    """
+    """The computed matrix for the project's **selected** objectives: each one
+    keeps the score/rank it has in the full matrix (the webapp reads the same
+    values), but only the objectives picked in the project's objective profile
+    are reported. Sorted catalogue order, like the matrix."""
     risks = [r async for r in Risk.objects.filter(project=project).order_by("position")]
     mappings = [
         m
         async for m in RiskObjectiveMapping.objects.filter(project=project)
         .select_related("risk", "objective")
     ]
-    objectives = [
-        o async for o in ControlObjective.objects.all().order_by("objective_id")
+    # global catalogue rows plus this project's own; never another project's
+    visible = [
+        o
+        async for o in ControlObjective.objects.filter(
+            Q(project__isnull=True) | Q(project=project)
+        ).order_by("objective_id")
     ]
 
     by_risk = {str(risk.pid): risk for risk in risks}
@@ -310,20 +485,23 @@ async def _objectives(project: Project) -> dict:
             "non_binding": o.notes.strip().upper().startswith("VOLUNTARY"),
             "sort_key": o.objective_id,
         }
-        for o in objectives
+        for o in visible
     ]
     def rating(risk_id: str) -> int:
         risk = by_risk.get(risk_id)
         return risk.rating if risk is not None else 0
 
     keys = {}
+    selected: set[str] = set()
     profile = await ObjectiveProfile.objects.filter(project=project).afirst()
     if profile is not None:
         keys = {kid: True for kid in profile.key_objectives}
+        selected = set(profile.objectives or [])
 
     ordered = priorities.prioritise(
         objectives=prepared, mappings=objective_map, rating_of=rating, keys=keys,
     )
+    shown = [p for p in ordered if p.objective_id in selected]
     return {
         "priorities": [
             {
@@ -339,9 +517,9 @@ async def _objectives(project: Project) -> dict:
                     (o["text"] for o in prepared if o["id"] == p.objective_id), ""
                 ),
             }
-            for p in ordered
+            for p in shown
         ],
-        "key_objectives": [p.objective_id for p in ordered if p.key],
+        "key_objectives": [p.objective_id for p in shown if p.key],
         "risks": [
             {
                 "pid": str(r.pid),
