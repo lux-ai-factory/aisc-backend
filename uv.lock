@@ -112,7 +112,7 @@ dependencies = [
     { name = "packaging" },
 ]
 wheels = [
-    { filename = "aisc_plugin_manager-0.3.0+aisc.1-py3-none-any.whl", hash = "sha256:0a13f438a4d139b3cc1997b1bd430d070b0c629449bcf7c99b11c1c6bb346a29" },
+    { filename = "aisc_plugin_manager-0.3.0+aisc.1-py3-none-any.whl", hash = "sha256:c877888eb4314386bf36b5294dca2160983542675b88dfda3231c21b1cb3dd54" },
 ]
 
 [package.metadata]
