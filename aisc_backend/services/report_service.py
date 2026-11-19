@@ -11,16 +11,13 @@ stub it (contract-first) without a running service. When the service is not
 configured, the client falls back to a deterministic HTML summary so the
 backend works end-to-end in dev and in tests (a real PDF needs the service).
 """
+
 from __future__ import annotations
 
 import html
 import logging
 
-try:
-    import httpx
-except ImportError:  # pragma: no cover - httpx is optional at import time
-    httpx = None
-
+import httpx
 from config.settings import REPORT_SERVICE_URL, SERVICE_TOKEN_FOR_APPS
 
 logger = logging.getLogger(__name__)
@@ -67,19 +64,23 @@ async def generate(project_pid: str, snapshot: dict, fmt: str = "pdf") -> tuple[
     """
     if not REPORT_SERVICE_URL:
         return _summary_document(snapshot, fmt)
-    if httpx is None:
-        raise ReportServiceError("httpx is not installed")
     payload = {"project_pid": str(project_pid), "format": fmt, "snapshot": snapshot or {}}
     try:
-        resp = await httpx.AsyncClient(timeout=120).post(
-            f"{REPORT_SERVICE_URL}/api/generate",
-            json=payload,
-            headers=_service_headers(),
-        )
-    except Exception as exc:  # noqa: BLE001 - the caller decides how to degrade
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{REPORT_SERVICE_URL.rstrip('/')}/api/generate",
+                json=payload,
+                headers=_service_headers(),
+            )
+    except httpx.HTTPError as exc:
         logger.warning("report service unreachable: %s", exc)
-        return _summary_document(snapshot, fmt)
+        raise ReportServiceError("report service unavailable") from exc
     if resp.status_code != 200:
         raise ReportServiceError(f"report service answered {resp.status_code}")
     content_type = CONTENT_TYPE_BY_FORMAT.get(fmt, "application/octet-stream")
+    actual_type = resp.headers.get("content-type", "").split(";", 1)[0].strip()
+    if actual_type != content_type.split(";", 1)[0] or not resp.content:
+        raise ReportServiceError("report service returned an invalid document")
+    if fmt == "pdf" and not resp.content.startswith(b"%PDF-"):
+        raise ReportServiceError("report service returned an invalid PDF")
     return resp.content, content_type

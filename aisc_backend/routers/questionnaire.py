@@ -145,8 +145,8 @@ async def get_default_questionnaire(request):
 
     try:
         doc = await qualification_service.get_default_questionnaire()
-    except QualificationServiceError:
-        doc = {}
+    except QualificationServiceError as exc:
+        raise HttpError(502, str(exc)) from exc
     if not doc:
         raise HttpError(404, "no default questionnaire configured")
     return DefaultQuestionnaireOut(
