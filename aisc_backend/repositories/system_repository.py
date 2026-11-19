@@ -1,7 +1,7 @@
 """
 Repository for systems and their card versions (the system-versions contract).
 """
-from aisc_backend.models.qualification import System, SystemVersion
+from aisc_backend.models.system import System, SystemVersion
 from aisc_backend.models.project import Project
 from aisc_backend.repositories.ai_component_repository import AISystemRepository
 

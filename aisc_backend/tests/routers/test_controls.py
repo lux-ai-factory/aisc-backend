@@ -10,12 +10,7 @@ stranger gets 404).
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control import (
-    ControlQuestion,
-    ControlSource,
-    ControlTemplate,
-    ProjectChecklist,
-)
+from aisc_controls.models import ControlQuestion, ControlSource, ControlTemplate, ProjectChecklist
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.catalogue import router as catalogue_router

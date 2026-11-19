@@ -18,7 +18,7 @@ import hashlib
 import json
 
 from aisc_backend.models.ai_system import AIComponent
-from aisc_backend.models.qualification import CardComponentLink, Qualification
+from aisc_qualification.models import CardComponentLink, Qualification
 from aisc_backend.models.project import Project
 
 #: Where a card's components are read from, in order: the questionnaire's

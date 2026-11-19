@@ -10,7 +10,7 @@ from django.test import TestCase
 
 from aisc_backend.models import AISystem
 from aisc_backend.models.project import Project
-from aisc_backend.models.qualification import System
+from aisc_backend.models.system import System
 from aisc_backend.repositories.ai_component_repository import AISystemRepository
 from aisc_backend.repositories.system_repository import SystemRepository
 

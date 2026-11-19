@@ -18,8 +18,8 @@ import uuid
 from django.db import models
 
 from .control_objective import ControlObjective
-from .project import Project
-from .qualification import SystemVersion
+from aisc_backend.models.project import Project
+from aisc_backend.models.system import SystemVersion
 
 
 class EvidenceLink(models.Model):
@@ -46,7 +46,7 @@ class EvidenceLink(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         constraints = [
             models.UniqueConstraint(
                 fields=("version", "objective", "kind", "key"),
@@ -78,7 +78,7 @@ class EvidenceReview(models.Model):
     reviewed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
 
     def __str__(self):  # pragma: no cover - debug helper
         return f"review of {self.version}"

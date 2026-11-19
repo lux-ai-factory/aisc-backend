@@ -37,7 +37,7 @@ from aisc_backend.models.connection import RunBinding
 from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.plugin import Plugin
-from aisc_backend.models.qualification import System, SystemVersion
+from aisc_backend.models.system import System, SystemVersion
 from aisc_backend.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.services import dashboard_bridge, dashboard_link, report_local_runs
 

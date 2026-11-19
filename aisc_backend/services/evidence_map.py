@@ -19,22 +19,13 @@ highest prior version's links to carry forward (never silently).
 """
 from __future__ import annotations
 
-from aisc_backend.models.control import (
-    ProjectChecklist,
-    Submission,
-    SubmissionAnswer,
-)
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    ObjectiveProfile,
-    Risk,
-    RiskObjectiveMapping,
-)
+from aisc_controls.models import ProjectChecklist, Submission, SubmissionAnswer
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
 from aisc_backend.models.evaluation import EvaluationStatus, EvaluationPlugin
-from aisc_backend.models.evidence import EvidenceLink, EvidenceReview
+from aisc_control_objectives.models import EvidenceLink, EvidenceReview
 from aisc_backend.models.plugin import Plugin
 from aisc_backend.models.project import Project
-from aisc_backend.models.qualification import System, SystemVersion
+from aisc_backend.models.system import System, SystemVersion
 from aisc_backend.services import control_objectives as priorities
 from aisc_backend.services.dimensions import dimension_of
 from aisc_backend.services import controls_scoring

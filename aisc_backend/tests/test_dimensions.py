@@ -16,7 +16,7 @@ from django.test import SimpleTestCase
 
 from aisc_backend.services import dimensions
 
-CSV = Path(__file__).resolve().parent.parent / "data" / "ai_act_control_objectives.csv"
+CSV = Path(__file__).resolve().parent.parent.parent / "aisc_control_objectives" / "data" / "ai_act_control_objectives.csv"
 
 #: The catalogue's own eleven, copied from its taxonomy (its site's sidebar) and
 #: confirmed against its live tags. A slug here that the catalogue does not tag

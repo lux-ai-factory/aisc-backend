@@ -13,7 +13,7 @@ from django.test import TestCase
 from ninja.testing import TestAsyncClient
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.report import Report
+from aisc_report.models import Report
 from aisc_backend.routers.report import router as report_router
 from aisc_backend.routers.report import _render_report
 from aisc_backend.services import report_service, report_snapshot
@@ -47,7 +47,7 @@ class SnapshotAssemblyTest(TestCase):
     async def test_snapshot_card_carries_plain_graph(self):
         """The report gets the card's graph as plain nodes/edges (not JSON-LD)."""
         project = await _project()
-        from aisc_backend.models.qualification import Qualification
+        from aisc_qualification.models import Qualification
 
         jsonld = json.dumps(
             {
@@ -80,7 +80,7 @@ class SnapshotAssemblyTest(TestCase):
     async def test_snapshot_includes_latest_version_controls_and_objectives(self):
         project = await _project()
         # a card version (the system-versions contract)
-        from aisc_backend.models.qualification import System
+        from aisc_backend.models.system import System
         from aisc_backend.repositories.system_repository import SystemRepository
 
         system = await System.objects.acreate(project=project, name="s1")
@@ -100,10 +100,7 @@ class SnapshotAssemblyTest(TestCase):
         # the 0032 seed migration provides the O1..O50 default catalogue; the
         # report keeps the matrix standing of each objective but only lists the
         # ones the project selected in its objective profile
-        from aisc_backend.models.control_objective import (
-            ControlObjective,
-            ObjectiveProfile,
-        )
+        from aisc_control_objectives.models import ControlObjective, ObjectiveProfile
 
         for objective_id in ("O1", "O2", "O3"):
             await ControlObjective.objects.aupdate_or_create(
@@ -131,10 +128,7 @@ class SnapshotAssemblyTest(TestCase):
     async def test_objectives_never_include_another_projects_rows(self):
         project = await _project()
         other = await _project("other-objectives-project")
-        from aisc_backend.models.control_objective import (
-            ControlObjective,
-            ObjectiveProfile,
-        )
+        from aisc_control_objectives.models import ControlObjective, ObjectiveProfile
 
         await ControlObjective.objects.acreate(
             objective_id="X99",
@@ -247,7 +241,7 @@ class ReportEndpointsTest(TestCase):
 
     async def test_generate_with_card_version_links_it(self):
         project = await _project()
-        from aisc_backend.models.qualification import System
+        from aisc_backend.models.system import System
         from aisc_backend.repositories.system_repository import SystemRepository
 
         system = await System.objects.acreate(project=project, name="s")

@@ -19,7 +19,7 @@ from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
 from aisc_backend.models.plugin import EvaluationInput, Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import System, SystemVersion
+from aisc_backend.models.system import System, SystemVersion
 from aisc_backend.models.measure import Measurement
 from aisc_backend.models.metric import Metric
 from aisc_backend.models.observation import Observation

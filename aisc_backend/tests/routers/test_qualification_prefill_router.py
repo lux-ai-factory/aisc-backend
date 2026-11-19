@@ -16,7 +16,7 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import Questionnaire
+from aisc_qualification.models import Questionnaire
 from aisc_backend.routers.qualification import router as qual_router
 from aisc_backend.services import qualification_prefill
 
@@ -309,7 +309,7 @@ class PrefillRouterTest(TestCase):
         self.assertEqual(resp.json()["profile"]["targetUseCase"], "assessing creditworthiness.")
 
     async def test_nothing_is_stored(self):
-        from aisc_backend.models.qualification import Qualification
+        from aisc_qualification.models import Qualification
 
         project = await _project("prefill-store")
         await _questionnaire(project)

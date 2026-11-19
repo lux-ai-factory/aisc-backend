@@ -14,7 +14,8 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import Qualification, Questionnaire, SystemVersion
+from aisc_backend.models.system import SystemVersion
+from aisc_qualification.models import Qualification, Questionnaire
 from aisc_backend.routers.qualification import router as qualification_router
 from aisc_backend.routers.questionnaire import router as questionnaire_router
 

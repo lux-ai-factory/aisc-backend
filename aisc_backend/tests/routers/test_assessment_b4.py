@@ -5,8 +5,8 @@ indicative checklist/plugin keyword matching, and project scoping.
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control import ControlSource, ControlTemplate, ProjectChecklist
-from aisc_backend.models.control_objective import ControlObjective
+from aisc_controls.models import ControlSource, ControlTemplate, ProjectChecklist
+from aisc_control_objectives.models import ControlObjective
 from aisc_backend.models.plugin import Plugin
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember

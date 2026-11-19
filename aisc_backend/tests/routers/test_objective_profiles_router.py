@@ -8,7 +8,7 @@ switching back returns the 10. The selection is what the evidence map shows.
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import ObjectiveProfile
+from aisc_control_objectives.models import ObjectiveProfile
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.control_objectives import router as co_router

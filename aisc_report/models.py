@@ -12,8 +12,8 @@ import uuid
 
 from django.db import models
 
-from .project import Project
-from .qualification import SystemVersion
+from aisc_backend.models.project import Project
+from aisc_backend.models.system import SystemVersion
 
 
 class ReportLayout(models.Model):
@@ -45,7 +45,7 @@ class ReportLayout(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_report"
         ordering = ["name", "created_at"]
 
     def __str__(self):  # pragma: no cover - debug helper
@@ -111,7 +111,7 @@ class Report(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_report"
         ordering = ["-created_at"]
 
     def __str__(self):  # pragma: no cover - debug helper
@@ -146,7 +146,7 @@ class ProjectReportSettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_report"
 
     def __str__(self):  # pragma: no cover - debug helper
         return f"report settings of {self.project.name}"

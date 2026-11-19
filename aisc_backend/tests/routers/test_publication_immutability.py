@@ -17,11 +17,8 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import (
-    PublishedSnapshotError,
-    Qualification,
-    SystemVersion,
-)
+from aisc_backend.models.system import PublishedSnapshotError, SystemVersion
+from aisc_qualification.models import Qualification
 from aisc_backend.routers.qualification import router as qualification_router
 
 client = TestAsyncClient(qualification_router)

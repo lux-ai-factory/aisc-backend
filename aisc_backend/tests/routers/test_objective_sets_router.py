@@ -9,11 +9,7 @@ and the report read them like any other objective.
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    ObjectiveProfile,
-    ObjectiveSetVersion,
-)
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, ObjectiveSetVersion
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.control_objectives import router as co_router

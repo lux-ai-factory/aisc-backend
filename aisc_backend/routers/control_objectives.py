@@ -17,17 +17,9 @@ from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import caller_of, role_or_404
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.flags import require_flag
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    ObjectiveProfile,
-    ObjectiveSet,
-    ObjectiveSetVersion,
-    Risk,
-    RiskObjectiveMapping,
-    RiskVersion,
-)
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, ObjectiveSet, ObjectiveSetVersion, Risk, RiskObjectiveMapping, RiskVersion
 from aisc_backend.models.project import Project
-from aisc_backend.models.qualification import Qualification
+from aisc_qualification.models import Qualification
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.control_objective import (
     BuiltinProfileOut,

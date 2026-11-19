@@ -27,24 +27,15 @@ from datetime import datetime, timezone
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from aisc_backend.models.control import (
-    ControlQuestion,
-    ProjectChecklist,
-    Submission,
-    SubmissionAnswer,
-    SubmissionStatus,
-)
-from aisc_backend.models.control_objective import (    ControlObjective,
-    ObjectiveProfile,
-    Risk,
-    RiskObjectiveMapping,
-)
+from aisc_controls.models import ControlQuestion, ProjectChecklist, Submission, SubmissionAnswer, SubmissionStatus
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
 from aisc_backend.models.evaluation import Evaluation
-from aisc_backend.models.evidence import EvidenceLink, EvidenceReview
+from aisc_control_objectives.models import EvidenceLink, EvidenceReview
 from aisc_backend.models.measure import Measurement
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.project import Project
-from aisc_backend.models.qualification import Qualification, SystemVersion
+from aisc_backend.models.system import SystemVersion
+from aisc_qualification.models import Qualification
 from aisc_backend.repositories.system_repository import SystemRepository
 from aisc_backend.services import control_objectives as priorities
 from aisc_backend.services import controls_scoring

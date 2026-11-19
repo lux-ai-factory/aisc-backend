@@ -18,12 +18,12 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import caller_of, role_or_404
-from aisc_backend.models.control import ProjectChecklist
-from aisc_backend.models.control_objective import ControlObjective
-from aisc_backend.models.evidence import EvidenceLink, EvidenceReview
+from aisc_controls.models import ProjectChecklist
+from aisc_control_objectives.models import ControlObjective
+from aisc_control_objectives.models import EvidenceLink, EvidenceReview
 from aisc_backend.models.plugin import Plugin
 from aisc_backend.models.project import Project
-from aisc_backend.models.qualification import System, SystemVersion
+from aisc_backend.models.system import System, SystemVersion
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.evidence import EvidenceLinksIn, EvidenceMapOut, EvidenceReviewIn
 from aisc_backend.services import evidence_map as map_service

@@ -12,16 +12,16 @@ from django.utils import timezone as dj_timezone
 from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.ai_system import AIComponent, AISystem
-from aisc_backend.models.control_objective import ControlObjective
+from aisc_control_objectives.models import ControlObjective
 from aisc_backend.models.evaluation import Evaluation
-from aisc_backend.models.evidence import EvidenceLink
+from aisc_control_objectives.models import EvidenceLink
 from aisc_backend.models.measure import Measurement
 from aisc_backend.models.metric import Metric
 from aisc_backend.models.observation import Observation
 from aisc_backend.models.plugin import EvaluationInput, EvaluationPlugin, Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import System
+from aisc_backend.models.system import System
 from aisc_backend.repositories.system_repository import SystemRepository
 from aisc_backend.routers.report import router as report_router
 from aisc_backend.services import report_snapshot

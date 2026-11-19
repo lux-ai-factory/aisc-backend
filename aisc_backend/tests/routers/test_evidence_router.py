@@ -6,20 +6,8 @@ carry-forward. A stranger gets 404, a viewer reads, an editor writes.
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control import (
-    ControlQuestion,
-    ControlSource,
-    ControlTemplate,
-    ProjectChecklist,
-    Submission,
-    SubmissionAnswer,
-)
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    ObjectiveProfile,
-    Risk,
-    RiskObjectiveMapping,
-)
+from aisc_controls.models import ControlQuestion, ControlSource, ControlTemplate, ProjectChecklist, Submission, SubmissionAnswer
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
 from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
 from aisc_backend.models.plugin import Plugin, PluginConfig
 from aisc_backend.models.project import Project
@@ -378,7 +366,7 @@ class EvidenceMapRouterTest(TestCase):
         self.assertEqual(refused.status_code, 403, refused.text)
 
         # a link made by someone else → development reviews
-        from aisc_backend.models.evidence import EvidenceLink
+        from aisc_control_objectives.models import EvidenceLink
 
         await EvidenceLink.objects.filter(version=version).aupdate(created_by="someone-else")
         ok = await client.post(

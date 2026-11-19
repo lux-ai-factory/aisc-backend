@@ -31,8 +31,8 @@ from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.flags import require_flag
 from aisc_backend.models.evaluation import Evaluation
 from aisc_backend.models.project import Project
-from aisc_backend.models.qualification import SystemVersion
-from aisc_backend.models.report import ProjectReportSettings, Report, ReportLayout
+from aisc_backend.models.system import SystemVersion
+from aisc_report.models import ProjectReportSettings, Report, ReportLayout
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.report import (
     FONT_CHOICES,

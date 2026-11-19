@@ -6,15 +6,10 @@ mapping, and the matrix computed on read — all project-scoped (a stranger gets
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    ObjectiveProfile,
-    Risk,
-    RiskVersion,
-)
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskVersion
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import Qualification
+from aisc_qualification.models import Qualification
 from aisc_backend.routers.control_objectives import router as co_router
 
 co_client = TestAsyncClient(co_router)
@@ -158,7 +153,7 @@ class ControlObjectivesRouterTest(TestCase):
         self.assertEqual(body["created"][0]["rating"], 0)
 
     async def test_import_risks_updates_existing_without_clearing_ratings(self):
-        from aisc_backend.models.control_objective import Risk as RiskRow
+        from aisc_control_objectives.models import Risk as RiskRow
 
         project = await _project()
         await _seed_objectives()

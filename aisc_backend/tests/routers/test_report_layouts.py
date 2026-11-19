@@ -11,12 +11,12 @@ from unittest import mock
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import ControlObjective
-from aisc_backend.models.evidence import EvidenceLink
+from aisc_control_objectives.models import ControlObjective
+from aisc_control_objectives.models import EvidenceLink
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import System
-from aisc_backend.models.report import Report, ReportLayout
+from aisc_backend.models.system import System
+from aisc_report.models import Report, ReportLayout
 from aisc_backend.repositories.system_repository import SystemRepository
 from aisc_backend.routers.report import _render_report, router as report_router
 from aisc_backend.report_renderer import document as renderer_document

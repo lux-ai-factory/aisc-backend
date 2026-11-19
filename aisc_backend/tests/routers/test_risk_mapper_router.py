@@ -12,11 +12,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    Risk,
-    RiskObjectiveMapping,
-)
+from aisc_control_objectives.models import ControlObjective, Risk, RiskObjectiveMapping
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.control_objectives import router as co_router

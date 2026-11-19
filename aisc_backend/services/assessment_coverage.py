@@ -12,13 +12,8 @@ from __future__ import annotations
 
 import re
 
-from aisc_backend.models.control import ProjectChecklist
-from aisc_backend.models.control_objective import (
-    ControlObjective,
-    ObjectiveProfile,
-    Risk,
-    RiskObjectiveMapping,
-)
+from aisc_controls.models import ProjectChecklist
+from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
 from aisc_backend.models.plugin import Plugin
 from aisc_backend.models.project import Project
 from aisc_backend.services import control_objectives as priorities

@@ -51,7 +51,11 @@ INSTALLED_APPS = [
     'ninja_jwt',
 
     # Local
-    'aisc_backend'
+    'aisc_backend',
+    'aisc_qualification',
+    'aisc_control_objectives',
+    'aisc_controls',
+    'aisc_report',
 ]
 
 SITE_ID = 1

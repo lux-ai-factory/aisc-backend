@@ -28,10 +28,7 @@ from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import role_or_404
-from aisc_backend.models.control import (
-    ControlTemplate,
-    ProjectChecklist,
-)
+from aisc_controls.models import ControlTemplate, ProjectChecklist
 from aisc_backend.models.project import Project
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.routers.plugin import plugin_loader

@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aisc_backend', '0039_cardcomponentlink'),
+        ('aisc_backend', '0034_connections_helpers_bindings_and_allowed_hosts'),
     ]
 
     operations = [

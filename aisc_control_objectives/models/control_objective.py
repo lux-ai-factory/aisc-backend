@@ -20,8 +20,8 @@ never leave a stale score.
 """
 from django.db import models
 
-from .common import Base
-from .project import Project
+from aisc_backend.models.common import Base
+from aisc_backend.models.project import Project
 
 
 class ControlObjective(Base):
@@ -58,7 +58,7 @@ class ControlObjective(Base):
     )
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         ordering = ["objective_id"]
         constraints = [
             # a local code is unique inside its project...
@@ -110,7 +110,7 @@ class Risk(Base):
     airo_text = models.TextField(blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         ordering = ["position"]
         constraints = [
             models.UniqueConstraint(
@@ -148,7 +148,7 @@ class RiskVersion(Base):
     created_by = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         constraints = [
             models.UniqueConstraint(
                 fields=("risk", "number"),
@@ -189,7 +189,7 @@ class RiskObjectiveMapping(Base):
     source = models.CharField(max_length=8, default="person")   # person | ai
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         constraints = [
             models.UniqueConstraint(
                 fields=("project", "risk", "objective"),
@@ -220,7 +220,7 @@ class ObjectiveProfile(Base):
     catalogue_digest = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         constraints = [
             models.UniqueConstraint(
                 fields=("project", "name"), name="objective_profile_project_name_uniq"
@@ -254,7 +254,7 @@ class ObjectiveSet(Base):
     published_version = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         constraints = [
             models.UniqueConstraint(
                 fields=("project", "name"), name="objective_set_project_name_uniq"
@@ -283,7 +283,7 @@ class ObjectiveSetVersion(Base):
     created_by = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_control_objectives"
         constraints = [
             models.UniqueConstraint(
                 fields=("objective_set", "number"),

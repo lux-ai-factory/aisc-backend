@@ -20,7 +20,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
-from aisc_backend.models.qualification import Questionnaire, QuestionnaireVersion
+from aisc_qualification.models import Questionnaire, QuestionnaireVersion
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.qualification import (
     DefaultQuestionnaireOut,

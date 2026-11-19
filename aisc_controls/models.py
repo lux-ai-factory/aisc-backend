@@ -18,8 +18,8 @@ import uuid
 
 from django.db import models
 
-from .common import Base
-from .project import Project
+from aisc_backend.models.common import Base
+from aisc_backend.models.project import Project
 
 
 class ControlSource(Base):
@@ -30,7 +30,7 @@ class ControlSource(Base):
     url = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_controls"
 
     def __str__(self):  # pragma: no cover - debug helper
         return self.name
@@ -53,7 +53,7 @@ class ControlTemplate(Base):
     source_updated_at = models.CharField(max_length=32, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_controls"
         ordering = ["catalogue_id"]
 
     def __str__(self):  # pragma: no cover - debug helper
@@ -72,7 +72,7 @@ class ControlQuestion(models.Model):
     category = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_controls"
         constraints = [
             models.UniqueConstraint(
                 fields=("template", "order"), name="control_question_template_order_uniq"
@@ -100,7 +100,7 @@ class ProjectChecklist(Base):
     source_updated_at = models.CharField(max_length=32, blank=True, default="")
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_controls"
         constraints = [
             models.UniqueConstraint(
                 fields=("project", "template"),
@@ -146,7 +146,7 @@ class Submission(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_controls"
         ordering = ["-created_at"]
 
     def __str__(self):  # pragma: no cover - debug helper
@@ -166,7 +166,7 @@ class SubmissionAnswer(models.Model):
     score = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
-        app_label = "aisc_backend"
+        app_label = "aisc_controls"
         constraints = [
             models.UniqueConstraint(
                 fields=("submission", "question"),

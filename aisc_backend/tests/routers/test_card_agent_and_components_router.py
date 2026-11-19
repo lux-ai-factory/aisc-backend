@@ -14,7 +14,7 @@ from ninja.testing import TestAsyncClient
 from aisc_backend.models.ai_system import AIComponent, AISystem
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.models.qualification import Qualification
+from aisc_qualification.models import Qualification
 from aisc_backend.routers.qualification import router as qual_router
 from aisc_backend.services import card_agent
 

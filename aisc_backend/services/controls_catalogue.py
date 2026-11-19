@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - httpx is optional at import time
     httpx = None
 
 from config.settings import CONTROLS_CATALOG_URL
-from aisc_backend.models.control import ControlQuestion, ControlSource, ControlTemplate
+from aisc_controls.models import ControlQuestion, ControlSource, ControlTemplate
 
 logger = logging.getLogger(__name__)
 

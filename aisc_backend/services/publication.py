@@ -18,7 +18,8 @@ from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.utils import timezone
 
-from aisc_backend.models.qualification import Qualification, System, SystemVersion
+from aisc_backend.models.system import System, SystemVersion
+from aisc_qualification.models import Qualification
 from aisc_backend.repositories.system_repository import SystemRepository
 
 
