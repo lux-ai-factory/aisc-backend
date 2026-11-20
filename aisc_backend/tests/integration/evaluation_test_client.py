@@ -4,14 +4,14 @@ from unittest.mock import patch
 from ninja.testing import TestAsyncClient
 
 from aisc_evaluation.models import EvaluationStatus
-from aisc_backend.routers.evaluation import router
-from aisc_backend.routers.internal import router as internal_router
-from aisc_backend.schemas.evaluation import (
+from aisc_evaluation.routers.evaluation import router
+from aisc_evaluation.routers.internal import router as internal_router
+from aisc_evaluation.schemas.evaluation import (
     EvaluationOutSchema,
     EvaluationDetailOutSchema,
     EvaluationByStatusResponseSchema,
 )
-from aisc_backend.schemas.measure import MeasureInSchema
+from aisc_evaluation.schemas.measure import MeasureInSchema
 
 client = TestAsyncClient(router)
 internal_client = TestAsyncClient(internal_router)

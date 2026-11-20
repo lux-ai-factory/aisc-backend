@@ -2,7 +2,7 @@ from ninja import ModelSchema, Field
 
 from aisc_backend.models.project import Project
 from aisc_backend.schemas.ai_system import AIComponentOutSchema
-from aisc_backend.schemas.plugin import PluginOutSchema
+from aisc_plugins.schemas.plugin import PluginOutSchema
 
 
 class ProjectInSchema(ModelSchema):

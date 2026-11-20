@@ -15,7 +15,7 @@ from aisc_backend.audit.clerk import clerk
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.project import router as project_router
-from aisc_backend.routers.report import router as report_router
+from aisc_report.routers.report import router as report_router
 
 project_client = TestAsyncClient(project_router)
 report_client = TestAsyncClient(report_router)
@@ -45,7 +45,7 @@ class GovernedMutationsAuditedTest(TestCase):
 
         # A report generation is governed and audited.
         with mock.patch(
-            "aisc_backend.services.report_service.generate",
+            "aisc_report.services.report_service.generate",
             new=mock.AsyncMock(return_value=(b"%PDF-1.4 fake", "application/pdf")),
         ):
             resp = await report_client.post(
@@ -72,7 +72,7 @@ class GovernedMutationsAuditedTest(TestCase):
             )
             self.assertEqual(200, resp.status_code, resp.text)
             with mock.patch(
-                "aisc_backend.services.report_service.generate",
+                "aisc_report.services.report_service.generate",
                 new=mock.AsyncMock(return_value=(b"%PDF-1.4 fake", "application/pdf")),
             ):
                 resp = await report_client.post(

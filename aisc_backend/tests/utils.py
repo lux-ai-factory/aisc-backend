@@ -3,7 +3,7 @@ import random
 
 from django.utils import timezone
 
-from aisc_backend.schemas.measure import MeasureInSchema
+from aisc_evaluation.schemas.measure import MeasureInSchema
 
 
 def create_measure_in_schema_list_for_model_eval(batch_count: int, day_int: int) -> list[MeasureInSchema]:

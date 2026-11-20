@@ -7,7 +7,7 @@ import httpx
 from ninja.errors import HttpError
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.routers.task import router
+from aisc_evaluation.routers.task import router
 from aisc_backend.services.monitoring import fetch_tasks
 
 client = TestAsyncClient(router)
@@ -23,7 +23,7 @@ class MonitoringRouterTest(IsolatedAsyncioTestCase):
                 side_effect=lambda token: {"realm_access": {"roles": [token]}},
             ),
             mock.patch(
-                "aisc_backend.routers.task.fetch_tasks",
+                "aisc_evaluation.routers.task.fetch_tasks",
                 new=mock.AsyncMock(return_value={TASK_ID: {"state": "SUCCESS"}}),
             ) as upstream,
         ):

@@ -15,8 +15,8 @@ from aisc_backend import flags
 from aisc_evaluation.models import Evaluation, EvaluationStatus
 from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models import Project
-from aisc_backend.routers.control import router as control_router
-from aisc_backend.routers.evaluation import router as evaluation_router
+from aisc_controls.routers.control import router as control_router
+from aisc_evaluation.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.project import router as project_router
 
 OPTIONAL_FLAGS = ("qualification", "objectives", "controls", "reporting")
@@ -67,7 +67,7 @@ class CoreWorksWithOptionalFeaturesOffTestCase(TestCase):
 
         with (
             patch(
-                "aisc_backend.routers.plugin.plugin_loader.load_plugin",
+                "aisc_plugins.routers.plugin.plugin_loader.load_plugin",
                 return_value=SimpleNamespace(project_config_definitions=[]),
             ),
             patch(

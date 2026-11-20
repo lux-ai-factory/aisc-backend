@@ -113,7 +113,7 @@ class IntegrationTestCase(TestCase):
 
         with (
             mock.patch(
-                "aisc_backend.routers.plugin.plugin_loader.load_plugin",
+                "aisc_plugins.routers.plugin.plugin_loader.load_plugin",
                 return_value=SimpleNamespace(project_config_definitions=[]),
             ),
             mock.patch(
@@ -187,7 +187,7 @@ class IntegrationTestCase(TestCase):
 
         with (
             mock.patch(
-                "aisc_backend.routers.plugin.plugin_loader.load_plugin",
+                "aisc_plugins.routers.plugin.plugin_loader.load_plugin",
                 return_value=SimpleNamespace(project_config_definitions=[]),
             ),
             mock.patch(

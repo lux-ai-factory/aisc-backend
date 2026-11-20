@@ -29,17 +29,17 @@ from aisc_backend.models import AIComponent, AIComponentType, Project, ProjectSt
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.repositories.ai_component_repository import AISystemRepository, AIComponentRepository
-from aisc_backend.repositories.evaluation_repository import EvaluationRepository
+from aisc_evaluation.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
-from aisc_backend.repositories.measurement_repository import MeasurementRepository
+from aisc_evaluation.repositories.measurement_repository import MeasurementRepository
 from aisc_backend.repositories.project_config_repository import ProjectConfigRepository
 from aisc_backend.schemas.ai_system import (
     AISystemDetailOutSchema,
     AIComponentOutSchema,
     AIComponentInSchema,
 )
-from aisc_backend.schemas.evaluation import EvaluationDetailOutSchema
-from aisc_backend.schemas.measure import MeasurementAggregationResponse, MeasurementAggregationRequest, \
+from aisc_evaluation.schemas.evaluation import EvaluationDetailOutSchema
+from aisc_evaluation.schemas.measure import MeasurementAggregationResponse, MeasurementAggregationRequest, \
     DimensionKeysResponse, DimensionValuesResponse
 from aisc_backend.schemas.project import (
     ProjectOutSchema,
