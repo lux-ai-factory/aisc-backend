@@ -3,7 +3,7 @@
 MEMBERSHIP rules — VERBATIM PORT of the reference implementation
 (`platform/platform_service/membership.py` in feat/unified-modules). Only the pure rules live
 here: no database, no web framework. DB access and the endpoints live respectively in
-`aisc_backend.repositories.membership_repository` and `aisc_backend.routers.authz`/`project`.
+`aisc_backend.repositories.membership_repository` and `aisc_backend.routers.project`.
 
 Membership is data, not a realm role. A role in Keycloak says what kind of
 account this is (may it administer the platform); membership says what this

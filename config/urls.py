@@ -31,7 +31,6 @@ from aisc_backend.routers.stats import router as stats_router
 from aisc_evaluation.routers.results import router as results_router
 from aisc_backend.routers.me import router as me_router
 from aisc_backend.routers.audit import router as audit_router
-from aisc_backend.routers.authz import router as authz_router
 from aisc_backend.routers.admin_users import router as admin_users_router
 from aisc_controls.routers.catalogue import router as catalogue_router
 from aisc_controls.routers.control import router as control_router
@@ -83,7 +82,6 @@ v1_router.add_router("/files", file_router)
 v1_router.add_router("/stats", stats_router)
 v1_router.add_router("/me", me_router)
 v1_router.add_router("/audit", audit_router)
-v1_router.add_router("/authz", authz_router)
 v1_router.add_router("/admin/users", admin_users_router)  # admin-only Keycloak user mgmt
 v1_router.add_router("/questionnaires", questionnaire_router)
 v1_router.add_router("/project/settings", project_config_router)

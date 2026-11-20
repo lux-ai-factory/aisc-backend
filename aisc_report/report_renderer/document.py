@@ -35,7 +35,7 @@ PACKAGE = "aisc_report.report_renderer"
 CSS_PATH = Path(__file__).resolve().parent / "templates" / "report.css"
 FEATURE_CSS_DIR = Path(__file__).resolve().parent / "templates" / "css"
 
-#: the charts' colours (the pilot's theme/brand.json primary and accent)
+#: the charts' colours (the AISC brand primary and accent)
 CHART_COLOURS = {"primary": "#000FDF", "text": "#000000", "grid": "#CCCCCC"}
 DEFAULT_ACCENT = "#FF007E"
 
