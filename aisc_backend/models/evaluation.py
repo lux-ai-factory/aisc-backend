@@ -19,6 +19,9 @@ class Evaluation(CreatedAtModel):
     pid = models.UUIDField(default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=255, choices=EvaluationStatus.choices)
 
+    # Optional human label for the run (not unique)
+    name = models.CharField(max_length=255, blank=True, default="")
+
     project = models.ForeignKey(
         "Project", related_name="evaluations", on_delete=models.PROTECT
     )
