@@ -61,6 +61,8 @@ class EvaluationPluginInSchema(Schema):
 class CreateEvaluationRequest(Schema):
     project_pid: uuid.UUID
     plugins_to_run: list[EvaluationPluginInSchema]
+    # Optional human label for the run (not unique)
+    name: str | None = None
 
 
 @router.post("/task", response=EvaluationOutSchema)
@@ -103,7 +105,11 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     if any(validation_errors.values()):
         raise HttpError(400, format_validation_error({"message": "Required project settings are missing or invalid", **validation_errors}))
 
-    evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
+    evaluation = Evaluation(
+        status=EvaluationStatus.Pending,
+        project=project,
+        name=(data.name or "").strip(),
+    )
     evaluation = await evaluation_repository.create(evaluation)
 
     evaluation_plugins = []
