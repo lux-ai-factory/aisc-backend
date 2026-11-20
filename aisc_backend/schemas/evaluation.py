@@ -2,7 +2,7 @@ import uuid
 
 from ninja import ModelSchema, Field
 
-from aisc_backend.models import Evaluation
+from aisc_evaluation.models import Evaluation
 
 from aisc_backend.schemas.plugin import EvaluationPluginOutSchema
 from aisc_backend.schemas.project import ProjectOutSchema

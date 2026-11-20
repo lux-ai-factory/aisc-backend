@@ -13,7 +13,7 @@ import uuid
 from aisc_backend import adapters
 from aisc_backend.models.ai_system import AIComponent
 from aisc_backend.models.connection import Connection, Helper, RunBinding
-from aisc_backend.models.plugin import EvaluationPlugin
+from aisc_evaluation.models import EvaluationPlugin
 from aisc_backend.models.project import Project
 from aisc_backend.services import connection_secrets as secrets
 

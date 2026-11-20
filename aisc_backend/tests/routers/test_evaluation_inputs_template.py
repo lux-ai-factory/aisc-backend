@@ -1,19 +1,9 @@
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import (
-    AISystem,
-    AIComponent,
-    AIComponentType,
-    Evaluation,
-    EvaluationInput,
-    EvaluationPlugin,
-    EvaluationStatus,
-    Plugin,
-    PluginConfig,
-    Project,
-    ProjectStatus,
-)
+from aisc_backend.models import AISystem, AIComponent, AIComponentType, Project, ProjectStatus
+from aisc_evaluation.models import Evaluation, EvaluationInput, EvaluationPlugin, EvaluationStatus
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.project import router as project_router
 

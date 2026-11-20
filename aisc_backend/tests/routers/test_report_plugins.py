@@ -11,11 +11,12 @@ from unittest import mock
 from django.test import TestCase
 
 from aisc_backend.models.ai_system import AIComponent, AISystem
-from aisc_backend.models.evaluation import Evaluation
-from aisc_backend.models.measure import Measurement
-from aisc_backend.models.metric import Metric
-from aisc_backend.models.observation import Observation
-from aisc_backend.models.plugin import EvaluationInput, EvaluationPlugin, Plugin, PluginConfig
+from aisc_evaluation.models import Evaluation
+from aisc_evaluation.models import Measurement
+from aisc_evaluation.models import Metric
+from aisc_evaluation.models import Observation
+from aisc_evaluation.models import EvaluationInput, EvaluationPlugin
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.report_renderer import document as renderer_document
 from aisc_backend.report_renderer import svg_print, tools_abi

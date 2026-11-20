@@ -1,7 +1,7 @@
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import Plugin, PluginConfig
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers.plugin import router
 

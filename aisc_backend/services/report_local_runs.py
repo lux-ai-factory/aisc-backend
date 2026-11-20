@@ -13,7 +13,7 @@ when the marker appears; it is ported so the reporting rule matches the pilot's.
 """
 from __future__ import annotations
 
-from aisc_backend.models.plugin import EvaluationInput, EvaluationPlugin
+from aisc_evaluation.models import EvaluationInput, EvaluationPlugin
 
 #: the engine input that marks a run on a locally served model
 LOCAL_MODEL_KEY = "local_model"

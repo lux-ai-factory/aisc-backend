@@ -3,7 +3,8 @@ import uuid
 from ninja import ModelSchema, Schema
 from pydantic import Field
 
-from aisc_backend.models import Plugin, EvaluationPlugin, PluginConfig
+from aisc_plugins.models import Plugin, PluginConfig
+from aisc_evaluation.models import EvaluationPlugin
 from aisc_backend.schemas.ai_system import AIComponentOutSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
 

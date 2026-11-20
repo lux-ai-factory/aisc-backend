@@ -11,8 +11,8 @@ from pydantic import Field
 
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
-from aisc_backend.models import Evaluation, EvaluationStatus, Observation, Metric, Measurement
-from aisc_backend.models.artifact import Artifact
+from aisc_evaluation.models import Evaluation, EvaluationStatus, Observation, Metric, Measurement
+from aisc_evaluation.models import Artifact
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository

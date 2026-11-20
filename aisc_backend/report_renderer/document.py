@@ -20,7 +20,7 @@ from aisc_plugin_interface.report.templating import render_package_template
 from asgiref.sync import sync_to_async
 from markupsafe import Markup
 
-from aisc_backend.models.evaluation import Evaluation
+from aisc_evaluation.models import Evaluation
 
 from . import docx as docx_module
 from . import errors

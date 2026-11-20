@@ -52,6 +52,8 @@ INSTALLED_APPS = [
 
     # Local
     'aisc_backend',
+    'aisc_evaluation',
+    'aisc_plugins',
     'aisc_qualification',
     'aisc_control_objectives',
     'aisc_controls',

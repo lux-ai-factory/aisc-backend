@@ -12,15 +12,12 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 
-from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
-from aisc_backend.models.observation import Observation
-from aisc_backend.models.measure import Measurement
-from aisc_backend.models.plugin import (
-    Plugin,
-    EvaluationPlugin,
-    EvaluationInput,
-)
-from aisc_backend.models.artifact import Artifact
+from aisc_evaluation.models import Evaluation, EvaluationStatus
+from aisc_evaluation.models import Observation
+from aisc_evaluation.models import Measurement
+from aisc_plugins.models import Plugin
+from aisc_evaluation.models import EvaluationPlugin, EvaluationInput
+from aisc_evaluation.models import Artifact
 from aisc_backend.models.ai_system import AIComponent, AIComponentType
 
 logger = logging.getLogger(__name__)
@@ -128,7 +125,7 @@ class StatsRepository:
         ).acount()
 
         # Plugin configs count
-        from aisc_backend.models.plugin import PluginConfig
+        from aisc_plugins.models import PluginConfig
 
         num_configs = await PluginConfig.objects.filter(
             plugin__project__pid=project_pid

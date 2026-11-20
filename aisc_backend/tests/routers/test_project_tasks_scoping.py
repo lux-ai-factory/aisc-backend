@@ -11,7 +11,7 @@ import unittest.mock as mock
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import Evaluation, EvaluationStatus
+from aisc_evaluation.models import Evaluation, EvaluationStatus
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.project import router as project_router

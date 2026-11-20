@@ -29,7 +29,7 @@ from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import caller_of, role_or_404
 from aisc_backend.auth.keycloak import KeycloakAuth
 from aisc_backend.flags import require_flag
-from aisc_backend.models.evaluation import Evaluation
+from aisc_evaluation.models import Evaluation
 from aisc_backend.models.project import Project
 from aisc_backend.models.system import SystemVersion
 from aisc_report.models import ProjectReportSettings, Report, ReportLayout

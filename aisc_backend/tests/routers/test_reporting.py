@@ -150,11 +150,12 @@ class SnapshotAssemblyTest(TestCase):
         project = await _project()
         from aisc_plugin_interface import MetricVisualization
 
-        from aisc_backend.models.evaluation import Evaluation
-        from aisc_backend.models.measure import Measurement
-        from aisc_backend.models.metric import Metric
-        from aisc_backend.models.observation import Observation
-        from aisc_backend.models.plugin import EvaluationPlugin, Plugin, PluginConfig
+        from aisc_evaluation.models import Evaluation
+        from aisc_evaluation.models import Measurement
+        from aisc_evaluation.models import Metric
+        from aisc_evaluation.models import Observation
+        from aisc_evaluation.models import EvaluationPlugin
+        from aisc_plugins.models import Plugin, PluginConfig
 
         plugin = await Plugin.objects.acreate(
             project=project,
@@ -583,7 +584,7 @@ class ReportSettingsTest(TestCase):
         self.assertEqual(resp.status_code, 404)
 
     async def test_generate_merges_settings_and_scopes_evaluations(self):
-        from aisc_backend.models.evaluation import Evaluation
+        from aisc_evaluation.models import Evaluation
 
         project = await _project()
         await report_client.put(

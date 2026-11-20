@@ -12,7 +12,9 @@ from django.test import TestCase, override_settings
 from ninja.testing import TestAsyncClient
 
 from aisc_backend import flags
-from aisc_backend.models import Evaluation, EvaluationStatus, Plugin, PluginConfig, Project
+from aisc_evaluation.models import Evaluation, EvaluationStatus
+from aisc_plugins.models import Plugin, PluginConfig
+from aisc_backend.models import Project
 from aisc_backend.routers.control import router as control_router
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.project import router as project_router

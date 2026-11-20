@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ninja import ModelSchema, Schema
 
-from aisc_backend.models.artifact import Artifact
+from aisc_evaluation.models import Artifact
 
 class ArtifactPreviewSchema(Schema):
     type: str

@@ -29,10 +29,10 @@ from django.db.models import Q
 
 from aisc_controls.models import ControlQuestion, ProjectChecklist, Submission, SubmissionAnswer, SubmissionStatus
 from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
-from aisc_backend.models.evaluation import Evaluation
+from aisc_evaluation.models import Evaluation
 from aisc_control_objectives.models import EvidenceLink, EvidenceReview
-from aisc_backend.models.measure import Measurement
-from aisc_backend.models.observation import Observation
+from aisc_evaluation.models import Measurement
+from aisc_evaluation.models import Observation
 from aisc_backend.models.project import Project
 from aisc_backend.models.system import SystemVersion
 from aisc_qualification.models import Qualification

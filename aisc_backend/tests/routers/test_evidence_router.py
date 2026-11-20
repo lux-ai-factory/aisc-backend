@@ -8,8 +8,8 @@ from ninja.testing import TestAsyncClient
 
 from aisc_controls.models import ControlQuestion, ControlSource, ControlTemplate, ProjectChecklist, Submission, SubmissionAnswer
 from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
-from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
-from aisc_backend.models.plugin import Plugin, PluginConfig
+from aisc_evaluation.models import Evaluation, EvaluationPlugin
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.repositories.system_repository import SystemRepository

@@ -24,13 +24,8 @@ from aisc_backend.auth.access import (
 from aisc_backend.auth.membership import InvalidMembership, validate_role
 from aisc_backend.repositories.membership_repository import MembershipRepository
 
-from aisc_backend.models import (
-    EvaluationStatus,
-    AIComponent,
-    AIComponentType,
-    Project,
-    ProjectStatus,
-)
+from aisc_evaluation.models import EvaluationStatus
+from aisc_backend.models import AIComponent, AIComponentType, Project, ProjectStatus
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.repositories.ai_component_repository import AISystemRepository, AIComponentRepository

@@ -7,7 +7,7 @@ from ninja.testing import TestAsyncClient
 
 from aisc_controls.models import ControlSource, ControlTemplate, ProjectChecklist
 from aisc_control_objectives.models import ControlObjective
-from aisc_backend.models.plugin import Plugin
+from aisc_plugins.models import Plugin
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.assessment import router as assessment_router

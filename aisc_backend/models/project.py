@@ -2,9 +2,9 @@ from django.db import models
 
 from .ai_system import AIComponent
 from .project_config import ProjectConfig
-from .evaluation import Evaluation
+from aisc_evaluation.models import Evaluation
 from .common import Base
-from .plugin import Plugin
+from aisc_plugins.models import Plugin
 
 
 class ProjectStatus(models.TextChoices):

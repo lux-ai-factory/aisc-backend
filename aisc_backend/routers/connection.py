@@ -27,7 +27,7 @@ from aisc_backend.adapters.base import Secret
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.access import role_or_404
 from aisc_backend.models.connection import Connection, Helper, RunBinding
-from aisc_backend.models.plugin import EvaluationPlugin
+from aisc_evaluation.models import EvaluationPlugin
 from aisc_backend.models.project import Project
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_backend.schemas.connection import (

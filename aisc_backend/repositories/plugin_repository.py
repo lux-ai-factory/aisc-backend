@@ -1,6 +1,7 @@
 import uuid
 
-from aisc_backend.models import Plugin, PluginConfig, EvaluationPlugin
+from aisc_plugins.models import Plugin, PluginConfig
+from aisc_evaluation.models import EvaluationPlugin
 from aisc_backend.repositories.base_repository import BaseRepository
 
 

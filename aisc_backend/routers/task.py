@@ -8,8 +8,8 @@ from ninja.errors import HttpError
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.keycloak import require_role
 from aisc_backend.services.monitoring import fetch_tasks
-from aisc_backend.models import Evaluation
-from aisc_backend.models.evaluation import EvaluationStatus
+from aisc_evaluation.models import Evaluation
+from aisc_evaluation.models import EvaluationStatus
 from aisc_backend.services import celery_service
 
 router = Router(tags=["task"])

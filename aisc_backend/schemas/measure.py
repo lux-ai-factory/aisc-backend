@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 from ninja import ModelSchema, Schema
 from pydantic import field_validator
 
-from aisc_backend.models import Measurement
+from aisc_evaluation.models import Measurement
 
 
 class MeasureInSchema(ModelSchema):

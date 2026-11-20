@@ -5,7 +5,8 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
-from aisc_backend.models import Plugin, PluginConfig, ProjectConfig
+from aisc_plugins.models import Plugin, PluginConfig
+from aisc_backend.models import ProjectConfig
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository

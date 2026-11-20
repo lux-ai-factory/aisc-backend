@@ -17,10 +17,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import EvaluationPlugin, Plugin, PluginConfig, EvaluationInput, AIComponent, AIComponentType, ProjectConfig, ProjectConfigCategory
-from aisc_backend.models.artifact import Artifact
+from aisc_evaluation.models import EvaluationPlugin, EvaluationInput
+from aisc_plugins.models import Plugin, PluginConfig
+from aisc_backend.models import AIComponent, AIComponentType, ProjectConfig, ProjectConfigCategory
+from aisc_evaluation.models import Artifact
 from aisc_backend.models.ai_system import AISystem
-from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
+from aisc_evaluation.models import Evaluation, EvaluationStatus
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers import internal
 from aisc_backend.routers.internal import router as internal_router

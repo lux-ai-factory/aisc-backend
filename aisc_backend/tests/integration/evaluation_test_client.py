@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import EvaluationStatus
+from aisc_evaluation.models import EvaluationStatus
 from aisc_backend.routers.evaluation import router
 from aisc_backend.routers.internal import router as internal_router
 from aisc_backend.schemas.evaluation import (

@@ -1,8 +1,8 @@
 import uuid
 from typing import Any
 
-from aisc_backend.models import Evaluation
-from aisc_backend.models.observation import Observation
+from aisc_evaluation.models import Evaluation
+from aisc_evaluation.models import Observation
 from aisc_backend.repositories.base_repository import BaseRepository
 
 
@@ -94,7 +94,7 @@ class EvaluationRepository(BaseRepository[Evaluation]):
         """The project's evaluations that still have (or may still have) a live
         celery run: running or failed ones, so the project's task list is not
         cluttered with every finished run."""
-        from aisc_backend.models import EvaluationStatus
+        from aisc_evaluation.models import EvaluationStatus
 
         return [
             item

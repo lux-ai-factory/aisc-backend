@@ -17,7 +17,8 @@ from types import SimpleNamespace
 
 from django.test import TestCase
 
-from aisc_backend.models import EvaluationStatus, Plugin, PluginConfig
+from aisc_evaluation.models import EvaluationStatus
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.tests.integration import (
     project_test_client,

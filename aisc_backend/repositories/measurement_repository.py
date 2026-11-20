@@ -4,7 +4,7 @@ from django.db.models import Func, F
 from django.db.models import Count, Min, Max, Avg, QuerySet
 from django.db import connection
 
-from aisc_backend.models import Measurement
+from aisc_evaluation.models import Measurement
 from aisc_backend.repositories.base_repository import BaseRepository
 
 

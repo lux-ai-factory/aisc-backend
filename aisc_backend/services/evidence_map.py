@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from aisc_controls.models import ProjectChecklist, Submission, SubmissionAnswer
 from aisc_control_objectives.models import ControlObjective, ObjectiveProfile, Risk, RiskObjectiveMapping
-from aisc_backend.models.evaluation import EvaluationStatus, EvaluationPlugin
+from aisc_evaluation.models import EvaluationStatus, EvaluationPlugin
 from aisc_control_objectives.models import EvidenceLink, EvidenceReview
-from aisc_backend.models.plugin import Plugin
+from aisc_plugins.models import Plugin
 from aisc_backend.models.project import Project
 from aisc_backend.models.system import System, SystemVersion
 from aisc_backend.services import control_objectives as priorities

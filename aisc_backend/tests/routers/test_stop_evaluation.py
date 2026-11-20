@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import EvaluationPlugin
-from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
+from aisc_evaluation.models import EvaluationPlugin
+from aisc_evaluation.models import Evaluation, EvaluationStatus
 from aisc_backend.models.project import Project, ProjectStatus
 from aisc_backend.routers.task import router as task_router
 

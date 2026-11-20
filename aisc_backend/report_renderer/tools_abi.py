@@ -20,10 +20,10 @@ from aisc_plugin_interface.report import BaseToolRenderer, ToolRun
 from aisc_plugin_interface.report.i18n import fill
 from aisc_plugin_interface.report.templating import render_package_template
 
-from aisc_backend.models.artifact import Artifact
-from aisc_backend.models.measure import Measurement
-from aisc_backend.models.observation import Observation
-from aisc_backend.models.plugin import EvaluationInput, EvaluationPlugin
+from aisc_evaluation.models import Artifact
+from aisc_evaluation.models import Measurement
+from aisc_evaluation.models import Observation
+from aisc_evaluation.models import EvaluationInput, EvaluationPlugin
 
 logger = logging.getLogger("report_renderer")
 

@@ -4,7 +4,7 @@ from ninja.errors import HttpError
 
 from aisc_backend.auth.access import role_or_404
 from aisc_backend.models.ai_system import AIComponent, AIComponentType
-from aisc_backend.models.artifact import Artifact
+from aisc_evaluation.models import Artifact
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 

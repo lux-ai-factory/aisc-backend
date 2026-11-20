@@ -1,6 +1,7 @@
 import uuid
 
-from aisc_backend.models import PluginConfigProjectConfig, ProjectConfig, ProjectConfigCategory
+from aisc_plugins.models import PluginConfigProjectConfig
+from aisc_backend.models import ProjectConfig, ProjectConfigCategory
 from aisc_backend.repositories.base_repository import BaseRepository
 
 

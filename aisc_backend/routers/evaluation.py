@@ -7,12 +7,14 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from aisc_backend.auth.access import role_or_404
-from aisc_backend.models import EvaluationPlugin, AIComponent, EvaluationInput, PluginConfig
+from aisc_evaluation.models import EvaluationPlugin, EvaluationInput
+from aisc_backend.models import AIComponent
+from aisc_plugins.models import PluginConfig
 from aisc_backend.models.common import StorageContainer
-from aisc_backend.models.observation import Observation
-from aisc_backend.models.metric import Metric
+from aisc_evaluation.models import Observation
+from aisc_evaluation.models import Metric
 
-from aisc_backend.models.evaluation import Evaluation, EvaluationStatus
+from aisc_evaluation.models import Evaluation, EvaluationStatus
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_backend.repositories.evaluation_repository import EvaluationRepository

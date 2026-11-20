@@ -162,7 +162,7 @@ async def install_from_catalogue(request, pid: uuid.UUID, catalogue_id: str,
     if kind == "plugin":
         from packaging.version import parse as parse_version
         from aisc_backend.repositories.plugin_repository import PluginRepository
-        from aisc_backend.models.plugin import Plugin
+        from aisc_plugins.models import Plugin
 
         versions = plugin_loader.list_packages().get(catalogue_id, {})
         if not versions:

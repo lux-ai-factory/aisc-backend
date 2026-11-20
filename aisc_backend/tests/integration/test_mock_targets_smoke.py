@@ -30,8 +30,8 @@ from pathlib import Path
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
-from aisc_backend.models.plugin import Plugin, PluginConfig
+from aisc_evaluation.models import Evaluation, EvaluationPlugin
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.connection import router as connection_router

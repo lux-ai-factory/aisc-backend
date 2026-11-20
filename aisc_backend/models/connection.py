@@ -160,7 +160,7 @@ class RunBinding(Base):
     helper a role resolved to. Snapshotted, so the record is what ran."""
 
     evaluation_plugin = models.ForeignKey(
-        "EvaluationPlugin",
+        "aisc_evaluation.EvaluationPlugin",
         related_name="connection_bindings",
         on_delete=models.CASCADE,
     )

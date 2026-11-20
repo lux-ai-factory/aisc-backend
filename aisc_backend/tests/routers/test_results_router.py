@@ -15,14 +15,15 @@ from ninja.testing import TestAsyncClient
 
 from aisc_backend.models.ai_system import AIComponent, AISystem
 from aisc_backend.models.connection import Connection, Helper, RunBinding
-from aisc_backend.models.evaluation import Evaluation, EvaluationPlugin
-from aisc_backend.models.plugin import EvaluationInput, Plugin, PluginConfig
+from aisc_evaluation.models import Evaluation, EvaluationPlugin
+from aisc_evaluation.models import EvaluationInput
+from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.models.system import System, SystemVersion
-from aisc_backend.models.measure import Measurement
-from aisc_backend.models.metric import Metric
-from aisc_backend.models.observation import Observation
+from aisc_evaluation.models import Measurement
+from aisc_evaluation.models import Metric
+from aisc_evaluation.models import Observation
 from aisc_backend.routers.project import router as project_router
 from aisc_backend.routers.results import router as results_router
 from aisc_backend.services import dashboard_link

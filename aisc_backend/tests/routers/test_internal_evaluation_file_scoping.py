@@ -11,18 +11,9 @@ from django.http import StreamingHttpResponse
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models import (
-    AIComponent,
-    AIComponentType,
-    AISystem,
-    Evaluation,
-    EvaluationPlugin,
-    EvaluationStatus,
-    Project,
-    ProjectMember,
-    ProjectStatus,
-)
-from aisc_backend.models.artifact import Artifact
+from aisc_backend.models import AIComponent, AIComponentType, AISystem, Project, ProjectMember, ProjectStatus
+from aisc_evaluation.models import Evaluation, EvaluationPlugin, EvaluationStatus
+from aisc_evaluation.models import Artifact
 from aisc_backend.routers.evaluation import router as evaluation_router
 from aisc_backend.routers.file import router as file_router
 
