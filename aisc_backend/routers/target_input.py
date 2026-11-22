@@ -300,3 +300,77 @@ async def plugin_declarations(request):
         except Exception:  # one test that does not load, or whose declaration is odd, must not hide the others
             logger.exception("plugin %s %s: its declarations could not be read", row.package_name, row.name)
     return out
+
+
+# ---- which tests cannot be launched yet (the launch page greys them out) ----
+
+#: why a test that calls its target cannot run: the same advice as the launch check (routers/evaluation.py)
+NO_CONNECTION = ("No target of the AI card has a connection yet: set one under Manage, Components and "
+                 "connections, then this test can be launched")
+
+
+def needs_a_connected_target(plugin) -> bool:
+    """Whether the test can only assess an AI card target that has a connection: it calls the target, and
+    has no local model file to assess instead."""
+    return _kinds(plugin) == (CARD,) and bool(plugin.declaration.get("card_needs_connection"))
+
+
+def card_target_connected(platform_pid, key: str) -> bool | None:
+    """The platform's answer on one card target (routers/evaluation.py, which imports this module)."""
+    from aisc_backend.routers.evaluation import card_target_connected as ask
+
+    return ask(platform_pid, key)
+
+
+def card_target_keys(platform_pid, values) -> list[str]:
+    """The keys of this project's card targets, from the values of its mirrors (`target:<pid>/<key>`)."""
+    own = f"target:{platform_pid}/"
+    return [v[len(own):] for v in values if isinstance(v, str) and v.startswith(own)]
+
+
+@sync_to_async
+def _card_targets() -> tuple[str | None, list[str]]:
+    """(platform pid, the keys of the card targets in use) of the open project; (None, []) when the project
+    is not one of the platform's."""
+    from aisc_backend.models import AIComponent, Project
+
+    project = Project.objects.filter(platform_project_id__isnull=False).first()
+    if project is None:
+        return None, []
+    values = [c.json_value.get("value") if isinstance(c.json_value, dict) else None
+              for c in AIComponent.objects.filter(system__project=project, component_type="resource",
+                                                  retired_at__isnull=True)]
+    return str(project.platform_project_id), card_target_keys(project.platform_project_id, values)
+
+
+def some_target_connected(platform_pid, keys: list[str]) -> bool | None:
+    """True once one target has a connection, False when the platform says none has, None when it could not
+    tell for some target and none is connected (the launch check then decides, as before)."""
+    unknown = False
+    for key in keys:
+        answer = card_target_connected(platform_pid, key)
+        if answer is True:
+            return True
+        if answer is None:
+            unknown = True
+    return None if unknown else False
+
+
+@router.get("/launch-blockers", response=dict[str, str])
+async def launch_blockers(request):
+    """Why each test of the open project cannot be launched yet, by plugin pid; a test not named can be."""
+    needing = []
+    for row in await _enabled_plugins():
+        try:
+            if needs_a_connected_target(await stored_declarations.declared(row)):
+                needing.append(str(row.pid))
+        except Exception:  # one test that does not load must not hide the others
+            logger.exception("plugin %s %s: its declarations could not be read", row.package_name, row.name)
+    if not needing:
+        return {}
+    platform_pid, keys = await _card_targets()
+    if platform_pid is None:
+        return {}
+    if await sync_to_async(some_target_connected)(platform_pid, keys) is not False:
+        return {}
+    return {pid: NO_CONNECTION for pid in needing}
