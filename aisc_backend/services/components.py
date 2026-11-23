@@ -217,6 +217,18 @@ def provenance_of(
     }
 
 
+def face_for(slot, component: AIComponent, adapter_id: str, adapters: list[type]) -> str:
+    """The face protocol a plugin speaks for this input: the accepted face the
+    chosen adapter serves (ADR 0009). Empty when the slot is unknown."""
+    cls = next((a for a in adapters if getattr(a, "id", "") == adapter_id), None)
+    serves = set(getattr(cls, "serves", ()) or ()) if cls is not None else set()
+    accepts = compat.accepts_of(slot) if slot is not None else set()
+    common = sorted(serves & accepts)
+    if common:
+        return common[0]
+    return component.protocol or ""
+
+
 async def resolve_secret(component: AIComponent) -> Secret:
     """The component's key and secret headers, resolved for one call. The value is
     read only here, immediately before the adapter uses it."""

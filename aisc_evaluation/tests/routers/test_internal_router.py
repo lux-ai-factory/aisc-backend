@@ -137,6 +137,10 @@ class InternalEvaluationInputsTestCase(TestCase):
         self.evaluation_input = EvaluationInput.objects.create(
             evaluation_plugin=self.evaluation_plugin, name="llm",
             component=self.endpoint, value={},
+            adapter="openai", adapter_version="1", adapter_config={"model": "gpt-4o"},
+            provenance={"url": "http://example.com/v1", "protocol": "openai-chat",
+                        "adapter": "openai", "version": "1", "config_hash": "h",
+                        "face": "openai-chat"},
         )
 
     async def test_get_evaluation_inputs_returns_typed_entries(self):
@@ -154,8 +158,29 @@ class InternalEvaluationInputsTestCase(TestCase):
         self.assertEqual(entry["protocol"], "openai-chat")
         self.assertEqual(entry["adapter"], "openai")
         self.assertEqual(entry["adapter_config"], {"model": "gpt-4o"})
+        self.assertEqual(entry["face"], "openai-chat")
         # the key travels encrypted, and the standard adapter needs no install
         self.assertEqual(entry["secret_encrypted_value"], "cipher")
         self.assertIsNone(entry["install_target"])
         self.assertNotIn("endpoint_url", entry)
         self.assertNotIn("secret_key", entry)
+        # the door's allowlist is resolved at dispatch, so the run is self-contained
+        self.assertEqual(entry["allowed_hosts"], [])
+        self.assertIn("postgres", entry["stack_hosts"])
+        self.assertIn("config_hash", entry)
+
+    async def test_provenance_merges_into_the_input(self):
+        with patch.dict(os.environ, {"INTERNAL_API_KEY": INTERNAL_SECRET}):
+            response = await client.post(
+                f"/evaluations/{self.evaluation.pid}/provenance",
+                json={"provenance": {
+                    str(self.evaluation_plugin.pid): {"llm": {"calls": 3, "errors": 1}},
+                }},
+                headers={"X-Internal-Secret": INTERNAL_SECRET},
+            )
+        self.assertEqual(200, response.status_code, response.text)
+        inp = await EvaluationInput.objects.aget(pk=self.evaluation_input.pk)
+        self.assertEqual(inp.provenance["calls"], 3)
+        self.assertEqual(inp.provenance["errors"], 1)
+        # the dispatch snapshot is kept, the door only adds counts
+        self.assertEqual(inp.provenance["url"], "http://example.com/v1")

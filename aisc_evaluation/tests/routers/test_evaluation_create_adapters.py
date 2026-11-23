@@ -96,6 +96,7 @@ class EvaluationCreateAdapterTestCase(TestCase):
         self.assertEqual(inp.adapter_version, "1")
         self.assertEqual(inp.provenance["url"], "https://models.example/v1")
         self.assertEqual(inp.provenance["adapter"], "openai")
+        self.assertEqual(inp.provenance["face"], "openai-chat")
 
     async def test_an_explicit_adapter_that_fits_wins(self):
         component = await self._component(

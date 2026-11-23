@@ -162,6 +162,9 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
                     provenance = component_service.provenance_of(
                         component, adapter_id, adapter_version, adapter_config
                     )
+                    provenance["face"] = component_service.face_for(
+                        slot, component, adapter_id, adapters
+                    )
 
                 evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,

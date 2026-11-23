@@ -12,6 +12,7 @@ from pydantic import Field
 from aisc_backend.audit.log import log_action
 from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_evaluation.models import Evaluation, EvaluationStatus, Observation, Metric, Measurement
+from aisc_evaluation.models import EvaluationInput, EvaluationPlugin
 from aisc_evaluation.models import Artifact
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.ai_system import AIComponentType
@@ -24,6 +25,7 @@ from aisc_backend.repositories.project_config_repository import ProjectConfigRep
 from aisc_evaluation.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_evaluation.schemas.measure import MeasureInSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
+from aisc_backend.services import allowed_hosts
 from aisc_backend.services import component_secrets
 from aisc_backend.services import components as component_service
 
@@ -66,17 +68,27 @@ class EvaluationPluginInputSchema(Schema):
     data: str
     json_value: dict[str, Any] = Field(default_factory=dict)
     value: dict[str, Any] = Field(default_factory=dict)
-    # Endpoint inputs (ADR 0009): the target and the adapter to reach it, with the
-    # key still **encrypted**. The worker decrypts it in the run's door; it never
-    # travels as plaintext and never reaches the plugin.
-    url: str | None = None
-    protocol: str | None = None
+    #: The chosen adapter (a registry id) and its config, for data and endpoint
+    #: inputs alike (ADR 0009).
     adapter: str | None = None
     adapter_version: str | None = None
     adapter_config: dict[str, Any] = Field(default_factory=dict)
+    install_target: AdapterInstallTargetSchema | None = None
+    # Endpoint inputs: the target and the face the plugin speaks, with the key
+    # still **encrypted**. The worker decrypts it in the run's door; it never
+    # travels as plaintext and never reaches the plugin.
+    url: str | None = None
+    protocol: str | None = None
+    face: str | None = None
     secret_encrypted_value: str | None = None
     secret_headers: dict[str, str] = Field(default_factory=dict)
-    install_target: AdapterInstallTargetSchema | None = None
+    config_hash: str = ""
+    #: The door's allowlist: the project's entries, the stack's floor and the
+    #: deployment's own services (ADR 0009). Read at dispatch, so the run is
+    #: self-contained.
+    allowed_hosts: list[str] = Field(default_factory=list)
+    floor_hosts: list[str] = Field(default_factory=list)
+    stack_hosts: list[str] = Field(default_factory=list)
 
 
 class PluginsStatusResponse(Schema):
@@ -156,18 +168,24 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
                 data=component.data,
                 json_value=component.json_value,
                 value=inp.value,
+                adapter=inp.adapter or "",
+                adapter_version=inp.adapter_version or "",
+                adapter_config=inp.adapter_config or {},
+                install_target=component_service.adapter_install_target(inp.adapter),
             )
             if component.component_type == AIComponentType.ENDPOINT:
                 entry.url = component.url or ""
                 entry.protocol = component.protocol or ""
-                entry.adapter = component.adapter or ""
-                entry.adapter_version = component.adapter_version or ""
-                entry.adapter_config = component.adapter_config or {}
+                entry.face = (inp.provenance or {}).get("face") or component.protocol or ""
                 entry.secret_encrypted_value = await _encrypted_secret(component)
                 entry.secret_headers = await _encrypted_secret_headers(component)
-                entry.install_target = component_service.adapter_install_target(
-                    component.adapter
-                )
+                entry.config_hash = (inp.provenance or {}).get("config_hash", "")
+                entry.allowed_hosts = [
+                    row.host
+                    for row in await allowed_hosts.project_entries(component.project)
+                ]
+                entry.floor_hosts = allowed_hosts.floor_hosts()
+                entry.stack_hosts = sorted(allowed_hosts.stack_hosts())
             entries.append(entry)
         result[str(evaluation_plugin.pid)] = entries
     return result
@@ -189,6 +207,40 @@ async def _encrypted_secret_headers(component) -> dict[str, str]:
         if row is not None and row.encrypted_value:
             headers[header] = row.encrypted_value
     return headers
+
+
+class ProvenanceUpdateSchema(Schema):
+    #: evaluation_plugin pid -> {slot: {calls, errors}} from the run door.
+    provenance: dict[str, dict[str, dict]] = Field(default_factory=dict)
+
+
+@router.post("/evaluations/{evaluation_pid}/provenance", response=str)
+async def update_evaluation_provenance(
+    request, evaluation_pid: uuid.UUID, data: ProvenanceUpdateSchema
+):
+    """Merge the run door's call counts into each input's provenance (ADR 0009).
+
+    Dispatch records the endpoint snapshot (url, adapter, version, config_hash);
+    the door adds how many calls were made and how many failed. Best-effort: a
+    missing evaluation or input is ignored, and the run has already finished.
+    """
+    for evaluation_plugin_pid, slots in data.provenance.items():
+        try:
+            pid = uuid.UUID(evaluation_plugin_pid)
+        except ValueError:
+            continue
+        evaluation_plugin = await evaluation_plugin_repository.get(pid)
+        if evaluation_plugin is None:
+            continue
+        async for inp in EvaluationInput.objects.filter(evaluation_plugin=evaluation_plugin):
+            extra = slots.get(inp.name)
+            if not extra:
+                continue
+            provenance = dict(inp.provenance or {})
+            provenance.update(extra)
+            inp.provenance = provenance
+            await inp.asave(update_fields=["provenance"])
+    return "ok"
 
 
 @router.get("/evaluations/{evaluation_pid}/plugins/status", response=PluginsStatusResponse)
