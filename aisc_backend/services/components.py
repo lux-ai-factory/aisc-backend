@@ -21,9 +21,11 @@ from aisc_backend.models.ai_system import AIComponent, AIComponentType
 from aisc_backend.services import component_secrets as secrets
 from aisc_plugin_interface.adapters import (
     BUILTIN_ADAPTERS,
+    DataAdapter,
     EndpointAdapter,
     Secret,
     Turn,
+    compat,
     preset as get_preset,
 )
 
@@ -112,6 +114,106 @@ def adapter_install_target(adapter_id: str) -> dict | None:
 
 def target_of(component: AIComponent) -> Target:
     return Target(url=component.url or "", protocol=component.protocol or "")
+
+
+def installed_adapters() -> list[type]:
+    """The standard library plus every adapter a discovered package ships (ADR
+    0009 D-19). A package that cannot be imported is skipped: the catalogue, not
+    this call, reports it."""
+    classes: list[type] = list(BUILTIN_ADAPTERS)
+    try:
+        from aisc_plugins.routers.plugin import plugin_loader
+    except Exception:  # pragma: no cover - the loader is present in the app
+        return classes
+    for package, versions in (plugin_loader.list_adapters() or {}).items():
+        if package == "aisc-plugin-interface":
+            continue
+        for version, entry in versions.items():
+            for manifest in entry.get("adapters", []):
+                try:
+                    classes.append(plugin_loader.load_adapter(package, version, manifest["id"]))
+                except Exception:
+                    continue
+    return classes
+
+
+def slot_fit(slot, component: AIComponent, adapters: list[type]) -> tuple[bool, list[str]]:
+    """Whether a component may fill a plugin slot, and with which adapters.
+
+    One rule, from ``aisc_plugin_interface.adapters.compat`` (ADR 0009). A
+    datashape or resource component carries its own value, so it needs no adapter
+    and fits a slot that accepts ``json``/``resource`` directly.
+    """
+    accepts = compat.accepts_of(slot)
+    if component.component_type == AIComponentType.ENDPOINT:
+        classes = compat.endpoint_slot_candidates(
+            component.protocol or "",
+            slot,
+            [a for a in adapters if issubclass(a, EndpointAdapter)],
+        )
+        return bool(classes), [a.id for a in classes]
+    if component.component_type == AIComponentType.DATASHAPE:
+        return "json" in accepts, []
+    if component.component_type == AIComponentType.RESOURCE:
+        return "resource" in accepts, []
+    classes = compat.data_slot_candidates(
+        component.format or "",
+        slot,
+        [a for a in adapters if issubclass(a, DataAdapter)],
+    )
+    return bool(classes), [a.id for a in classes]
+
+
+def resolve_input_adapter(
+    slot,
+    component: AIComponent,
+    requested: str | None,
+    config: dict | None,
+    adapters: list[type],
+) -> tuple[str, str, dict]:
+    """The adapter for one evaluation input (ADR 0009).
+
+    An explicit request wins unless the slot locks the choice
+    (``adapter_required``); otherwise the slot's default, otherwise the first that
+    fits. Raises ``ValueError`` when the requested adapter does not fit the
+    component. Returns ``(adapter_id, adapter_version, config)``.
+    """
+    fits, adapter_ids = slot_fit(slot, component, adapters) if slot is not None else (True, [])
+    locked = bool(getattr(slot, "adapter_required", False)) and getattr(slot, "adapter", None)
+    if locked:
+        chosen = slot.adapter
+    else:
+        chosen = requested or (getattr(slot, "adapter", None) if slot is not None else None)
+    if not chosen:
+        chosen = adapter_ids[0] if adapter_ids else ""
+    if chosen and adapter_ids and chosen not in adapter_ids:
+        raise ValueError(
+            f"adapter {chosen!r} does not fit component {component.name!r}"
+        )
+    cls = next((a for a in adapters if getattr(a, "id", "") == chosen), None)
+    if cls is not None and config is not None:
+        config = cls.Config.model_validate(config).model_dump()
+    return chosen, (getattr(cls, "version", "") if cls is not None else ""), dict(config or {})
+
+
+def provenance_of(
+    component: AIComponent, adapter_id: str, adapter_version: str, config: dict
+) -> dict:
+    """The endpoint snapshot recorded on an input at dispatch (ADR 0009). Secrets
+    are never in the config, and the hash is over the config alone."""
+    import hashlib
+    import json
+
+    digest = hashlib.sha256(
+        json.dumps(config or {}, sort_keys=True, default=str).encode()
+    ).hexdigest()
+    return {
+        "url": component.url or "",
+        "protocol": component.protocol or "",
+        "adapter": adapter_id,
+        "version": adapter_version,
+        "config_hash": digest,
+    }
 
 
 async def resolve_secret(component: AIComponent) -> Secret:

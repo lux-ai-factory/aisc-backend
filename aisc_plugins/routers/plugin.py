@@ -7,10 +7,12 @@ from ninja.errors import HttpError
 from aisc_backend.audit.log import log_action
 from aisc_plugins.models import Plugin, PluginConfig
 from aisc_backend.models import ProjectConfig
+from aisc_backend.models.ai_system import AIComponent
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.ai_component_repository import AIComponentRepository
 from aisc_backend.repositories.base_repository import BaseRepository
+from aisc_backend.services import components as component_service
 from aisc_evaluation.repositories.evaluation_repository import EvaluationRepository
 from aisc_evaluation.repositories.measurement_repository import MeasurementRepository
 from aisc_plugins.repositories.plugin_repository import PluginRepository, EvaluationPluginRepository
@@ -97,6 +99,71 @@ async def get_plugin_input_definitions(request, plugin_pid: uuid.UUID):
     input_definitions: list[InputDefinition] = plugin_obj.input_definitions
 
     return input_definitions
+
+
+class SlotCandidateSchema(Schema):
+    component_pid: uuid.UUID
+    name: str
+    component_type: str
+    format: str = ""
+    protocol: str = ""
+    #: The adapters that fit this component to the slot (ids), best first.
+    adapters: list[str] = []
+    default_adapter: str = ""
+
+
+class SlotCandidatesResponse(Schema):
+    slot: str
+    label: str
+    accepts: list[str] = []
+    role: str = "input"
+    adapter_required: bool = False
+    #: The slot's declared default adapter, if any.
+    adapter: str | None = None
+    candidates: list[SlotCandidateSchema] = []
+
+
+@router.get("/{plugin_pid}/slots/{slot_name}/candidates", response=SlotCandidatesResponse)
+async def get_slot_candidates(request, plugin_pid: uuid.UUID, slot_name: str):
+    """The components that may fill a plugin slot, with the adapters that fit each.
+
+    One compatibility rule (ADR 0009): a component is listed only if a fitting
+    adapter exists (or, for a datashape/resource, the slot accepts its value type
+    directly). Deny-by-default project scoping: only the plugin's own project's
+    components are ever listed.
+    """
+    plugin = await plugin_repository.get(plugin_pid)
+    plugin_obj = plugin_loader.load_plugin(plugin.package_name, plugin.name, plugin.version)
+    slot = next(
+        (d for d in plugin_obj.input_definitions if d.name == slot_name), None
+    )
+    if slot is None:
+        raise HttpError(404, f"Plugin {plugin.name} has no slot {slot_name!r}")
+
+    adapters = component_service.installed_adapters()
+    candidates: list[SlotCandidateSchema] = []
+    async for component in AIComponent.objects.filter(project_id=plugin.project_id).order_by("name"):
+        fits, adapter_ids = component_service.slot_fit(slot, component, adapters)
+        if not fits:
+            continue
+        candidates.append(SlotCandidateSchema(
+            component_pid=component.pid,
+            name=component.name,
+            component_type=component.component_type,
+            format=component.format or "",
+            protocol=component.protocol or "",
+            adapters=adapter_ids,
+            default_adapter=adapter_ids[0] if adapter_ids else "",
+        ))
+    return SlotCandidatesResponse(
+        slot=slot.name,
+        label=slot.label,
+        accepts=list(slot.accepts),
+        role=slot.role,
+        adapter_required=slot.adapter_required,
+        adapter=slot.adapter,
+        candidates=candidates,
+    )
 
 
 @router.get("/{plugin_pid}/project_config_definitions", response=list[dict])

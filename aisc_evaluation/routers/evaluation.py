@@ -9,6 +9,8 @@ from ninja.errors import HttpError
 from aisc_backend.auth.access import role_or_404
 from aisc_evaluation.models import EvaluationPlugin, EvaluationInput
 from aisc_backend.models import AIComponent
+from aisc_backend.models.ai_system import AIComponentType
+from aisc_backend.services import components as component_service
 from aisc_plugins.models import PluginConfig
 from aisc_backend.models.common import StorageContainer
 from aisc_evaluation.models import Observation
@@ -66,6 +68,10 @@ class EvaluationPluginInputInSchema(Schema):
     pid: uuid.UUID
     name: str
     value: dict | None = None
+    #: The chosen adapter (a registry id) and its config; defaulted per slot when
+    #: omitted (ADR 0009).
+    adapter: str | None = None
+    adapter_config: dict | None = None
 
 
 class EvaluationPluginInSchema(Schema):
@@ -86,7 +92,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     await role_or_404(request, project)
 
     # Resolve and validate plugins before writing anything to DB
-    resolved: list[tuple[EvaluationPluginInSchema, object]] = []
+    resolved: list[tuple[EvaluationPluginInSchema, object, object]] = []
     validation_errors = {"missing": [], "invalid": [], "ambiguous": []}
     for plugin_to_run in data.plugins_to_run:
         plugin = next(
@@ -114,7 +120,7 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
             )
             for key in validation_errors:
                 validation_errors[key].extend(setting_errors[key])
-            resolved.append((plugin_to_run, plugin_config))
+            resolved.append((plugin_to_run, plugin_config, plugin_obj))
         else:
             raise HttpError(400, f"Plugin {plugin_to_run.name} is not enabled for this project")
 
@@ -124,8 +130,9 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
     evaluation = Evaluation(status=EvaluationStatus.Pending, project=project)
     evaluation = await evaluation_repository.create(evaluation)
 
+    adapters = component_service.installed_adapters()
     evaluation_plugins = []
-    for plugin_to_run, plugin_config in resolved:
+    for plugin_to_run, plugin_config, plugin_obj in resolved:
         run_plugin = EvaluationPlugin(
             plugin_config=plugin_config, evaluation=evaluation
         )
@@ -133,16 +140,38 @@ async def create_evaluation_task(request, data: CreateEvaluationRequest):
 
         # Link the input components
         if plugin_to_run.inputs:
+            slots = {d.name: d for d in (getattr(plugin_obj, "input_definitions", None) or [])}
             for input_data in plugin_to_run.inputs:
                 component = await ai_component_repository.get(input_data.pid)
                 if not component:
                     raise HttpError(400, f"Component {input_data.pid} not found")
+                # Deny-by-default: a component from another project is not found.
+                if component.project_id != project.pk:
+                    raise HttpError(400, f"Component {input_data.pid} not found")
+
+                slot = slots.get(input_data.name)
+                try:
+                    adapter_id, adapter_version, adapter_config = component_service.resolve_input_adapter(
+                        slot, component, input_data.adapter, input_data.adapter_config, adapters,
+                    )
+                except ValueError as exc:
+                    raise HttpError(400, str(exc)) from exc
+
+                provenance = {}
+                if component.component_type == AIComponentType.ENDPOINT:
+                    provenance = component_service.provenance_of(
+                        component, adapter_id, adapter_version, adapter_config
+                    )
 
                 evaluation_input = EvaluationInput(
                     evaluation_plugin=run_plugin,
                     name=input_data.name,
                     component=component,
                     value=input_data.value or {},
+                    adapter=adapter_id,
+                    adapter_version=adapter_version,
+                    adapter_config=adapter_config,
+                    provenance=provenance,
                 )
                 await evaluation_input.asave()
 
