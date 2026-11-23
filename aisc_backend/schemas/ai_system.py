@@ -56,6 +56,8 @@ class AIComponentInSchema(Schema):
     fields: dict | None = None
     #: The key to store; "" clears it. Never read back.
     secret: str | None = None
+    #: Or reference an existing project secret by key instead of storing one.
+    secret_key: str | None = None
     secret_headers: dict[str, str] | None = None
 
 

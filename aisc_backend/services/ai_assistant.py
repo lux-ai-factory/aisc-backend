@@ -1,13 +1,12 @@
 """
 Which model a project's AI assistants talk to — one rule for all of them.
 
-A project registers its own models as helpers (Manage > AI assistants, the
-`Helper` rows ported with CON-01); a deployment may also set a stack-wide
-fallback. The risk mapper and the card agent both resolve their model here, so
-there is exactly one answer to "which model does an assistant use" and exactly
-one way a missing model is reported (`NoModelConfigured`), which the endpoints
-turn into a 503 that says what to configure. No assistant invents an answer
-without a model.
+A project registers its own model as a project-level endpoint component (ADR 0009
+D-8); a deployment may also set a stack-wide fallback. The risk mapper and the card
+agent both resolve their model here, so there is exactly one answer to "which model
+does an assistant use" and exactly one way a missing model is reported
+(`NoModelConfigured`), which the endpoints turn into a 503 that says what to
+configure. No assistant invents an answer without a model.
 """
 from __future__ import annotations
 
@@ -16,9 +15,6 @@ import logging
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
-
-#: The helper roles an assistant prefers when a project has several models.
-PREFERRED_ROLES = ("generator", "judge")
 
 
 class NoModelConfigured(RuntimeError):
@@ -61,39 +57,44 @@ async def resolve_chat(
     model_setting: str,
     api_key_setting: str,
 ):
-    """The chat call an assistant uses: the project's helper first, the stack second.
+    """The chat call an assistant uses: the project's own model first, the stack second.
 
-    Raises `NoModelConfigured` when neither is set up, so the endpoint can say so
-    instead of silently doing nothing.
+    The project's model is a **project-level** ``openai-chat`` endpoint component
+    (ADR 0009 D-8) — one not attached to the assessed system. Raises
+    `NoModelConfigured` when neither is set up, so the endpoint can say so instead
+    of silently doing nothing.
     """
-    from aisc_backend.models.connection import Helper
-    from aisc_backend.services import allowed_hosts, connection_secrets
+    from aisc_backend.models.ai_system import AIComponent, AIComponentType
+    from aisc_backend.services import allowed_hosts, component_secrets
 
-    helpers = [h async for h in Helper.objects.filter(project=project).order_by("name")]
-    if helpers:
-        preferred = next(
-            (h for role in PREFERRED_ROLES for h in helpers if role in (h.roles or [])),
-            helpers[0],
+    component = await (
+        AIComponent.objects.filter(
+            project=project,
+            system__isnull=True,
+            component_type=AIComponentType.ENDPOINT,
+            protocol="openai-chat",
         )
-        # A helper is the project's own endpoint, so it goes through the same door
-        # as a connection test (CON-01) — read now, before the call.
-        refusal = await allowed_hosts.guard_url(project, preferred.endpoint_url)
+        .order_by("name")
+        .afirst()
+    )
+    if component is not None:
+        # A project-level component is the project's own endpoint, so it goes
+        # through the same door as a component test (CON-01) — read now.
+        refusal = await allowed_hosts.guard_url(project, component.url)
         if refusal is not None:
             raise DestinationRefused(
-                f"the model {preferred.name!r} is at {refusal['detail']}"
+                f"the model {component.name!r} is at {refusal['detail']}"
             )
-        key = await connection_secrets.get_secret(
-            preferred.project_id, connection_secrets.helper_key_name(preferred.name)
-        )
-        return make_openai_chat(
-            preferred.endpoint_url, preferred.label or "gpt-4o-mini", key
-        )
+        key_name = component.secret_key or component_secrets.component_key_name(component.pid)
+        key = await component_secrets.get_secret(component.project_id, key_name)
+        model = (component.adapter_config or {}).get("model") or "gpt-4o-mini"
+        return make_openai_chat(component.url, model, key)
 
     base_url = getattr(settings, base_url_setting, "") or ""
     if not base_url:
         raise NoModelConfigured(
-            f"no model is configured for {purpose}: set up a helper model in "
-            f"Manage > AI assistants, or the stack's {base_url_setting}"
+            f"no model is configured for {purpose}: add a project-level LLM "
+            f"component, or the stack's {base_url_setting}"
         )
     return make_openai_chat(
         base_url,

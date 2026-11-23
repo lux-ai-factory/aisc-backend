@@ -38,15 +38,15 @@ class ComponentRouterTestCase(TestCase):
         self.assertEqual(res.status_code, 404)
 
     async def test_update_component_typed_json_value(self):
-        comp = await self._component(AIComponentType.LLM)
+        comp = await self._component(AIComponentType.RESOURCE)
         res = await client.patch(
             f"/{comp.pid}",
-            json={"name": "renamed", "json_value": {"endpoint_url": "http://example.com", "secret_key": "k"}},
+            json={"name": "renamed", "json_value": {"reference": "urn:thing"}},
         )
         self.assertEqual(res.status_code, 200, res.text)
         body = res.json()
         self.assertEqual(body["name"], "renamed")
-        self.assertEqual(body["json_value"], {"endpoint_url": "http://example.com", "secret_key": "k"})
+        self.assertEqual(body["json_value"], {"reference": "urn:thing"})
 
     async def test_update_source_dataset_must_be_dataset(self):
         ds = await self._component(AIComponentType.DATASET)
@@ -60,31 +60,34 @@ class ComponentRouterTestCase(TestCase):
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["source_dataset_pid"], str(ds.pid))
 
-    async def test_models_requires_llm(self):
+    async def test_models_requires_an_openai_endpoint(self):
         comp = await self._component(AIComponentType.MODEL)
         res = await client.get(f"/{comp.pid}/models")
         self.assertEqual(res.status_code, 400)
 
-    async def test_models_llm_without_endpoint_configured(self):
-        comp = await self._component(AIComponentType.LLM, json_value={})
-        res = await client.get(f"/{comp.pid}/models")
-        self.assertEqual(res.status_code, 400)
-
-    async def test_models_llm_without_secret_configured(self):
+    async def test_models_without_endpoint_configured(self):
         comp = await self._component(
-            AIComponentType.LLM, json_value={"endpoint_url": "http://example.com"}
+            AIComponentType.ENDPOINT, protocol="openai-chat", adapter="openai",
         )
         res = await client.get(f"/{comp.pid}/models")
         self.assertEqual(res.status_code, 400)
 
-    async def test_models_llm_lists_models(self):
+    async def test_models_without_secret_configured(self):
+        comp = await self._component(
+            AIComponentType.ENDPOINT, protocol="openai-chat", adapter="openai",
+            url="http://example.com",
+        )
+        res = await client.get(f"/{comp.pid}/models")
+        self.assertEqual(res.status_code, 400)
+
+    async def test_models_lists_models(self):
         await ProjectConfig.objects.acreate(
             project=self.project, name="Key", key="k",
             category=ProjectConfigCategory.SECRETS, encrypted_value="cipher",
         )
         comp = await self._component(
-            AIComponentType.LLM,
-            json_value={"endpoint_url": "http://example.com", "secret_key": "k"},
+            AIComponentType.ENDPOINT, protocol="openai-chat", adapter="openai",
+            url="http://example.com", secret_key="k",
         )
         with (
             patch("aisc_backend.routers.component.list_openai_models", return_value=["gpt-4o"]),

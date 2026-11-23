@@ -17,7 +17,7 @@ from aisc_backend.schemas.ai_system import AIComponentInSchema, AIComponentOutSc
 from aisc_backend.services import component_secrets as secrets
 from aisc_backend.services import components as component_service
 from aisc_backend.utils.encryption import decrypt_value
-from aisc_plugin_interface import LLMConfig, list_openai_models, ModelListingError
+from aisc_plugin_interface import list_openai_models, ModelListingError
 from config.settings import MODEL_LISTING_SSL_VERIFY
 
 router = Router(tags=["component"])
@@ -195,14 +195,10 @@ async def get_component_models(request, component_pid: uuid.UUID):
     component = await ai_component_repository.get_with_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
-    if component.component_type == AIComponentType.LLM:
-        config = LLMConfig.model_validate(component.json_value or {})
-        endpoint_url, secret_key = config.endpoint_url, config.secret_key
-    elif component.is_endpoint and component.protocol == "openai-chat":
-        endpoint_url = component.url
-        secret_key = component.secret_key
-    else:
+    if not component.is_endpoint or component.protocol != "openai-chat":
         raise HttpError(400, "Model listing is only available for OpenAI-compatible components")
+    endpoint_url = component.url
+    secret_key = component.secret_key
 
     if not endpoint_url:
         raise HttpError(400, "The component has no endpoint URL configured")

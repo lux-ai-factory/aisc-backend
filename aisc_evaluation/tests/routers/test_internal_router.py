@@ -114,10 +114,12 @@ class InternalEvaluationInputsTestCase(TestCase):
     def setUp(self):
         self.project = Project.objects.create(name="proj", status=ProjectStatus.Ready)
         self.system = AISystem.objects.create(project=self.project, name="sys", description="")
-        self.llm = AIComponent.objects.create(
+        self.endpoint = AIComponent.objects.create(
             name="llm", description="", data="",
-            component_type=AIComponentType.LLM, system=self.system,
-            json_value={"endpoint_url": "http://example.com", "secret_key": "k"},
+            component_type=AIComponentType.ENDPOINT, system=self.system,
+            url="http://example.com/v1", protocol="openai-chat",
+            adapter="openai", adapter_config={"model": "gpt-4o"},
+            secret_key="k",
         )
         ProjectConfig.objects.create(
             project=self.project, name="Key", key="k",
@@ -133,7 +135,8 @@ class InternalEvaluationInputsTestCase(TestCase):
             evaluation=self.evaluation, plugin_config=self.plugin_config
         )
         self.evaluation_input = EvaluationInput.objects.create(
-            evaluation_plugin=self.evaluation_plugin, name="llm", component=self.llm, value={}
+            evaluation_plugin=self.evaluation_plugin, name="llm",
+            component=self.endpoint, value={},
         )
 
     async def test_get_evaluation_inputs_returns_typed_entries(self):
@@ -146,7 +149,13 @@ class InternalEvaluationInputsTestCase(TestCase):
         body = response.data
         entry = body[str(self.evaluation_plugin.pid)][0]
         self.assertEqual(entry["name"], "llm")
-        self.assertEqual(entry["component_type"], "llm")
-        self.assertEqual(entry["endpoint_url"], "http://example.com")
-        self.assertEqual(entry["secret_key"], "k")
+        self.assertEqual(entry["component_type"], "endpoint")
+        self.assertEqual(entry["url"], "http://example.com/v1")
+        self.assertEqual(entry["protocol"], "openai-chat")
+        self.assertEqual(entry["adapter"], "openai")
+        self.assertEqual(entry["adapter_config"], {"model": "gpt-4o"})
+        # the key travels encrypted, and the standard adapter needs no install
         self.assertEqual(entry["secret_encrypted_value"], "cipher")
+        self.assertIsNone(entry["install_target"])
+        self.assertNotIn("endpoint_url", entry)
+        self.assertNotIn("secret_key", entry)

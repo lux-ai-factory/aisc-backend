@@ -85,6 +85,31 @@ def validate_config(adapter_id: str, config: dict | None) -> dict:
     return cls.Config.model_validate(config or {}).model_dump()
 
 
+def adapter_install_target(adapter_id: str) -> dict | None:
+    """Where a worker installs an adapter from, when it is not in the standard
+    library (ADR 0009). ``None`` means builtin (or unknown): the worker always
+    installs ``aisc-plugin-interface``, and an adapter it cannot find is reported
+    by the run, not here."""
+    if not adapter_id or builtin_adapter(adapter_id) is not None:
+        return None
+    try:
+        from aisc_plugins.routers.plugin import plugin_loader
+    except Exception:  # pragma: no cover - the loader is present in the app
+        return None
+    for package, versions in (plugin_loader.list_adapters() or {}).items():
+        if package == "aisc-plugin-interface":
+            continue
+        for version, entry in versions.items():
+            for manifest in entry.get("adapters", []):
+                if manifest.get("id") == adapter_id:
+                    return {
+                        "package": package,
+                        "version": version,
+                        "source": entry.get("source", ""),
+                    }
+    return None
+
+
 def target_of(component: AIComponent) -> Target:
     return Target(url=component.url or "", protocol=component.protocol or "")
 

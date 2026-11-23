@@ -152,12 +152,15 @@ class ProjectComponentRouterTestCase(TestCase):
         self.assertEqual(body["name"], f"{project.name} system")
         self.assertEqual(body["components"], [])
 
-    async def test_create_llm_component_requires_existing_secret(self):
+    async def test_create_endpoint_component_requires_existing_secret_reference(self):
         project = await owned_project()
         payload = {
             "name": "llm",
-            "component_type": "llm",
-            "json_value": {"endpoint_url": "http://example.com", "secret_key": "k"},
+            "component_type": "endpoint",
+            "protocol": "openai-chat",
+            "adapter": "openai",
+            "url": "http://example.com",
+            "secret_key": "k",
         }
         response = await client.post(f"/{project.pid}/components", json=payload)
         self.assertEqual(400, response.status_code)
@@ -169,8 +172,24 @@ class ProjectComponentRouterTestCase(TestCase):
         response = await client.post(f"/{project.pid}/components", json=payload)
         self.assertEqual(200, response.status_code, response.text)
         body = response.data
-        self.assertEqual(body["component_type"], "llm")
-        self.assertEqual(body["json_value"], payload["json_value"])
+        self.assertEqual(body["component_type"], "endpoint")
+        self.assertEqual(body["secret_key"], "k")
+
+    async def test_create_endpoint_component_stores_a_typed_secret(self):
+        project = await owned_project()
+        payload = {
+            "name": "llm",
+            "component_type": "endpoint",
+            "protocol": "openai-chat",
+            "adapter": "openai",
+            "url": "http://example.com",
+            "secret": "sk-typed",
+        }
+        response = await client.post(f"/{project.pid}/components", json=payload)
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertTrue(response.data["has_secret"])
+        # the key value is never read back
+        self.assertNotIn("sk-typed", response.text)
 
     async def test_evaluation_inputs_template_empty_and_prefilled(self):
         project = await owned_project()

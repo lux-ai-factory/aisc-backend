@@ -14,6 +14,7 @@ from aisc_backend.auth.internal import InternalSharedKeyAuth
 from aisc_evaluation.models import Evaluation, EvaluationStatus, Observation, Metric, Measurement
 from aisc_evaluation.models import Artifact
 from aisc_backend.models.common import StorageContainer
+from aisc_backend.models.ai_system import AIComponentType
 from aisc_backend.repositories import file_repository
 from aisc_backend.repositories.base_repository import BaseRepository
 from aisc_evaluation.repositories.evaluation_repository import EvaluationRepository
@@ -23,7 +24,8 @@ from aisc_backend.repositories.project_config_repository import ProjectConfigRep
 from aisc_evaluation.schemas.evaluation import EvaluationDetailOutSchema
 from aisc_evaluation.schemas.measure import MeasureInSchema
 from aisc_backend.schemas.project_config import ProjectConfigSelectionSchema
-from aisc_plugin_interface import LLMConfig
+from aisc_backend.services import component_secrets
+from aisc_backend.services import components as component_service
 
 router = Router(tags=["internal"], auth=InternalSharedKeyAuth())
 
@@ -49,15 +51,29 @@ class SelectionProjectConfigSchema(Schema):
     json_value: dict[str, Any]
 
 
+class AdapterInstallTargetSchema(Schema):
+    package: str
+    version: str
+    source: str = ""
+
+
 class EvaluationPluginInputSchema(Schema):
     name: str
     component_type: str
     data: str
     json_value: dict[str, Any] = Field(default_factory=dict)
     value: dict[str, Any] = Field(default_factory=dict)
-    endpoint_url: str | None = None
-    secret_key: str | None = None
+    # Endpoint inputs (ADR 0009): the target and the adapter to reach it, with the
+    # key still **encrypted**. The worker decrypts it in the run's door; it never
+    # travels as plaintext and never reaches the plugin.
+    url: str | None = None
+    protocol: str | None = None
+    adapter: str | None = None
+    adapter_version: str | None = None
+    adapter_config: dict[str, Any] = Field(default_factory=dict)
     secret_encrypted_value: str | None = None
+    secret_headers: dict[str, str] = Field(default_factory=dict)
+    install_target: AdapterInstallTargetSchema | None = None
 
 
 class PluginsStatusResponse(Schema):
@@ -119,7 +135,7 @@ async def get_evaluation_details(request, evaluation_pid: uuid.UUID, include: st
 
 @router.get("/evaluations/{evaluation_pid}/inputs", response=dict[str, list[EvaluationPluginInputSchema]])
 async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
-    """Fetch the component input data (including decrypted secrets) for a
+    """Fetch the component input data (including encrypted secrets) for a
     worker to bind each evaluation plugin's inputs to the derived components."""
     try:
         evaluation = await evaluation_repository.get_with_plugin_inputs(evaluation_pid)
@@ -131,32 +147,45 @@ async def get_evaluation_inputs(request, evaluation_pid: uuid.UUID):
         entries = []
         for inp in list(evaluation_plugin.evaluation_inputs.all()):
             component = inp.component
-            config = (
-                LLMConfig.model_validate(component.json_value or {})
-                if component.component_type == "llm"
-                else None
-            )
-            endpoint_url = config.endpoint_url if config is not None else None
-            secret_key = config.secret_key if config is not None else None
-            secret_encrypted_value = None
-            if secret_key:
-                secret_row = await project_config_repository.get_secret_by_key(
-                    component.system.project.pid, secret_key
-                )
-                if secret_row is not None:
-                    secret_encrypted_value = secret_row.encrypted_value
-            entries.append(EvaluationPluginInputSchema(
+            entry = EvaluationPluginInputSchema(
                 name=inp.name,
                 component_type=component.component_type,
                 data=component.data,
                 json_value=component.json_value,
                 value=inp.value,
-                endpoint_url=endpoint_url,
-                secret_key=secret_key,
-                secret_encrypted_value=secret_encrypted_value,
-            ))
+            )
+            if component.component_type == AIComponentType.ENDPOINT:
+                entry.url = component.url or ""
+                entry.protocol = component.protocol or ""
+                entry.adapter = component.adapter or ""
+                entry.adapter_version = component.adapter_version or ""
+                entry.adapter_config = component.adapter_config or {}
+                entry.secret_encrypted_value = await _encrypted_secret(component)
+                entry.secret_headers = await _encrypted_secret_headers(component)
+                entry.install_target = component_service.adapter_install_target(
+                    component.adapter
+                )
+            entries.append(entry)
         result[str(evaluation_plugin.pid)] = entries
     return result
+
+
+async def _encrypted_secret(component) -> str | None:
+    key_name = component.secret_key or component_secrets.component_key_name(component.pid)
+    row = await project_config_repository.get_secret_by_key(component.project.pid, key_name)
+    return row.encrypted_value if row is not None else None
+
+
+async def _encrypted_secret_headers(component) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for header in await component_secrets.secret_header_names(component):
+        row = await project_config_repository.get_secret_by_key(
+            component.project.pid,
+            component_secrets.component_header_name(component.pid, header),
+        )
+        if row is not None and row.encrypted_value:
+            headers[header] = row.encrypted_value
+    return headers
 
 
 @router.get("/evaluations/{evaluation_pid}/plugins/status", response=PluginsStatusResponse)

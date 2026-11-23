@@ -1,10 +1,9 @@
 """
-Native and bespoke mock targets, with a file input (CON-01; refactor-plan §3.1).
+Native and bespoke mock targets, with a file input (ADR 0009; refactor-plan §3.1).
 
-The acceptance row is "real core/native/bespoke/file-input smoke paths ... the run
-records the selected adapter/config version and the mock target confirms the intended
-request". This is that smoke, driven through the same endpoints the webapp's
-connections page calls:
+The acceptance row is "real core/native/bespoke/file-input smoke paths ... the mock
+target confirms the intended request". This is that smoke, driven through the
+component "Test" endpoint (`POST /components/{pid}/test`):
 
 * **mock-openai** — a *native* target: it speaks OpenAI, so the `openai` adapter
   reaches it. A file input is read into the prompt.
@@ -12,7 +11,7 @@ connections page calls:
   adapter with the project's template.
 * **mock-website** — deliberately **not** OpenAI-shaped: a JSON answer under
   `payload.text` at another path, so it *requires* a bespoke adapter (a `rest`
-  connection with a custom body template and answer path). The test proves the native
+  component with a custom body template and answer path). The test proves the native
   path fails on it.
 
 Each target **records what it received**, and the file's bytes are verified by digest
@@ -30,14 +29,13 @@ from pathlib import Path
 from django.test import TestCase
 from ninja.testing import TestAsyncClient
 
-from aisc_evaluation.models import Evaluation, EvaluationPlugin
-from aisc_plugins.models import Plugin, PluginConfig
+from aisc_backend.models.ai_system import AIComponent, AIComponentType
 from aisc_backend.models.project import Project
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
-from aisc_backend.routers.connection import router as connection_router
+from aisc_backend.routers.component import router as component_router
 from aisc_backend.tests.local_target import allow, local_target
 
-client = TestAsyncClient(connection_router)
+client = TestAsyncClient(component_router)
 
 INPUT_FILE = Path(__file__).resolve().parent.parent / "data" / "mock_input.csv"
 
@@ -100,15 +98,10 @@ class MockTargetsSmokeTest(TestCase):
         )
         return project
 
-    async def _run(self, project: Project, name: str = "smoke-plugin") -> EvaluationPlugin:
-        plugin = await Plugin.objects.acreate(
-            project=project, name=name, description="", package_name=name,
-            version="1.0", display_name=name, enabled=True,
-        )
-        evaluation = await Evaluation.objects.acreate(project=project, status="Done")
-        config = await PluginConfig.objects.acreate(plugin=plugin, name="cfg", description="", config={})
-        return await EvaluationPlugin.objects.acreate(
-            evaluation=evaluation, plugin_config=config, name=name, description="", status="Done",
+    async def _component(self, project: Project, name: str, **fields) -> AIComponent:
+        return await AIComponent.objects.acreate(
+            project=project, system=None, name=name, description="",
+            component_type=AIComponentType.ENDPOINT, data="", **fields,
         )
 
     async def test_native_and_bespoke_mock_targets_get_the_intended_request(self):
@@ -121,12 +114,15 @@ class MockTargetsSmokeTest(TestCase):
         with local_target(MockTargets) as target:
             # ── the guard first: the mock targets are internal, so nothing reaches
             #    them until an owner lists the address ──
-            await client.put(f"/{project.pid}/connections/bespoke", json={
-                "kind": "rest", "base_url": target.url, "path": "/collect", "method": "POST",
-                "body_template": {"prompt": "{{input}}", "file_b64": "{{params.file_b64}}"},
-                "response_path": "payload.text",
-            })
-            blocked = await client.post(f"/{project.pid}/connections/bespoke/test", json={
+            bespoke = await self._component(
+                project, "bespoke", url=target.url, protocol="rest", adapter="rest",
+                adapter_config={
+                    "path": "/collect", "method": "POST",
+                    "body_template": {"prompt": "{{input}}", "file_b64": "{{params.file_b64}}"},
+                    "response_path": "payload.text",
+                },
+            )
+            blocked = await client.post(f"/{bespoke.pid}/test", json={
                 "input": "collect this", "params": {"file_b64": file_b64},
             })
             self.assertFalse(blocked.json()["ok"], blocked.text)
@@ -135,12 +131,13 @@ class MockTargetsSmokeTest(TestCase):
             await allow(project, target, note="the mock targets")
 
             # ── mock-openai: a native target, with the file input read into the prompt ──
-            await client.put(f"/{project.pid}/connections/native-openai", json={
-                "kind": "openai", "base_url": f"{target.url}/v1", "model": "mock-openai",
-            })
+            native_openai = await self._component(
+                project, "native-openai", url=f"{target.url}/v1",
+                protocol="openai-chat", adapter="openai",
+                adapter_config={"model": "mock-openai"},
+            )
             openai_try = await client.post(
-                f"/{project.pid}/connections/native-openai/test",
-                json={"input": file_bytes.decode()},
+                f"/{native_openai.pid}/test", json={"input": file_bytes.decode()}
             )
             self.assertTrue(openai_try.json()["ok"], openai_try.text)
             self.assertEqual(openai_try.json()["answer"], f"read {file_bytes.decode()}")
@@ -150,12 +147,15 @@ class MockTargetsSmokeTest(TestCase):
             self.assertEqual(recorded["body"]["messages"][-1]["content"], file_bytes.decode())
 
             # ── mock-rest: a native REST target, with the project's own template ──
-            await client.put(f"/{project.pid}/connections/native-rest", json={
-                "kind": "rest", "base_url": target.url, "path": "/api/ask", "method": "POST",
-                "body_template": {"question": "{{input}}"}, "response_path": "answer",
-            })
+            native_rest = await self._component(
+                project, "native-rest", url=target.url, protocol="rest", adapter="rest",
+                adapter_config={
+                    "path": "/api/ask", "method": "POST",
+                    "body_template": {"question": "{{input}}"}, "response_path": "answer",
+                },
+            )
             rest_try = await client.post(
-                f"/{project.pid}/connections/native-rest/test", json={"input": "is the model fair?"}
+                f"/{native_rest.pid}/test", json={"input": "is the model fair?"}
             )
             self.assertTrue(rest_try.json()["ok"], rest_try.text)
             self.assertEqual(rest_try.json()["answer"], "answered 'is the model fair?'")
@@ -164,16 +164,18 @@ class MockTargetsSmokeTest(TestCase):
             )
 
             # ── the bespoke target: the native path fails on it, the adapter reaches it ──
-            await client.put(f"/{project.pid}/connections/bespoke-openai", json={
-                "kind": "openai", "base_url": f"{target.url}/collect", "model": "mock-website",
-            })
+            bespoke_openai = await self._component(
+                project, "bespoke-openai", url=f"{target.url}/collect",
+                protocol="openai-chat", adapter="openai",
+                adapter_config={"model": "mock-website"},
+            )
             wrong_shape = await client.post(
-                f"/{project.pid}/connections/bespoke-openai/test", json={"input": "anything"}
+                f"/{bespoke_openai.pid}/test", json={"input": "anything"}
             )
             self.assertFalse(wrong_shape.json()["ok"], wrong_shape.text)
             self.assertIn("HTTP", wrong_shape.json()["detail"])
 
-            collected = await client.post(f"/{project.pid}/connections/bespoke/test", json={
+            collected = await client.post(f"/{bespoke.pid}/test", json={
                 "input": "collect this", "params": {"file_b64": file_b64},
             })
             self.assertTrue(collected.json()["ok"], collected.text)
@@ -188,29 +190,3 @@ class MockTargetsSmokeTest(TestCase):
                 hashlib.sha256(base64.b64decode(MockTargets.calls[-1]["body"]["file_b64"])).hexdigest(),
                 digest,
             )
-
-    async def test_the_run_records_the_adapter_that_reached_the_mock_target(self):
-        project = await self._project()
-        plugin = await self._run(project)
-        with local_target(MockTargets) as target:
-            await allow(project, target)
-            await client.put(f"/{project.pid}/connections/bespoke", json={
-                "kind": "rest", "base_url": target.url, "path": "/collect", "method": "POST",
-                "body_template": {"prompt": "{{input}}"}, "response_path": "payload.text",
-            })
-            bound = await client.put(f"/{project.pid}/runs/{plugin.pid}/bindings", json={
-                "role": "", "connection": "bespoke",
-            })
-            self.assertEqual(bound.status_code, 200, bound.text)
-            self.assertEqual(bound.json()["kind"], "rest")
-            # the adapter's revision is part of the record, not read back from today's code
-            self.assertEqual(bound.json()["adapter_version"], "1")
-            self.assertEqual(bound.json()["base_url"], target.url)
-
-        # the run's record survives the connection being pointed somewhere else
-        await client.put(f"/{project.pid}/connections/bespoke", json={
-            "kind": "openai", "base_url": "https://elsewhere.example.com/v1", "model": "other",
-        })
-        bindings = (await client.get(f"/{project.pid}/runs/{plugin.pid}/bindings")).json()["bindings"]
-        self.assertEqual(bindings[0]["kind"], "rest")
-        self.assertEqual(bindings[0]["base_url"], target.url)

@@ -13,8 +13,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from ninja.testing import TestAsyncClient
 
-from aisc_backend.models.ai_system import AIComponent, AISystem
-from aisc_backend.models.connection import Connection, Helper, RunBinding
+from aisc_backend.models.ai_system import AIComponent, AIComponentType, AISystem
 from aisc_evaluation.models import Evaluation, EvaluationPlugin
 from aisc_evaluation.models import EvaluationInput
 from aisc_plugins.models import Plugin, PluginConfig
@@ -73,14 +72,16 @@ async def _run(project, plugin, *, when, status="Done", component=None, local=Fa
         value={"local_model": {"path": "/m"}} if local else {"target": "card"},
     )
     if connection is not None:
-        await RunBinding.objects.acreate(
-            evaluation_plugin=run, role="", connection=connection, kind=connection.kind,
-            adapter_version="1", base_url=connection.base_url,
+        await EvaluationInput.objects.acreate(
+            evaluation_plugin=run, component=connection, name="endpoint", description="",
+            value={},
+            provenance={"url": connection.url, "adapter": connection.adapter, "version": "1"},
         )
     if helper is not None:
-        await RunBinding.objects.acreate(
-            evaluation_plugin=run, role="judge", helper=helper, kind="openai",
-            adapter_version="1", model="gpt-4o-mini",
+        await EvaluationInput.objects.acreate(
+            evaluation_plugin=run, component=helper, name="judge", description="",
+            value={},
+            provenance={"url": helper.url, "adapter": helper.adapter, "version": "1"},
         )
     return evaluation, run
 
@@ -154,29 +155,32 @@ class ResultsRouterTest(TestCase):
         # the v2 run's local flag never leaks into the v1 window
         self.assertEqual(tool["local_runs"], 0)
 
-    async def test_helpers_and_connections_come_from_the_run_bindings(self):
+    async def test_connections_come_from_the_run_inputs(self):
         project = await _project()
         _system, v1, _v2 = await _versions(project)
         now = timezone.now()
         used = await _plugin(project, "fairness")
         component = await _component(project)
-        connection = await Connection.objects.acreate(
-            project=project, name="judge-endpoint", description="", label="Judge",
-            kind="openai", base_url="https://api.example.com/v1", model="gpt-4o-mini",
+        connection = await AIComponent.objects.acreate(
+            project=project, name="judge-endpoint", description="",
+            component_type=AIComponentType.ENDPOINT, url="https://api.example.com/v1",
+            protocol="openai-chat", adapter="openai", adapter_config={"model": "gpt-4o-mini"},
         )
-        helper = await Helper.objects.acreate(
-            project=project, name="grader", description="", endpoint_url="https://h.example/v1",
-            roles=["judge"],
+        helper = await AIComponent.objects.acreate(
+            project=project, name="grader", description="",
+            component_type=AIComponentType.ENDPOINT, url="https://h.example/v1",
+            protocol="openai-chat", adapter="openai",
         )
         await _run(project, used, when=now - timedelta(days=2) + timedelta(hours=1),
                    status="Done", component=component, connection=connection, helper=helper)
 
         body = (await client.get(f"/{project.pid}/results?version={v1.pid}")).json()
         tool = body["tools"][0]
-        self.assertEqual(tool["connections"], [
-            {"name": "judge-endpoint", "protocol_name": "openai"}
-        ])
-        self.assertEqual(tool["helpers"], [{"role": "judge", "model": "gpt-4o-mini"}])
+        self.assertEqual(
+            sorted((c["name"], c["protocol_name"]) for c in tool["connections"]),
+            [("grader", "openai-chat"), ("judge-endpoint", "openai-chat")],
+        )
+        self.assertEqual(tool["helpers"], [])
 
     async def test_target_scopes_to_a_component(self):
         project = await _project()

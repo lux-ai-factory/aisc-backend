@@ -33,8 +33,8 @@ from collections import OrderedDict
 
 from django.conf import settings
 
-from aisc_backend.models.connection import RunBinding
-from aisc_evaluation.models import Evaluation, EvaluationPlugin
+from aisc_backend.models.ai_system import AIComponentType
+from aisc_evaluation.models import Evaluation, EvaluationInput, EvaluationPlugin
 from aisc_evaluation.models import Observation
 from aisc_plugins.models import Plugin
 from aisc_backend.models.system import System, SystemVersion
@@ -179,28 +179,22 @@ async def scoped_results(project, version_pid=None, target=None) -> dict:
 
     all_run_ids = [rid for entry in tools.values() for rid in entry["_run_ids"]]
     if all_run_ids:
-        async for binding in (
-            RunBinding.objects.filter(evaluation_plugin_id__in=all_run_ids)
-            .select_related("helper", "connection")
+        async for inp in (
+            EvaluationInput.objects.filter(evaluation_plugin_id__in=all_run_ids)
+            .select_related("component")
         ):
+            component = inp.component
+            if component is None or component.component_type != AIComponentType.ENDPOINT:
+                continue
             for entry in tools.values():
-                if binding.evaluation_plugin_id not in entry["_run_ids"]:
+                if inp.evaluation_plugin_id not in entry["_run_ids"]:
                     continue
-                if binding.role:
-                    helper = binding.helper
-                    model = binding.model or (helper.name if helper else "")
-                    if model and model not in entry["_helper_seen"]:
-                        entry["_helper_seen"].add(model)
-                        entry["helpers"].append({"role": binding.role, "model": model})
-                else:
-                    connection = binding.connection
-                    if connection is not None:
-                        text = f"{connection.kind} ({connection.name})"
-                        if text not in entry["_connection_seen"]:
-                            entry["_connection_seen"].add(text)
-                            entry["connections"].append(
-                                {"name": connection.name, "protocol_name": connection.kind}
-                            )
+                text = f"{component.protocol} ({component.name})"
+                if text not in entry["_connection_seen"]:
+                    entry["_connection_seen"].add(text)
+                    entry["connections"].append(
+                        {"name": component.name, "protocol_name": component.protocol}
+                    )
                 break
 
     version_number = version.number if version is not None else None

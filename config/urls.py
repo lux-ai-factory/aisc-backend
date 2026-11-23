@@ -37,8 +37,6 @@ from aisc_controls.routers.catalogue import router as catalogue_router
 from aisc_controls.routers.control import router as control_router
 from aisc_control_objectives.routers.control_objectives import router as control_objectives_router
 from aisc_control_objectives.routers.evidence import router as evidence_router
-from aisc_backend.routers.connection import router as connection_router
-from aisc_backend.routers.helper import router as helper_router
 from aisc_backend.routers.allowed_host import router as allowed_host_router
 from aisc_qualification.routers.qualification import router as qualification_router
 from aisc_qualification.routers.questionnaire import router as questionnaire_router
@@ -68,8 +66,6 @@ v1_router.add_router("/projects", qualification_router)  # /{pid}/system-version
 v1_router.add_router("/projects", control_objectives_router)  # /{pid}/control-objectives/*
 v1_router.add_router("/projects", evidence_router)  # /{pid}/evidence/* (versioned evidence map)
 v1_router.add_router("/projects", results_router)  # /{pid}/results (scoped results + dashboard bridge)
-v1_router.add_router("/projects", connection_router)  # /{pid}/connections/*, /{pid}/runs/{plugin}/bindings
-v1_router.add_router("/projects", helper_router)  # /{pid}/helpers/* (helper models per role)
 v1_router.add_router("/projects", allowed_host_router)  # /{pid}/allowed-hosts/* (internal-host allowlist)
 v1_router.add_router("/projects", control_router)  # /{pid}/controls/* (library, submissions)
 v1_router.add_router("/projects", report_router)  # /{pid}/reports/* (generate, pdf)

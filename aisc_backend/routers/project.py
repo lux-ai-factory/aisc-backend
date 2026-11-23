@@ -48,7 +48,6 @@ from aisc_backend.schemas.project import (
     ProjectInSchema,
     ProjectDetailsOutSchema,
 )
-from aisc_plugin_interface import LLMConfig
 
 
 router = Router(tags=["project"])
@@ -266,6 +265,8 @@ def _apply_endpoint_payload(component: AIComponent, data: AIComponentInSchema) -
         component.adapter = data.adapter
     if data.adapter_version is not None:
         component.adapter_version = data.adapter_version
+    if data.secret_key is not None:
+        component.secret_key = data.secret_key
     if data.adapter_config is not None:
         try:
             component.adapter_config = component_service.validate_config(
@@ -333,10 +334,8 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
         if data.component_type == AIComponentType.DATASHAPE and not json_value:
             json_value = await derive_datashape(source_dataset)
 
-    if data.component_type == AIComponentType.LLM:
-        secret_key = LLMConfig.model_validate(json_value).secret_key
-        if secret_key and not await project_config_repository.secret_exists(project.pid, secret_key):
-            raise HttpError(400, "Configured API key secret does not exist in this project")
+    if data.secret_key and not await project_config_repository.secret_exists(project.pid, data.secret_key):
+        raise HttpError(400, "Configured API key secret does not exist in this project")
 
     component = AIComponent(
         name=data.name,
@@ -360,7 +359,7 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
         resource_id=str(getattr(saved, "pid", "")),
         metadata={"projectPid": str(pid), "name": getattr(saved, "name", None),
                   "component_type": getattr(saved, "component_type", None)})
-    return saved
+    return await component_service.component_row(saved)
 
 
 @router.post("/{pid}/datasets", response=AIComponentOutSchema)

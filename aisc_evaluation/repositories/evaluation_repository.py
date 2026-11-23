@@ -79,6 +79,7 @@ class EvaluationRepository(BaseRepository[Evaluation]):
         return await (
             Evaluation.objects
             .prefetch_related("evaluation_plugins")
+            .prefetch_related("evaluation_plugins__evaluation_inputs__component__project")
             .prefetch_related("evaluation_plugins__evaluation_inputs__component__system__project")
             .aget(pid=evaluation_pid)
         )
