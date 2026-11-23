@@ -55,6 +55,9 @@ class AdapterInstallTargetSchema(Schema):
     package: str
     version: str
     source: str = ""
+    #: How the worker imports a non-builtin adapter (empty for builtin).
+    module: str = ""
+    class_name: str = ""
 
 
 class EvaluationPluginInputSchema(Schema):

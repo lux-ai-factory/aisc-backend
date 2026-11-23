@@ -88,10 +88,9 @@ def validate_config(adapter_id: str, config: dict | None) -> dict:
 
 
 def adapter_install_target(adapter_id: str) -> dict | None:
-    """Where a worker installs an adapter from, when it is not in the standard
-    library (ADR 0009). ``None`` means builtin (or unknown): the worker always
-    installs ``aisc-plugin-interface``, and an adapter it cannot find is reported
-    by the run, not here."""
+    """Where a worker installs an adapter from and how it imports it, when it is
+    not in the standard library (ADR 0009). ``None`` means builtin: the worker
+    always installs ``aisc-plugin-interface`` and resolves the id from it."""
     if not adapter_id or builtin_adapter(adapter_id) is not None:
         return None
     try:
@@ -108,6 +107,8 @@ def adapter_install_target(adapter_id: str) -> dict | None:
                         "package": package,
                         "version": version,
                         "source": entry.get("source", ""),
+                        "module": manifest.get("module", ""),
+                        "class_name": manifest.get("class", ""),
                     }
     return None
 
