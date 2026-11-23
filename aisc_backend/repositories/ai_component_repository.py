@@ -49,3 +49,11 @@ class AIComponentRepository(BaseRepository[AIComponent]):
             .filter(pid=component_pid)
             .afirst()
         )
+
+    async def get_with_project(self, component_pid: uuid.UUID) -> AIComponent | None:
+        """A component with its project (a project-level component has no system)."""
+        return await (
+            AIComponent.objects.select_related("project", "source_dataset")
+            .filter(pid=component_pid)
+            .afirst()
+        )

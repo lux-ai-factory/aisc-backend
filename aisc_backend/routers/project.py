@@ -29,6 +29,8 @@ from aisc_backend.models import AIComponent, AIComponentType, Project, ProjectSt
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.repositories.ai_component_repository import AISystemRepository, AIComponentRepository
+from aisc_backend.services import component_secrets as component_secrets
+from aisc_backend.services import components as component_service
 from aisc_evaluation.repositories.evaluation_repository import EvaluationRepository
 from aisc_backend.repositories.project_repository import ProjectRepository
 from aisc_evaluation.repositories.measurement_repository import MeasurementRepository
@@ -246,6 +248,63 @@ async def derive_datashape(source_dataset: AIComponent) -> dict:
         return {}
 
 
+def _apply_endpoint_payload(component: AIComponent, data: AIComponentInSchema) -> None:
+    """Fill an endpoint component from a preset form or the advanced payload
+    (ADR 0009). A field left out keeps the component's current value."""
+    if data.preset:
+        try:
+            component_service.apply_preset(component, data.preset, data.fields or {})
+        except ValueError as exc:
+            raise HttpError(400, str(exc)) from exc
+    if data.component_type is not None:
+        component.component_type = data.component_type
+    if data.protocol is not None:
+        component.protocol = data.protocol
+    if data.url is not None:
+        component.url = data.url
+    if data.adapter is not None:
+        component.adapter = data.adapter
+    if data.adapter_version is not None:
+        component.adapter_version = data.adapter_version
+    if data.adapter_config is not None:
+        try:
+            component.adapter_config = component_service.validate_config(
+                component.adapter, data.adapter_config
+            )
+        except Exception as exc:
+            raise HttpError(400, f"adapter config is invalid: {exc}") from exc
+    elif data.preset:
+        # A preset's config is validated too (it fills adapter_config).
+        try:
+            component.adapter_config = component_service.validate_config(
+                component.adapter, component.adapter_config
+            )
+        except Exception as exc:
+            raise HttpError(400, f"adapter config is invalid: {exc}") from exc
+
+
+async def _store_component_secret(component: AIComponent, data: AIComponentInSchema) -> None:
+    """Store the component's key and secret headers in the project's secret store.
+
+    The key is kept under ``component:<pid>:key`` and the component records that
+    name; a component may instead reference an existing project secret by key.
+    """
+    if data.secret is not None:
+        key_name = component.secret_key or component_secrets.component_key_name(component.pid)
+        if data.secret == "":
+            await component_secrets.clear_secret(component.project_id, key_name)
+        else:
+            await component_secrets.set_secret(component.project_id, key_name, data.secret)
+            if component.secret_key != key_name:
+                component.secret_key = key_name
+                await component.asave(update_fields=["secret_key"])
+    for header, value in (data.secret_headers or {}).items():
+        if value == "":
+            await component_secrets.remove_secret_header(component, header)
+        else:
+            await component_secrets.set_secret_header(component, header, value)
+
+
 @router.get("/{pid}/aisystem", response=AISystemDetailOutSchema)
 async def get_project_aisystem(request, pid: uuid.UUID):
     project = await project_repository.get(pid, True)
@@ -286,13 +345,16 @@ async def create_project_component(request, pid: uuid.UUID, data: AIComponentInS
         source_dataset=source_dataset,
         json_value=json_value,
         system=system,
+        project=project,
         storage_container=(
             StorageContainer.Datasets
             if data.component_type == AIComponentType.DATASET
             else StorageContainer.Models
         ),
     )
+    _apply_endpoint_payload(component, data)
     saved = await ai_component_repository.save(component)
+    await _store_component_secret(saved, data)
     await sync_to_async(log_action)(
         request, action="create", resource_type="component",
         resource_id=str(getattr(saved, "pid", "")),

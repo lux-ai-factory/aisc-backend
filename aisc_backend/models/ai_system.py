@@ -93,6 +93,10 @@ class AIComponent(HasData):
     def is_endpoint(self) -> bool:
         return self.component_type == AIComponentType.ENDPOINT
 
+    @property
+    def source_dataset_pid(self):
+        return self.source_dataset.pid if self.source_dataset_id else None
+
     def save(self, *args, **kwargs):
         # A component's project is its system's project; a project-level
         # component sets `project` directly (ADR 0009).
