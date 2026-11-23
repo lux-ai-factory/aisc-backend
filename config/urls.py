@@ -23,6 +23,7 @@ from ninja import Router
 from aisc_backend.routers.app import router as app_router
 from aisc_backend.routers.project import router as project_router
 from aisc_backend.routers.component import router as component_router
+from aisc_backend.routers.adapters import router as adapters_router
 from aisc_evaluation.routers.evaluation import router as evaluation_router
 from aisc_plugins.routers.plugin import router as plugin_router
 from aisc_evaluation.routers.task import router as task_router
@@ -75,6 +76,7 @@ v1_router.add_router("/projects", report_router)  # /{pid}/reports/* (generate, 
 v1_router.add_router("/projects", assessment_router)  # /{pid}/assessment-coverage (B4)
 v1_router.add_router("", catalogue_router)  # /catalogue + /projects/{pid}/catalogue/*
 v1_router.add_router("/components", component_router)
+v1_router.add_router("", adapters_router)  # /adapters, /presets (adapter catalogue)
 v1_router.add_router("/evaluations", evaluation_router)
 v1_router.add_router("/plugins", plugin_router)
 v1_router.add_router("/tasks", task_router)
