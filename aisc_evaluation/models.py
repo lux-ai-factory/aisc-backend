@@ -182,11 +182,12 @@ class EvaluationPlugin(Base):
 
 
 class EvaluationInput(Base):
-    """An input bound to an evaluation plugin run.
+    """An input bound to an evaluation plugin run (ADR 0009).
 
-    Points at an AIComponent that supplies the data. Only dataset/model/file
-    components carry a stored artifact; other component types expose their
-    input data through this same link.
+    Points at an ``AIComponent`` that supplies the data or the endpoint. For a
+    file/data input it records the data adapter chosen; for an endpoint input it
+    records the endpoint's provenance (the URL, adapter id/version and a config
+    hash with secrets excluded), filled at dispatch and never rewritten.
     """
 
     evaluation_plugin = models.ForeignKey(
@@ -198,6 +199,12 @@ class EvaluationInput(Base):
         on_delete=models.PROTECT,
     )
     value = models.JSONField(blank=True, default=dict)
+    #: The chosen adapter (a registry id) and its version/config.
+    adapter = models.CharField(max_length=255, blank=True, default="")
+    adapter_version = models.CharField(max_length=32, blank=True, default="")
+    adapter_config = models.JSONField(blank=True, default=dict)
+    #: The endpoint snapshot: url, adapter, version, config_hash (no secrets).
+    provenance = models.JSONField(blank=True, default=dict)
 
     class Meta:
         db_table = "aisc_backend_evaluationinput"
