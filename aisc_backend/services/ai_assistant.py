@@ -25,6 +25,38 @@ class DestinationRefused(RuntimeError):
     """The model's endpoint is one the allowed-hosts door refuses for this project."""
 
 
+#: The project config key naming the component an assistant should use. A
+#: ``variables`` entry whose value is the component's pid (ADR 0009 D-8).
+ASSISTANT_SETTING_KEY = "ai_assistant"
+
+
+async def _chosen_component(project):
+    """The component the project named as its assistant model, if any.
+
+    A project names one by setting the ``ai_assistant`` project config to its pid;
+    it must be a project-level ``openai-chat`` endpoint (a judge or the assistant's
+    own model), so a stray value never points a run at the assessed system.
+    """
+    from aisc_backend.models.ai_system import AIComponent, AIComponentType
+    from aisc_backend.models.project_config import ProjectConfig, ProjectConfigCategory
+
+    row = await ProjectConfig.objects.filter(
+        project=project,
+        category=ProjectConfigCategory.VARIABLES,
+        key=ASSISTANT_SETTING_KEY,
+    ).afirst()
+    pid = (row.json_value or {}).get("value") if row is not None else None
+    if not pid:
+        return None
+    return await AIComponent.objects.filter(
+        pid=pid,
+        project=project,
+        system__isnull=True,
+        component_type=AIComponentType.ENDPOINT,
+        protocol="openai-chat",
+    ).afirst()
+
+
 def make_openai_chat(base_url: str, model: str, api_key: str | None):
     """A chat call against an OpenAI-compatible endpoint, returning the reply text."""
 
@@ -67,16 +99,18 @@ async def resolve_chat(
     from aisc_backend.models.ai_system import AIComponent, AIComponentType
     from aisc_backend.services import allowed_hosts, component_secrets
 
-    component = await (
-        AIComponent.objects.filter(
-            project=project,
-            system__isnull=True,
-            component_type=AIComponentType.ENDPOINT,
-            protocol="openai-chat",
+    component = await _chosen_component(project)
+    if component is None:
+        component = await (
+            AIComponent.objects.filter(
+                project=project,
+                system__isnull=True,
+                component_type=AIComponentType.ENDPOINT,
+                protocol="openai-chat",
+            )
+            .order_by("name")
+            .afirst()
         )
-        .order_by("name")
-        .afirst()
-    )
     if component is not None:
         # A project-level component is the project's own endpoint, so it goes
         # through the same door as a component test (CON-01) — read now.

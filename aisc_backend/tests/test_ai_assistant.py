@@ -118,6 +118,57 @@ class ResolveChatTest(TestCase):
         )
         self.assertTrue(callable(chat))
 
+    async def test_the_named_assistant_component_wins(self):
+        project = await _project()
+        # two project-level endpoints; the named one wins even though it sorts later
+        await _model_endpoint(project, "aaa", "https://a.example/v1", model="m")
+        chosen = await _model_endpoint(
+            project, "zzz", "https://z.example/v1", model="m", key="sk"
+        )
+        from aisc_backend.models.project_config import ProjectConfig, ProjectConfigCategory
+
+        await ProjectConfig.objects.acreate(
+            project=project, name="ai_assistant", description="",
+            key="ai_assistant", category=ProjectConfigCategory.VARIABLES,
+            json_value={"type": "string", "value": str(chosen.pid)},
+        )
+        captured: dict = {}
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def post(self, url, json=None, headers=None):
+                captured["url"] = url
+
+                class Response:
+                    status_code = 200
+
+                    def json(self):
+                        return {"choices": [{"message": {"content": "ok"}}]}
+
+                return Response()
+
+        import httpx
+
+        original = httpx.AsyncClient
+        httpx.AsyncClient = lambda **kwargs: FakeClient()  # type: ignore[assignment]
+        try:
+            chat = await ai_assistant.resolve_chat(
+                project,
+                purpose="the risk mapper",
+                base_url_setting="CONTROL_OBJECTIVES_LLM_BASE_URL",
+                model_setting="CONTROL_OBJECTIVES_LLM_MODEL",
+                api_key_setting="CONTROL_OBJECTIVES_LLM_API_KEY",
+            )
+            await chat([{"role": "user", "content": "hi"}])
+        finally:
+            httpx.AsyncClient = original  # type: ignore[assignment]
+        self.assertEqual(captured["url"], "https://z.example/v1/chat/completions")
+
     async def test_a_model_is_asked_with_its_stored_key(self):
         project = await _project()
         await _model_endpoint(
