@@ -314,7 +314,15 @@ async def get_project_aisystem(request, pid: uuid.UUID):
     if system is None:
         await ai_system_repository.get_or_create_for_project(project)
         system = await ai_system_repository.get_with_components(project)
-    return system
+    return {
+        "pid": system.pid,
+        "name": system.name,
+        "description": system.description,
+        "components": [
+            await component_service.component_row(component)
+            for component in system.get_components()
+        ],
+    }
 
 
 @router.post("/{pid}/components", response=AIComponentOutSchema)
