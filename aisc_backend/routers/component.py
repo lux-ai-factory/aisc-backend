@@ -8,6 +8,7 @@ from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from aisc_backend.audit.log import log_action
+from aisc_backend.auth.access import role_or_404
 from aisc_backend.models import AIComponent, AIComponentType
 from aisc_backend.models.common import StorageContainer
 from aisc_backend.repositories import file_repository
@@ -54,19 +55,25 @@ def storage_container_for(component: AIComponent) -> str:
     return StorageContainer.Models
 
 
-@router.get("/{component_pid}", response=AIComponentOutSchema)
-async def get_component(request, component_pid: uuid.UUID):
+async def _authorized_component(request, component_pid: uuid.UUID) -> AIComponent:
+    """A component, gated on the project that owns it: a caller who is not a
+    member of that project is told nothing (404). Deny-by-default, as everywhere."""
     component = await ai_component_repository.get_with_project(component_pid)
     if not component:
         raise HttpError(404, f"Component {component_pid} not found")
+    await role_or_404(request, component.project)
+    return component
+
+
+@router.get("/{component_pid}", response=AIComponentOutSchema)
+async def get_component(request, component_pid: uuid.UUID):
+    component = await _authorized_component(request, component_pid)
     return await component_service.component_row(component)
 
 
 @router.patch("/{component_pid}", response=AIComponentOutSchema)
 async def update_component(request, component_pid: uuid.UUID, data: AIComponentInSchema):
-    component = await ai_component_repository.get_with_project(component_pid)
-    if not component:
-        raise HttpError(404, f"Component {component_pid} not found")
+    component = await _authorized_component(request, component_pid)
 
     project_pid = str(component.project.pid)
 
@@ -130,9 +137,7 @@ async def update_component(request, component_pid: uuid.UUID, data: AIComponentI
 
 @router.delete("/{component_pid}", response={204: None})
 async def delete_component(request, component_pid: uuid.UUID):
-    component = await ai_component_repository.get_with_project(component_pid)
-    if not component:
-        raise HttpError(404, f"Component {component_pid} not found")
+    component = await _authorized_component(request, component_pid)
     project_pid = str(component.project.pid)
     # every secret it stored goes with it
     for header in await secrets.secret_header_names(component):
@@ -153,9 +158,7 @@ async def upload_component_file(request, component_pid: uuid.UUID, file: File[Up
     if not file or not file.name:
         raise HttpError(500, "Invalid file")
 
-    component = await ai_component_repository.get_with_project(component_pid)
-    if not component:
-        raise HttpError(404, f"Component {component_pid} not found")
+    component = await _authorized_component(request, component_pid)
     if not component.is_file_backed:
         raise HttpError(400, "Only dataset/model/file components accept an uploaded file")
 
@@ -192,9 +195,7 @@ async def get_component_models(request, component_pid: uuid.UUID):
     failure, returns an empty list plus an error message so the UI can fall
     back to a free-text model input.
     """
-    component = await ai_component_repository.get_with_project(component_pid)
-    if not component:
-        raise HttpError(404, f"Component {component_pid} not found")
+    component = await _authorized_component(request, component_pid)
     if not component.is_endpoint or component.protocol != "openai-chat":
         raise HttpError(400, "Model listing is only available for OpenAI-compatible components")
     endpoint_url = component.url
@@ -230,9 +231,7 @@ async def test_component(
     """One call through the component's adapter, as a test would make it (the
     pilot's "Try"). The allowlist is read immediately before the call out, so a
     change to it applies to the next call with no restart."""
-    component = await ai_component_repository.get_with_project(component_pid)
-    if not component:
-        raise HttpError(404, f"Component {component_pid} not found")
+    component = await _authorized_component(request, component_pid)
     if not component.is_endpoint:
         raise HttpError(400, "only an endpoint component can be tested")
 
@@ -252,11 +251,8 @@ async def test_component(
 
 @router.get("/{component_pid}/data")
 async def get_component_file(request, component_pid: uuid.UUID):
+    component = await _authorized_component(request, component_pid)
     try:
-        component = await ai_component_repository.get(component_pid)
-        if not component:
-            raise HttpError(404, f"Component {component_pid} not found")
-
         container = component.storage_container or storage_container_for(component)
 
         bucket_exists = file_repository.bucket_exists(container)

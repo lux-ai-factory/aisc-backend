@@ -7,6 +7,7 @@ from ninja.testing import TestAsyncClient
 from aisc_backend.models import AIComponent, AIComponentType, ProjectConfig, ProjectConfigCategory
 from aisc_backend.models.ai_system import AISystem
 from aisc_backend.models.project import Project, ProjectStatus
+from aisc_backend.models.project_member import MembershipRole, ProjectMember
 from aisc_backend.routers.component import router
 
 
@@ -16,6 +17,9 @@ client = TestAsyncClient(router)
 class ComponentRouterTestCase(TestCase):
     def setUp(self):
         self.project = Project.objects.create(name="proj", status=ProjectStatus.Ready)
+        ProjectMember.objects.create(
+            project=self.project, subject="development", role=MembershipRole.Owner
+        )
         self.system = AISystem.objects.create(project=self.project, name="sys", description="")
 
     async def _component(self, component_type, **kw):
@@ -115,3 +119,33 @@ class ComponentRouterTestCase(TestCase):
     async def test_delete_missing_component_404(self):
         res = await client.delete("/00000000-0000-0000-0000-000000000000")
         self.assertEqual(res.status_code, 404)
+
+
+class ComponentIsolationTestCase(TestCase):
+    """Deny-by-default: another project's component is never found (ADR 0009)."""
+
+    def setUp(self):
+        self.mine = Project.objects.create(name="mine", status=ProjectStatus.Ready)
+        ProjectMember.objects.create(
+            project=self.mine, subject="development", role=MembershipRole.Owner
+        )
+        self.theirs = Project.objects.create(name="theirs", status=ProjectStatus.Ready)
+        self.their_component = AIComponent.objects.create(
+            name="secret", description="", data="",
+            component_type=AIComponentType.ENDPOINT, project=self.theirs,
+            url="https://models.example/v1", protocol="openai-chat", adapter="openai",
+        )
+
+    async def test_a_stranger_gets_404_on_every_route(self):
+        pid = self.their_component.pid
+        for path in (f"/{pid}", f"/{pid}/models", f"/{pid}/data"):
+            res = await client.get(path)
+            self.assertEqual(res.status_code, 404, f"GET {path}: {res.text}")
+
+        res = await client.patch(f"/{pid}", json={"name": "hijacked"})
+        self.assertEqual(res.status_code, 404)
+        res = await client.delete(f"/{pid}")
+        self.assertEqual(res.status_code, 404)
+        # and it is untouched
+        unchanged = await AIComponent.objects.aget(pid=pid)
+        self.assertEqual(unchanged.name, "secret")
