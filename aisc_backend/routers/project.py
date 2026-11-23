@@ -382,6 +382,23 @@ async def create_project_model(request, pid: uuid.UUID, data: AIComponentInSchem
     return await create_project_component(request, pid, data)
 
 
+@router.get("/{pid}/endpoints", response=list[AIComponentOutSchema])
+async def list_project_endpoints(request, pid: uuid.UUID):
+    """The project-level endpoints (judges, the AI assistant's model): components
+    not attached to the assessed system (ADR 0009 D-8)."""
+    project = await project_repository.get(pid, True)
+    await role_or_404(request, project)
+    rows = [
+        component
+        async for component in AIComponent.objects.filter(
+            project=project,
+            system__isnull=True,
+            component_type=AIComponentType.ENDPOINT,
+        ).order_by("name")
+    ]
+    return [await component_service.component_row(component) for component in rows]
+
+
 @router.get("/{pid}/evaluations", response=list[EvaluationDetailOutSchema])
 async def get_project_evaluations(
     request,
