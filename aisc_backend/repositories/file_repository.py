@@ -12,6 +12,10 @@ from config.settings import S3_USER, S3_PASSWORD, S3_URL
 
 _s3_client: BaseClient | None = None
 
+#: S3 error codes that mean "this object does not exist" (as opposed to an
+#: access failure or a storage outage, which must stay server errors).
+_MISSING_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
+
 def _get_s3_client() -> BaseClient:
     global _s3_client
     if _s3_client is None:
@@ -25,6 +29,9 @@ def _get_s3_client() -> BaseClient:
         else:  # In production, use IAM roles instead of credentials
             _s3_client = boto3.client("s3")
     return _s3_client
+
+def _error_code(exc: ClientError) -> str:
+    return str(exc.response.get("Error", {}).get("Code", ""))
 
 
 def bucket_exists(bucket_name: str) -> bool:
@@ -49,12 +56,34 @@ def upload_file(file: File, bucket_name: str, object_name: str = None) -> bool:
     return True
 
 def get_object(bucket_name: str, object_name: str):
+    """Fetch an object's response, or None when it does not exist.
+
+    Only a *missing* object becomes None; access failures and storage outages
+    re-raise as ClientError so callers keep them as server/upstream errors
+    instead of mislabelling them as missing."""
     s3_client = _get_s3_client()
     try:
         return s3_client.get_object(Bucket=bucket_name, Key=object_name)
     except ClientError as e:
+        if _error_code(e) in _MISSING_CODES:
+            return None
         logging.error(e)
-        return None
+        raise
+
+def delete_object(bucket_name: str, object_name: str) -> bool:
+    """Delete an object; True when it is gone (including already-missing).
+
+    Returns False only for a real failure (access/outage), so the caller can
+    retry later rather than treating the record as cleaned up."""
+    s3_client = _get_s3_client()
+    try:
+        s3_client.delete_object(Bucket=bucket_name, Key=object_name)
+        return True
+    except ClientError as e:
+        if _error_code(e) in _MISSING_CODES:
+            return True
+        logging.error(e)
+        return False
 
 async def get_s3_file_stream(bucket_name: str, file_name: str) -> StreamingHttpResponse:
     try:
@@ -62,6 +91,8 @@ async def get_s3_file_stream(bucket_name: str, file_name: str) -> StreamingHttpR
             raise HttpError(500, f"Bucket {bucket_name} not found")
 
         response = get_object(bucket_name=bucket_name, object_name=file_name)
+        if response is None:
+            raise HttpError(404, f"File {file_name} not found")
         return StreamingHttpResponse(response["Body"])
     except HttpError:
         raise
