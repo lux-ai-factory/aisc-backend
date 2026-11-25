@@ -7,6 +7,7 @@ Port of the reference `scoring.ts`, kept as pure functions (no DB, no store):
               1 "Not started" at 0% and 5 "Optimized" at 100% ((score-1)/4),
               averaged and rounded half up. Null until something is scored.
 """
+
 from __future__ import annotations
 
 SCORE_VALUES = (1, 2, 3, 4, 5)
@@ -31,11 +32,12 @@ def parse_score(raw: str | None) -> int | None:
     return n if 1 <= n <= 5 else None
 
 
-def readiness_percent(scores: list[int]) -> int | None:
+def readiness_percent(scores: list[int | None]) -> int | None:
     """The scored questions' readiness as a rounded percent, null if none."""
-    if not scores:
+    scored = [score for score in scores if score is not None]
+    if not scored:
         return None
-    average = sum((score - 1) / 4 for score in scores) / len(scores)
+    average = sum((score - 1) / 4 for score in scored) / len(scored)
     return round(average * 100)
 
 

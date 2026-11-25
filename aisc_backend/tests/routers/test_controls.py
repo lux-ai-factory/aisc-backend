@@ -221,6 +221,51 @@ class ExportContractTest(TestCase):
 
 class ControlsLifecycleTest(TestCase):
 
+    async def test_unscored_answers_in_library_and_reports(self):
+        from aisc_backend.services.report_snapshot import _controls
+
+        await _seed_controls()
+        project = await _project()
+        await _install(project)
+        checklist = await ProjectChecklist.objects.select_related("template").aget(project=project)
+        created = await control_client.post(
+            f"/{project.pid}/controls/{checklist.pid}/submissions", json={}
+        )
+        submission_pid = created.json()["pid"]
+        questions = [q async for q in checklist.template.questions.order_by("order")]
+
+        for score, expected in [(4, 75), (None, None)]:
+            with self.subTest(score=score):
+                response = await control_client.post(
+                    f"/{project.pid}/controls/submissions/{submission_pid}/answers",
+                    json=[
+                        {"question_order": questions[0].order, "answer": "", "score": score},
+                        {"question_order": questions[1].order, "answer": "", "score": None},
+                    ],
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["readiness"], expected)
+                library = await control_client.get(f"/{project.pid}/controls")
+                self.assertEqual(library.status_code, 200)
+                self.assertEqual(library.json()[0]["latest_readiness"], expected)
+                closed = await control_client.post(
+                    f"/{project.pid}/controls/submissions/{submission_pid}/close"
+                )
+                self.assertEqual(closed.status_code, 200)
+                snapshot = await _controls(project)
+                self.assertEqual(snapshot[0]["readiness"], expected)
+                if score is not None:
+                    reopened = await control_client.post(
+                        f"/{project.pid}/controls/submissions/{submission_pid}/reopen"
+                    )
+                    self.assertEqual(reopened.status_code, 200)
+                    submissions = await control_client.get(
+                        f"/{project.pid}/controls/{checklist.pid}/submissions"
+                    )
+                    submission_pid = next(
+                        sub["pid"] for sub in submissions.json() if sub["status"] == "Draft"
+                    )
+
     async def test_submissions_draft_close_reopen(self):
         await _seed_controls()
         project = await _project()
