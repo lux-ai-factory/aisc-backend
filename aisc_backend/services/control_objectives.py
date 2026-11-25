@@ -7,10 +7,9 @@ What orders the objectives is the system's own risks, rated by the assessor:
     each risk: impact (1-5) x likelihood (1-5) = its rating, 1 to 25
     the matrix says which objectives mitigate it
     an objective scores the sum of the ratings of the risks it mitigates
-    key objectives = by default the first seven driven by a High or Critical
-                     risk; the assessor turns key on/off for any objective
+    key objectives = only those explicitly selected by the assessor
 
-Scores and default keys are never stored: a changed rating can never leave a
+Scores are never stored: a changed rating can never leave a
 stale score, which is why this is computed on every read.
 """
 
@@ -20,10 +19,6 @@ from dataclasses import dataclass, field
 
 #: What a risk counts before both its impact and likelihood are rated.
 UNRATED = 0
-#: How many objectives are key by default.
-KEY_BUDGET = 7
-#: The lowest rating that makes an objective key by default (High).
-KEY_RATING = 10
 #: The 5x5 bands (ISO 31000, COSO ERM): highest rating in each, and its name.
 BANDS = ((4, "Low"), (9, "Medium"), (16, "High"), (25, "Critical"))
 
@@ -48,7 +43,7 @@ class Priority:
     top_rating: int = 0
     #: 1 .. n: score, then top rating, then a binding duty first, then catalogue order.
     rank: int = 0
-    #: Key: the assessor's choice when they made one, else `key_default`.
+    #: Key: explicitly selected by the assessor; never inferred from risk.
     key: bool = False
     key_default: bool = False
     #: The risks this objective mitigates, highest rated first.
@@ -70,7 +65,7 @@ def _score(ratings: list[int], non_binding: bool) -> tuple[float, list[str]]:
     return score, reasons
 
 
-def prioritise(*, objectives, mappings, rating_of, budget: int = KEY_BUDGET,
+def prioritise(*, objectives, mappings, rating_of,
                keys: dict[str, bool] | None = None) -> list[Priority]:
     """One Priority per objective, in catalogue order.
 
@@ -97,12 +92,7 @@ def prioritise(*, objectives, mappings, rating_of, budget: int = KEY_BUDGET,
 
     keyed.sort(key=lambda row: row[0])
     chosen = dict(keys or {})
-    defaults = 0
     for rank, (_, priority) in enumerate(keyed, 1):
         priority.rank = rank
-        if (not priority.non_binding and priority.score > 0
-                and priority.top_rating >= KEY_RATING and defaults < budget):
-            priority.key_default = True
-            defaults += 1
-        priority.key = chosen.get(priority.objective_id, priority.key_default)
+        priority.key = chosen.get(priority.objective_id, False)
     return [priorities[objective["id"]] for objective in objectives]

@@ -65,17 +65,17 @@ class PrioritiseTest(SimpleTestCase):
         self.assertEqual([pr.objective_id for pr in ordered], ["O1", "O3", "O2"])
         self.assertEqual([pr.rank for pr in ordered], [1, 2, 3])
 
-    def test_key_objectives_by_default_from_high_risk(self):
+    def test_high_risk_does_not_assign_key_objectives(self):
         objectives = self._objectives([f"O{i}" for i in range(1, 12)])
         mappings = {f"O{i}": [f"r{i}"] for i in range(1, 12)}
-        # each rated above the KEY_RATING (10) -> all qualify, but budget is 7
+        # Even high ratings must not select key objectives automatically.
         rating = {f"r{i}": 11 + (i % 3) for i in range(1, 12)}
         priorities = p.prioritise(
             objectives=objectives, mappings=mappings, rating_of=lambda rid: rating[rid],
-            budget=7,
         )
         keyed = [pr.objective_id for pr in priorities if pr.key]
-        self.assertEqual(len(keyed), 7)
+        self.assertEqual(keyed, [])
+        self.assertTrue(all(not pr.key_default for pr in priorities))
 
     def test_voluntary_ranks_last_and_never_key_by_default(self):
         objectives = self._objectives(["O1", "O2"])
@@ -104,4 +104,5 @@ class PrioritiseTest(SimpleTestCase):
         )
         by_id = {pr.objective_id: pr for pr in priorities}
         self.assertTrue(by_id["O3"].key)          # assessor forced it on
+        self.assertFalse(by_id["O1"].key)         # high risk alone does not select it
         self.assertFalse(by_id["O3"].key_default) # but it is not a default

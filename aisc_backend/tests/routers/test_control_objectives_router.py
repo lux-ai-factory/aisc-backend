@@ -306,8 +306,8 @@ class ControlObjectivesRouterTest(TestCase):
         o1 = priorities["O1"]
         self.assertEqual(o1["score"], 29.0)       # 25 + 4
         self.assertEqual(o1["top_rating"], 25)    # the critical one
-        self.assertTrue(o1["key_default"])         # driven by a critical risk
-        self.assertTrue(o1["key"])
+        self.assertFalse(o1["key_default"])        # keys require an explicit choice
+        self.assertFalse(o1["key"])
         # every objective is present, with O1 ranked first
         self.assertEqual(matrix["priorities"][0]["objective_id"], "O1")
 
