@@ -12,7 +12,7 @@ project changes:
     limited to the objectives the project's profile selected);
   - each evaluation's key results, plus the charts its plugins declare
     (`get_metric_visualizations`) with the run's measurements, which the
-    renderer draws as inline SVG.
+    webapp exports as MUI chart images.
 
 Everything is read on demand; nothing is cached or stored here (the `Report`
 row snapshots the result).
@@ -56,13 +56,15 @@ logger = logging.getLogger(__name__)
 #: The report sections a generate call (or the project's settings) can pick.
 #: The snapshot always assembles every section's data; `sections` records
 #: which of them the headless renderer should render.
-REPORT_SECTIONS = ("system", "controls", "objectives", "evaluations")
+REPORT_SECTIONS = ("system", "controls", "objectives", "evaluations", "dashboard")
 
 
 async def build_snapshot(
     project: Project,
     evaluation_pids: list[str] | None = None,
     sections: list[str] | None = None,
+    dashboard_widgets: list[dict] | None = None,
+    evaluation_charts: list[dict] | None = None,
 ) -> dict:
     """Assemble the report snapshot for a project (B5: scoped to the picked
     evaluations, recording the picked sections for the renderer)."""
@@ -71,6 +73,13 @@ async def build_snapshot(
 
     wanted = [s for s in (sections or []) if s in REPORT_SECTIONS]
     evaluations = await _evaluations(project, evaluation_pids or [])
+    _attach_evaluation_charts(evaluations, evaluation_charts or [])
+    dashboard = await _dashboard_widgets(project, dashboard_widgets)
+    # the dashboard chapter follows its widgets: a project whose saved default
+    # sections predate the "dashboard" section must still render the charts the
+    # user just picked.
+    if (dashboard.get("widgets") or []) and "dashboard" not in wanted:
+        wanted = [*wanted, "dashboard"]
 
     return {
         "project": {
@@ -86,6 +95,7 @@ async def build_snapshot(
         "controls": await _controls(project),
         "objectives": await _objectives(project),
         "evaluations": evaluations,
+        "dashboard": dashboard,
         "sections": wanted or list(REPORT_SECTIONS),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -264,6 +274,18 @@ def _declared_charts(evaluation_plugin) -> list[dict]:
     ]
 
 
+async def _plugin_measurements(evaluation: Evaluation, tool: str) -> list[dict]:
+    """The given tool's latest observation rows in the evaluation."""
+    obs = (
+        await Observation.objects.filter(evaluation=evaluation, tool=tool)
+        .order_by("-created_at")
+        .afirst()
+    )
+    if obs is None:
+        return []
+    return await _observation_rows(obs)
+
+
 async def _visualizations(evaluation: Evaluation) -> list[dict]:
     """Per plugin of the evaluation: what it declares to chart, and the
     measurements of its latest observation (the charts' source rows)."""
@@ -287,20 +309,78 @@ async def _visualizations(evaluation: Evaluation) -> list[dict]:
             continue
         if not charts:
             continue
-        obs = (
-            await Observation.objects.filter(evaluation=evaluation, tool=str(plugin))
-            .order_by("-created_at")
-            .afirst()
-        )
         visualizations.append(
             {
                 "plugin": str(plugin),
+                "evaluation_plugin_pid": str(evaluation_plugin.pid),
                 "charts": charts,
-                "measurements": [] if obs is None else await _observation_rows(obs),
+                "measurements": await _plugin_measurements(evaluation, str(plugin)),
             }
         )
     return visualizations
 
+
+def _attach_evaluation_charts(evaluations: list[dict], exports: list[dict]) -> None:
+    """Associate browser plots using server-owned evaluation and plugin declarations."""
+    indexed = {
+        (item["evaluation_pid"], item["evaluation_plugin_pid"], item["visualization_index"]): item
+        for item in exports
+    }
+    for evaluation in evaluations:
+        plots = []
+        for plugin in evaluation.get("visualizations", []):
+            for index, chart in enumerate(plugin.get("charts", [])):
+                if chart.get("chart_type") == "table":
+                    continue
+                # positional matching (same order as the webapp exported them):
+                # a missing entry or unknown index yields an empty panel list,
+                # which the renderer shows as an unavailable message. Arbitrary
+                # declaration reordering is NOT solved here; stable visualization
+                # identifiers remain a separate contract change.
+                key = (evaluation["pid"], plugin["evaluation_plugin_pid"], index)
+                exported = indexed.get(key, {})
+                panels = [
+                    {"image": f"artifact:{panel['artifact_id']}",
+                     "label": panel.get("label", "")[:200]}
+                    for panel in exported.get("panels", [])
+                ]
+                plots.append({
+                    "title": chart.get("title") or "",
+                    "description": chart.get("description") or "",
+                    "panels": panels,
+                })
+        evaluation["plots"] = plots
+
+
+async def _dashboard_widgets(project: Project, widgets: list[dict] | None) -> dict:
+    """The dashboard's collected widgets as the webapp exported them: a chart
+    carries its report-owned artifact reference + title + comment; a note its
+    text. ``project`` is kept for the signature; nothing is read from the DB."""
+    del project
+    built = []
+    for widget in widgets or []:
+        if not isinstance(widget, dict):
+            continue
+        key = str(widget.get("key") or "")[:256]
+        kind = widget.get("kind")
+        if kind == "text":
+            built.append(
+                {"key": key, "kind": "text", "text": (widget.get("text") or "")[:2000]}
+            )
+        elif kind == "chart":
+            artifact_id = widget.get("artifact_id")
+            if not artifact_id:
+                continue  # no uploaded artifact -> nothing this report could show
+            built.append(
+                {
+                    "key": key,
+                    "kind": "chart",
+                    "title": (widget.get("title") or "")[:200],
+                    "comment": (widget.get("comment") or "")[:2000],
+                    "image": f"artifact:{artifact_id}",
+                }
+            )
+    return {"widgets": built}
 
 #: how many dimension groupings / groups per grouping a report shows
 DETAIL_DIMENSION_LIMIT = 3

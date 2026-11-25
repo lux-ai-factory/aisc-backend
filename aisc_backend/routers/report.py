@@ -14,10 +14,11 @@ import logging
 import re
 import threading
 import uuid
+from time import perf_counter
 
 from asgiref.sync import sync_to_async
 from django.http import HttpResponse
-from ninja import Router
+from ninja import Router, UploadedFile, File
 from ninja.errors import HttpError
 
 from aisc_backend.audit.log import log_action
@@ -36,7 +37,14 @@ from aisc_backend.schemas.report import (
     ReportSettingsIn,
     ReportSettingsOut,
 )
-from aisc_backend.services import report_service, report_snapshot
+from aisc_backend.schemas.dashboard import DashboardIn
+from aisc_backend.services import report_service, report_snapshot, report_storage
+from aisc_backend.models.report_storage import ProjectDashboard, ReportArtifact
+from django.db.models import F
+from django.db import transaction
+from django.conf import settings
+from django.utils import timezone
+import hmac
 from aisc_backend.services.report_snapshot import REPORT_SECTIONS
 
 router = Router(tags=["reporting"])
@@ -196,6 +204,17 @@ async def list_reports(request, pid: uuid.UUID):
     ]
 
 
+@router.post("/{pid}/reports/prepare", response=ReportOut)
+async def prepare_report(request, pid: uuid.UUID, data: ReportIn):
+    project = await _project_for(request, pid, needed="editor")
+    report = await Report.objects.acreate(
+        project=project, period=data.period, format=data.format,
+        status="preparing", generated_by=caller_of(request).subject,
+        snapshot={"project": {"pid": str(project.pid)}},
+    )
+    return _report_out(report)
+
+
 @router.post("/{pid}/reports/generate", response=ReportOut)
 async def generate_report(request, pid: uuid.UUID, data: ReportIn):
     """Assemble the snapshot (scoped to the picked evaluations and sections,
@@ -217,23 +236,44 @@ async def generate_report(request, pid: uuid.UUID, data: ReportIn):
 
     evaluation_pids = []
     for epid in data.evaluation_pids or []:
-        try:
-            eqid = uuid.UUID(str(epid))
-        except ValueError:
-            raise HttpError(404, f"no such evaluation {epid!r}")
+        eqid = str(epid)
         exists = await Evaluation.objects.filter(project=project, pid=eqid).aexists()
         if not exists:
-            raise HttpError(404, f"no such evaluation {epid!r}")
-        evaluation_pids.append(str(eqid))
+            raise HttpError(404, f"no such evaluation {eqid!r}")
+        evaluation_pids.append(eqid)
 
+    if data.report_pid:
+        report = await Report.objects.filter(project=project, pid=data.report_pid).afirst()
+        if report is None:
+            raise HttpError(404, "No such report")
+        if report.status != "preparing":
+            raise HttpError(409, "Report already submitted")
+    else:
+        report = await Report.objects.acreate(
+            project=project, period=data.period, format=fmt,
+            status="preparing", generated_by=caller.subject,
+        )
+    snapshot_started = perf_counter()
     snapshot = await report_snapshot.build_snapshot(
-        project, evaluation_pids=evaluation_pids, sections=sections
+        project,
+        evaluation_pids=evaluation_pids,
+        sections=sections,
+        # charts carry report-owned artifact references (no image bytes)
+        dashboard_widgets=[w.model_dump() for w in data.dashboard],
+        evaluation_charts=[
+            chart.model_dump(mode="json") for chart in data.evaluation_charts
+        ],
+    )
+    snapshot = await sync_to_async(report_storage.store_images)(report, snapshot)
+    logger.info(
+        "Report %s snapshot assembled in %.3fs", report.pid, perf_counter() - snapshot_started,
     )
     # the report's own version within the project (the cover's "Version"): the
     # highest existing version + 1, so deleting a mid-version report never
     # reuses a number another (still present) report carries
     last_version = (
         await Report.objects.filter(project=project)
+        .exclude(pk=report.pk).exclude(status="preparing")
         .order_by("-version")
         .values_list("version", flat=True)
         .afirst()
@@ -257,17 +297,14 @@ async def generate_report(request, pid: uuid.UUID, data: ReportIn):
     # The endpoint answers immediately: the row is created 'pending' and the
     # render runs in the background (_launch_worker), flipping it to
     # 'generated' (with the document) or 'failed'. The webapp polls the list.
-    report = await Report.objects.acreate(
-        project=project,
-        system_version=version,
-        period=data.period,
-        version=next_version,
-        format=fmt,
-        snapshot=snapshot,
-        document=None,
-        status="pending",
-        generated_by=caller.subject,
+    claimed = await Report.objects.filter(pk=report.pk, status="preparing").aupdate(
+        system_version=version, period=data.period, version=next_version,
+        format=fmt, snapshot=snapshot, status="pending",
+        generation_started_at=timezone.now(),
     )
+    if not claimed:
+        raise HttpError(409, "Report already submitted")
+    await report.arefresh_from_db()
     await sync_to_async(log_action)(
         request,
         action="generate",
@@ -358,6 +395,7 @@ async def delete_report(request, pid: uuid.UUID, report_pid: uuid.UUID):
         resource_id=str(report_pid),
         metadata={"projectPid": str(pid)},
     )
+    await sync_to_async(report_storage.delete_files)(report)
     await report.adelete()
     return 204, None
 
@@ -390,3 +428,111 @@ async def report_pdf(request, pid: uuid.UUID, report_pid: uuid.UUID):
         content_type=content_type,
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@router.get("/{pid}/dashboard")
+async def get_dashboard(request, pid: uuid.UUID):
+    project = await _project_for(request, pid)
+    role = await role_or_404(request, project)
+    dashboard = await ProjectDashboard.objects.filter(project=project).afirst()
+    return {
+        "widgets": dashboard.state.get("widgets", []) if dashboard else [],
+        "layouts": dashboard.state.get("layouts", {}) if dashboard else {},
+        "revision": dashboard.revision if dashboard else 0,
+        "can_edit": role in ("editor", "owner"),
+    }
+
+
+@router.put("/{pid}/dashboard")
+async def put_dashboard(request, pid: uuid.UUID, data: DashboardIn):
+    project = await _project_for(request, pid, needed="editor")
+    dashboard, _ = await ProjectDashboard.objects.aget_or_create(project=project)
+    saved = await ProjectDashboard.objects.filter(pk=dashboard.pk, revision=data.revision).aupdate(
+        state={
+            "widgets": [w.model_dump(exclude_unset=True) for w in data.widgets],
+            "layouts": {bp: [item.model_dump(exclude_unset=True) for item in items]
+                        for bp, items in data.layouts.items()},
+        },
+        revision=F("revision") + 1,
+    )
+    if not saved:
+        raise HttpError(409, "Dashboard changed; reload before saving")
+    await sync_to_async(log_action)(
+        request,
+        action="update",
+        resource_type="dashboard",
+        resource_id=str(project.pid),
+        metadata={
+            "projectPid": str(pid),
+            "widgets": len(data.widgets),
+            "revision": data.revision,
+        },
+    )
+    return {
+        **data.model_dump(exclude_unset=True),
+        "revision": data.revision + 1,
+        "can_edit": True,
+    }
+
+
+@router.post("/{pid}/reports/{report_pid}/artifacts")
+async def upload_report_artifact(
+    request, pid: uuid.UUID, report_pid: uuid.UUID, file: UploadedFile = File(...),
+):
+    project = await _project_for(request, pid, needed="editor")
+    max_artifacts = getattr(settings, "REPORT_MAX_ARTIFACTS", 100)
+
+    def reserve():
+        # Transactional capacity reservation: even concurrent uploads can never
+        # overshoot REPORT_MAX_ARTIFACTS (the counter is claimed under the row
+        # lock and rolled back on rejection). The storage upload itself runs
+        # outside the lock; a failed upload releases the reservation below.
+        with transaction.atomic():
+            try:
+                report = Report.objects.select_for_update().get(
+                    project=project, pid=report_pid, status="preparing",
+                )
+            except Report.DoesNotExist:
+                raise HttpError(404, "No preparing report")
+            if report.reserved_slots >= max_artifacts:
+                raise HttpError(413, "Report chart limit reached")
+            Report.objects.filter(pk=report.pk).update(
+                reserved_slots=F("reserved_slots") + 1
+            )
+            report.reserved_slots += 1
+            return report
+
+    report = await sync_to_async(reserve)()
+    try:
+        artifact = await sync_to_async(report_storage.upload)(report, file)
+    except Exception:
+        # an upload that never stores (invalid PNG, storage failure) frees its slot
+        await Report.objects.filter(pk=report.pk).aupdate(
+            reserved_slots=F("reserved_slots") - 1
+        )
+        raise
+    await sync_to_async(log_action)(
+        request,
+        action="upload",
+        resource_type="report_artifact",
+        resource_id=str(artifact.pid),
+        metadata={"projectPid": str(pid), "report": str(report.pid), "bytes": file.size},
+    )
+    return {"pid": str(artifact.pid)}
+
+
+@router.get("/{pid}/report-artifacts/{artifact_pid}", auth=None)
+async def report_artifact(request, pid: uuid.UUID, artifact_pid: uuid.UUID):
+    token = settings.SERVICE_TOKEN_FOR_APPS
+    given = request.headers.get("X-AISC-Service-Token", "")
+    if not token or not hmac.compare_digest(token, given):
+        raise HttpError(401, "Unauthorized")
+    artifact = await ReportArtifact.objects.filter(
+        report__project__pid=pid, pid=artifact_pid,
+    ).afirst()
+    if artifact is None:
+        raise HttpError(404, "No such artifact")
+    from aisc_backend.repositories import file_repository
+    response = await file_repository.get_s3_file_stream(artifact.storage_container, artifact.data)
+    response["Content-Type"] = "image/png"
+    return response

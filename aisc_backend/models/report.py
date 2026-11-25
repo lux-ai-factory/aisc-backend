@@ -52,6 +52,13 @@ class Report(models.Model):
     status = models.CharField(max_length=32, default="generated")
     generated_by = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+    # When rendering began: a report that went 'pending' is abandoned if this
+    # stayed empty for too long (null = pre-timestamp rows, created_at is the fallback).
+    generation_started_at = models.DateTimeField(null=True, blank=True)
+    # Capacity reserved for artifact uploads against REPORT_MAX_ARTIFACTS: the
+    # counter is claimed transactionally per upload, so concurrent uploads can
+    # never overshoot the cap, and released again when an upload fails.
+    reserved_slots = models.PositiveIntegerField(default=0)
 
     class Meta:
         app_label = "aisc_backend"

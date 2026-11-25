@@ -31,6 +31,13 @@ SECRET_KEY = env("DJANGO_SECRET_KEY",default=get_random_secret_key())
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", False)
 
+# Report requests carry artifact references (and cover customisation), not image
+# bytes, so Django's normal in-memory limit is fine; PNG charts are separate
+# multipart upload requests.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env.int("DATA_UPLOAD_MAX_MEMORY_SIZE", 2_621_440)
+#: per-preparing-report chart artifact cap (0 disables uploads)
+REPORT_MAX_ARTIFACTS = env.int("REPORT_MAX_ARTIFACTS", 100)
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -254,6 +261,7 @@ QUALIFICATION_SERVICE_URL = env("QUALIFICATION_SERVICE_URL", default="")
 # draws it (PDF/HTML). Empty means the backend falls back to a deterministic HTML summary
 # (dev/tests).
 REPORT_SERVICE_URL = env("REPORT_SERVICE_URL", default="")
+REPORT_BACKEND_INTERNAL_URL = env("REPORT_BACKEND_INTERNAL_URL", default="http://aisc-backend:8000")
 # --- Controls catalogue (read by services.controls_catalogue) ---
 # The hosted checklist catalogue (AI Factory Sandbox Configurator API v1.1).
 # `manage.py sync_controls_catalogue` upserts its rows into the control tables;

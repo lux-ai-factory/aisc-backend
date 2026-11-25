@@ -64,6 +64,8 @@ async def generate(project_pid: str, snapshot: dict, fmt: str = "pdf") -> tuple[
     """
     if not REPORT_SERVICE_URL:
         return _summary_document(snapshot, fmt)
+    from aisc_backend.services.report_storage import for_renderer
+    snapshot = for_renderer(snapshot, project_pid)
     payload = {"project_pid": str(project_pid), "format": fmt, "snapshot": snapshot or {}}
     try:
         async with httpx.AsyncClient(timeout=120) as client:

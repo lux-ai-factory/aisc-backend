@@ -85,6 +85,8 @@ Reading the log:
 | action · resource_type | when |
 |---|---|
 | `generate` · report | assemble the report snapshot and render the PDF/HTML |
+| `update` · dashboard | save the shared project dashboard (widgets + layouts) |
+| `upload` · report_artifact | upload a report chart PNG (project + artifact ids, never image bytes) |
 
 > `action` + `resource_type` are always server-decided (never from the request body); `actor` + `source_ip`
 > come from the verified request.
